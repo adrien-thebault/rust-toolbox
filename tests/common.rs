@@ -87,7 +87,7 @@ const DDL: [&str; 2] = [
 #[cfg(feature = "mysql")]
 const DDL: [&str; 2] = [
     "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name VARCHAR(255) NOT NULL, \
-     rank INTEGER NOT NULL, CHECK (rank >= 0))",
+     `rank` INTEGER NOT NULL, CHECK (`rank` >= 0))",
     "CREATE TABLE gadgets (id INTEGER NOT NULL AUTO_INCREMENT, name VARCHAR(255) NOT NULL, \
      PRIMARY KEY (id))",
 ];
