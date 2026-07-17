@@ -38,5 +38,10 @@ mod tower_tools {
     }
 }
 
+#[cfg(all(feature = "tonic", feature = "tower"))]
+mod tonic_tools {
+    mod request_id;
+}
+
 #[cfg(feature = "mail")]
 mod mail_tools;

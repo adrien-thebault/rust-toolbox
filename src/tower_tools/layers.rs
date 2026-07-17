@@ -5,6 +5,7 @@ pub use trace::{
 
 mod request_id;
 pub use request_id::{
-    MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer, X_REQUEST_ID,
-    propagate_request_id_layer, request_id_layer,
+    CURRENT_REQUEST_ID, MakeRequestUuid, PropagateRequestIdLayer, RequestId, RequestIdContextLayer,
+    RequestIdContextService, SetRequestIdLayer, X_REQUEST_ID, X_REQUEST_ID_STR,
+    propagate_request_id_layer, request_id_context_layer, request_id_layer,
 };
