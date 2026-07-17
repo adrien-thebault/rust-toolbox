@@ -1,0 +1,8 @@
+# Config for `committed` (https://github.com/crate-ci/committed), used by
+# .githooks/commit-msg. See CONTRIBUTING.md for how to opt in.
+style = "conventional"
+allowed_types = [
+  "feat", "fix", "docs", "style", "refactor", "perf", "test",
+  "chore", "ci", "build", "revert",
+]
+subject_length = 72

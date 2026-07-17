@@ -1,0 +1,81 @@
+[package]
+name = "rust-toolbox"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Generic, domain-agnostic Rust building blocks: diesel repository/service macros, tower logging layers, axum auth/RBAC/error types, a tonic ServiceError trait, and an SMTP mail sender."
+repository = "https://github.com/adrien-thebault/rust-toolbox"
+readme = "README.md"
+# tests/ holds one harness (declared below) whose module tree mirrors src/;
+# without this, cargo would compile every top-level tests/*.rs (e.g.
+# tests/mail_tools.rs) as its own extra test crate too.
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[dependencies]
+diesel = { version = "2.3", features = [
+  "r2d2",
+  "chrono",
+  "i-implement-a-third-party-backend-and-opt-into-breaking-changes",
+], optional = true }
+thiserror = { version = "2.0", optional = true }
+tower = { version = "0.5", optional = true }
+tower-http = { version = "0.7", features = [
+  "request-id",
+  "trace",
+], optional = true }
+tracing = "0.1"
+http = { version = "1.0", optional = true }
+axum = { version = "0.8", optional = true }
+jsonwebtoken = { version = "9", optional = true }
+sha2 = { version = "0.10", optional = true }
+serde = { version = "1.0", optional = true }
+serde_derive = { version = "1.0", optional = true }
+serde_json = { version = "1.0", optional = true }
+tonic = { version = "0.14", optional = true }
+chrono = { version = "0.4", optional = true }
+tonic-types = { version = "0.14.6", optional = true }
+lettre = { version = "0.11", default-features = false, features = [
+  "tokio1-rustls-tls",
+  "smtp-transport",
+  "builder",
+], optional = true }
+
+[dev-dependencies]
+# for the async integration tests (extractor, layers, mailer)
+tokio = { version = "1", features = ["macros", "rt"] }
+# `util` provides ServiceExt::oneshot for driving the tower layers
+tower = { version = "0.5", features = ["util"] }
+
+[features]
+default = []
+diesel = ["dep:diesel", "dep:thiserror"]
+mysql = ["diesel", "diesel/mysql"]
+postgresql = ["diesel", "diesel/postgres"]
+sqlite = ["diesel", "diesel/sqlite", "diesel/returning_clauses_for_sqlite_3_35"]
+tower = ["dep:tower", "dep:tower-http", "dep:http"]
+# a ServiceError trait + tonic::Status <-> google.rpc.ErrorInfo conversion,
+# usable by any tonic gRPC service crate (not just an axum gateway - see
+# `axum` below, which depends on this rather than enabling it directly)
+tonic = ["dep:tonic", "dep:tonic-types"]
+# axum-based web-gateway building blocks: auth/RBAC and a tonic-Status-aware
+# HTTP error type. Implies `tonic` (a hard compile-time dependency -
+# `axum_tools::api_error` references `tonic_tools` unconditionally), but not
+# `tower` - axum_tools' own code doesn't touch it; enable `tower` yourself
+# alongside this if your gateway also wants the tower_tools layers.
+axum = [
+  "dep:axum",
+  "dep:jsonwebtoken",
+  "dep:sha2",
+  "dep:serde",
+  "dep:serde_derive",
+  "dep:serde_json",
+  "dep:thiserror",
+  "dep:chrono",
+  "tonic",
+]
+# a reusable SMTP sender, usable by any service crate that wants to send mail
+mail = ["dep:lettre", "dep:thiserror"]

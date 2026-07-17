@@ -1,0 +1,94 @@
+# mirrors scripts/test-all.sh: sqlite/postgresql/mysql are mutually
+# exclusive diesel backends, so there's no single --all-features run - each
+# meaningful feature combination gets its own job instead. The postgresql
+# and mysql jobs run the same backend-generic integration tests as sqlite,
+# against real servers provided as service containers (the tests find them
+# via TOOLBOX_TEST_POSTGRES_URL / TOOLBOX_TEST_MYSQL_URL and soft-skip when
+# unset, so a local `cargo test` without a server still passes).
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --no-default-features --features sqlite,axum,mail,tower -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features: ["axum,mail,tower", "sqlite"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --no-default-features --features "${{ matrix.features }}"
+
+  test-postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: toolbox
+          POSTGRES_PASSWORD: toolbox
+          POSTGRES_DB: toolbox
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U toolbox"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TOOLBOX_TEST_POSTGRES_URL: postgres://toolbox:toolbox@localhost:5432/toolbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libpq-dev
+      - run: cargo test --no-default-features --features postgresql
+
+  test-mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: toolbox
+          MYSQL_DATABASE: toolbox
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -ptoolbox"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TOOLBOX_TEST_MYSQL_URL: mysql://root:toolbox@127.0.0.1:3306/toolbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev
+      - run: cargo test --no-default-features --features mysql

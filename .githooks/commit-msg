@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Rejects a commit whose message doesn't follow Conventional Commits, using
+# `committed` (https://github.com/crate-ci/committed) — see CONTRIBUTING.md.
+# Opt in with: git config core.hooksPath .githooks
+set -euo pipefail
+
+if ! command -v committed >/dev/null 2>&1; then
+    echo "committed is not installed (skipping commit-msg check)." >&2
+    echo "Install it with: cargo install committed" >&2
+    exit 0
+fi
+
+committed --commit-file "$1"
