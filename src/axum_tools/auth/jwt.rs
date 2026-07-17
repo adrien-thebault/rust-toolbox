@@ -4,6 +4,7 @@
 use super::User;
 pub use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey};
 use jsonwebtoken::{Header, Validation, decode, encode};
+use serde::Deserialize as _;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -64,7 +65,7 @@ impl From<Claims> for User {
         let roles = claims
             .extra
             .get("roles")
-            .and_then(|roles| serde_json::from_value(roles.clone()).ok())
+            .and_then(|roles| Vec::<String>::deserialize(roles).ok())
             .unwrap_or_default();
         Self {
             subject: claims.sub.unwrap_or_default(),

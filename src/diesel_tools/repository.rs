@@ -70,7 +70,7 @@ pub trait Repository {
             }
         };
 
-        Self::apply_sort(query, sort.clone())
+        Self::apply_sort(query, sort)
     }
 
     /// applies the sort to the query, if any. The default implementation
@@ -78,7 +78,7 @@ pub trait Repository {
     /// real override per-repository.
     fn apply_sort<'a>(
         query: IntoBoxed<'a, Self::Table, Database>,
-        _sort: Sort,
+        _sort: &Sort,
     ) -> IntoBoxed<'a, Self::Table, Database>
     where
         <Self as Repository>::Table: BoxedDsl<'a, Database>,
@@ -129,7 +129,7 @@ macro_rules! impl_repository {
                 #[allow(unused_mut)]
                 fn apply_sort<'a>(
                     mut query: IntoBoxed<'a, __schema::table, Database>,
-                    sort: Sort,
+                    sort: &Sort,
                 ) -> IntoBoxed<'a, __schema::table, Database> {
                     if let Sort::Sorted { items } = sort {
                         for (field, direction) in items {

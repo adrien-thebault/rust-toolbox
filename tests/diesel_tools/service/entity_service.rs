@@ -41,7 +41,7 @@ fn entity_service_delegates_to_the_repository() {
     );
     assert_eq!(
         service
-            .find_all(&mut db.conn, &PageRequest::default())
+            .find_all(&mut db.conn, PageRequest::default())
             .unwrap()
             .len(),
         3

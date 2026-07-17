@@ -106,7 +106,7 @@ where
     fn find_all(
         &self,
         db: &mut DatabasePooledConnection,
-        page_request: &PageRequest,
+        page_request: PageRequest,
     ) -> Result<Page<Repo::Entity>, Self::Error>
     where
         Repo: Find,

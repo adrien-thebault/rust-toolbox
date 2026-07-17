@@ -57,9 +57,8 @@ fn find_all_applies_multi_field_sort_and_pagination() {
         ],
     };
 
-    let all =
-        WidgetRepository::find_all(&mut db.conn, &PageRequest::Unpaged { sort: sort.clone() })
-            .unwrap();
+    let all = WidgetRepository::find_all(&mut db.conn, PageRequest::Unpaged { sort: sort.clone() })
+        .unwrap();
     assert_eq!(ids(&all), vec![2, 1, 3]);
     assert_eq!(all.total_elements, 3);
     assert!(all.next_page().is_none());
@@ -67,12 +66,12 @@ fn find_all_applies_multi_field_sort_and_pagination() {
     // first page of two: same order, truncated, and next_page picks up
     // exactly where it left off
     let first =
-        WidgetRepository::find_all(&mut db.conn, &PageRequest::paged(0, 2, sort).unwrap()).unwrap();
+        WidgetRepository::find_all(&mut db.conn, PageRequest::paged(0, 2, sort).unwrap()).unwrap();
     assert_eq!(ids(&first), vec![2, 1]);
     assert_eq!(first.total_elements, 3);
 
     let second =
-        WidgetRepository::find_all(&mut db.conn, &first.next_page().expect("a second page"))
+        WidgetRepository::find_all(&mut db.conn, first.next_page().expect("a second page"))
             .unwrap();
     assert_eq!(ids(&second), vec![3]);
     assert!(second.next_page().is_none());
@@ -90,7 +89,7 @@ fn negative_page_size_is_clamped_to_an_empty_page_not_the_whole_table() {
     // apply_page_request must keep a hostile size from dumping the table
     let page = WidgetRepository::find_all(
         &mut db.conn,
-        &PageRequest::Paged {
+        PageRequest::Paged {
             offset: 0,
             size: -1,
             sort: Sort::Unsorted,
@@ -110,7 +109,7 @@ fn unknown_sort_fields_are_ignored_not_fatal() {
 
     let page = WidgetRepository::find_all(
         &mut db.conn,
-        &PageRequest::Unpaged {
+        PageRequest::Unpaged {
             sort: Sort::Sorted {
                 items: vec![("no_such_column".to_string(), SortDirection::Asc)],
             },

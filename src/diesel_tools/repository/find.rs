@@ -43,7 +43,7 @@ pub trait Find: Repository {
     /// retrieves all the entities, paginated
     fn find_all(
         db: &mut DatabasePooledConnection,
-        page_request: &PageRequest,
+        page_request: PageRequest,
     ) -> DatabaseResult<Page<Self::Entity>>;
 }
 
@@ -94,7 +94,7 @@ macro_rules! impl_find {
 
                 fn find_all(
                     db: &mut DatabasePooledConnection,
-                    page_request: &PageRequest,
+                    page_request: PageRequest,
                 ) -> DatabaseResult<Page<Self::Entity>> {
                     let data =
                         Self::apply_page_request(Self::Table::table().into_boxed(), &page_request)
@@ -103,7 +103,7 @@ macro_rules! impl_find {
 
                     Ok(Page {
                         data,
-                        page_request: page_request.clone(),
+                        page_request,
                         total_elements,
                     })
                 }
