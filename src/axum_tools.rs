@@ -6,3 +6,10 @@
 pub mod api_error;
 pub mod auth;
 pub mod controller;
+
+/// per-IP request throttling on top of [`tower_governor`] - a separate
+/// feature from plain `axum` since it pulls in the `tower_governor`/
+/// `governor` dependency chain, which most `axum`-feature consumers won't
+/// want.
+#[cfg(feature = "rate-limit")]
+pub mod rate_limit;

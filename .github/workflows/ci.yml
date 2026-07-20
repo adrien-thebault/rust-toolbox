@@ -33,13 +33,13 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --no-default-features --features sqlite,axum,mail,tower -- -D warnings
+      - run: cargo clippy --all-targets --no-default-features --features sqlite,axum,mail,tower,rate-limit -- -D warnings
 
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: ["axum,mail,tower", "sqlite"]
+        features: ["axum,mail,tower,rate-limit", "sqlite"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

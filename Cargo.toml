@@ -46,6 +46,7 @@ lettre = { version = "0.11", default-features = false, features = [
   "smtp-transport",
   "builder",
 ], optional = true }
+tower_governor = { version = "0.8", optional = true }
 
 [dev-dependencies]
 # for the async integration tests (extractor, layers, mailer)
@@ -82,3 +83,7 @@ axum = [
 ]
 # a reusable SMTP sender, usable by any service crate that wants to send mail
 mail = ["dep:lettre", "dep:thiserror"]
+# per-IP rate limiting on top of tower_governor - a separate feature from
+# plain `axum` since it pulls in the tower_governor/governor dependency
+# chain, which most `axum`-feature consumers won't want
+rate-limit = ["axum", "dep:tower_governor"]

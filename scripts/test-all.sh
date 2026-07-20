@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 feature_sets=(
-    "axum,mail,tower"
+    "axum,mail,tower,rate-limit"
     "sqlite"
     "postgresql"
     "mysql"

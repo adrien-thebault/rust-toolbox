@@ -48,6 +48,17 @@ optional - a consumer enables only what it needs:
   code→variant match). Role/permission types are deliberately *not* defined
   here - a consumer defines its own `Role` enum with `impl AsRef<str>` and
   calls `user.require_role(...)` with it.
+- `axum_tools::rate_limit` (feature `rate-limit`, implies `axum`) - a
+  separate feature from plain `axum` since it pulls in the
+  `tower_governor`/`governor` dependency chain that most `axum`-feature
+  consumers won't want. `resolve_client_ip` (the real client IP from the
+  rightmost, proxy-appended `X-Forwarded-For` entry, falling back to the raw
+  TCP peer), `ForwardedForKeyExtractor` (keys a `tower_governor` limiter by
+  `resolve_client_ip`'s IP, not `tower_governor`'s own leftmost-trusting
+  `SmartIpKeyExtractor`),
+  and `error_response_handler` (maps a `GovernorError` to
+  `ApiError`/`application/problem+json`, so a throttled request isn't the
+  one response shape that doesn't match every other error).
 - `mail_tools` (feature `mail`) - a reusable SMTP sender, configured
   explicitly (no reading env vars itself - that's the consumer's job).
 

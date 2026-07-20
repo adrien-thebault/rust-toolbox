@@ -22,14 +22,14 @@ set (diesel, axum, tonic, lettre, ...).
 ```sh
 cargo build
 cargo fmt
-cargo clippy --all-targets --features sqlite,axum,mail
+cargo clippy --all-targets --features sqlite,axum,mail,rate-limit
 ./scripts/test-all.sh   # runs the suite once per feature combination below
 ```
 
 `sqlite`/`mysql`/`postgresql` are mutually exclusive diesel backends, so
 there's no single "test everything" feature set (`--all-features` fails to
 compile) - `scripts/test-all.sh` runs `cargo test` once per combination
-(`axum,mail,tower`; `sqlite`; `postgresql`; `mysql`) instead.
+(`axum,mail,tower,rate-limit`; `sqlite`; `postgresql`; `mysql`) instead.
 
 The `tests/` directory is a single harness (`tests/integration.rs`) whose
 module tree mirrors `src/` - `tests/diesel_tools/repository/find.rs` tests
