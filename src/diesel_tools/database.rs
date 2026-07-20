@@ -42,6 +42,9 @@ pub use mysql::*;
 /// SQLite
 #[cfg(feature = "sqlite")]
 mod sqlite {
+    use diesel::RunQueryDsl;
+    use diesel::r2d2::{CustomizeConnection, Error};
+
     #[cfg(any(feature = "mysql", feature = "postgresql"))]
     compile_error!("you can't use more than one database");
 
@@ -50,6 +53,71 @@ mod sqlite {
 
     /// database connection
     pub type DatabaseConnection = diesel::sqlite::SqliteConnection;
+
+    /// customizes every pooled SQLite connection with the pragmas that
+    /// start mattering once more than one connection touches the same file
+    /// - which an r2d2 pool guarantees will eventually happen:
+    /// - `busy_timeout`: SQLite's own default is 0ms, so a connection that
+    ///   finds the file locked by another connection fails immediately with
+    ///   "database is locked" instead of waiting. Setting this makes a
+    ///   blocked connection retry internally for up to `busy_timeout_ms`
+    ///   before giving up - a lock held for a normal single write/txn
+    ///   duration is then waited out instead of surfacing as an error.
+    /// - `foreign_keys`: SQLite doesn't enforce `REFERENCES` constraints
+    ///   unless this is set on each connection; left off by default since
+    ///   not every schema has them (enable per service via `.foreign_keys(true)`).
+    ///
+    /// ```ignore
+    /// DatabasePool::builder()
+    ///     .connection_customizer(Box::new(SqlitePragmas::default().foreign_keys(true)))
+    ///     .build(DatabaseManager::new(database_url))?;
+    /// ```
+    #[derive(Debug, Clone, Copy)]
+    pub struct SqlitePragmas {
+        /// milliseconds a connection spends retrying a locked database
+        /// before giving up with "database is locked"; defaults to 30_000
+        pub busy_timeout_ms: u32,
+        /// whether to run `PRAGMA foreign_keys = ON;` on every connection;
+        /// defaults to `false`
+        pub foreign_keys: bool,
+    }
+
+    impl Default for SqlitePragmas {
+        fn default() -> Self {
+            Self {
+                busy_timeout_ms: 30_000,
+                foreign_keys: false,
+            }
+        }
+    }
+
+    impl SqlitePragmas {
+        /// overrides the default 30_000ms busy timeout
+        pub fn busy_timeout_ms(mut self, ms: u32) -> Self {
+            self.busy_timeout_ms = ms;
+            self
+        }
+
+        /// enables `PRAGMA foreign_keys = ON;` on every connection
+        pub fn foreign_keys(mut self, enabled: bool) -> Self {
+            self.foreign_keys = enabled;
+            self
+        }
+    }
+
+    impl CustomizeConnection<DatabaseConnection, Error> for SqlitePragmas {
+        fn on_acquire(&self, conn: &mut DatabaseConnection) -> Result<(), Error> {
+            diesel::sql_query(format!("PRAGMA busy_timeout = {};", self.busy_timeout_ms))
+                .execute(conn)
+                .map_err(Error::QueryError)?;
+            if self.foreign_keys {
+                diesel::sql_query("PRAGMA foreign_keys = ON;")
+                    .execute(conn)
+                    .map_err(Error::QueryError)?;
+            }
+            Ok(())
+        }
+    }
 }
 
 #[cfg(feature = "sqlite")]
