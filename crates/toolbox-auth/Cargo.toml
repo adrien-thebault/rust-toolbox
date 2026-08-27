@@ -1,0 +1,62 @@
+[package]
+name         = "toolbox-auth"
+description  = "Identity: principals, roles, providers and sessions, with no transport dependency."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[[example]]
+name = "hash-password"
+path = "examples/hash-password.rs"
+# Without this a `cargo test` that does not enable `password` fails to compile
+# the example rather than skipping it.
+required-features = ["password"]
+
+[features]
+default = []
+# Password logins. Separate because a deployment that only federates has no
+# use for argon2.
+password = ["dep:argon2", "dep:password-hash"]
+# OIDC, which pulls openidconnect and reqwest.
+oidc = ["dep:openidconnect"]
+
+[dependencies]
+toolbox-core    = { workspace = true }
+toolbox-cluster = { workspace = true }
+serde           = { workspace = true, features = ["derive"] }
+serde_json      = { workspace = true }
+thiserror       = { workspace = true }
+getrandom       = { workspace = true }
+async-trait     = { workspace = true }
+# rust_crypto rather than aws_lc_rs: jsonwebtoken 11 requires exactly one and
+# panics at first use if neither is enabled. Pure Rust means no C toolchain and
+# no cmake in a consumer's build, which matters more here than the throughput
+# aws-lc-rs would buy on a token verified once per request.
+jsonwebtoken    = { workspace = true, features = ["rust_crypto"] }
+secrecy         = { workspace = true }
+ipnet           = { workspace = true }
+tracing         = { workspace = true }
+argon2          = { workspace = true, optional = true }
+password-hash   = { workspace = true, optional = true, features = ["getrandom", "std"] }
+openidconnect   = { workspace = true, optional = true, features = ["reqwest", "rustls-tls"], default-features = false }
+
+[dev-dependencies]
+rpassword       = { workspace = true }
+serde_json = { workspace = true }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros"] }
+toolbox-auth = { path = ".", features = ["password"] }
+ipnet        = { workspace = true }
+async-trait  = { workspace = true }
+secrecy      = { workspace = true }
+
+[lints]
+workspace = true
