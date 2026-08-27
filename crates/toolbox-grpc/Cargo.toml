@@ -1,0 +1,46 @@
+[package]
+name         = "toolbox-grpc"
+description  = "tonic building blocks: status conversion, backend clients, discovery and pagination."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+build      = "build.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[dependencies]
+toolbox-core    = { workspace = true }
+toolbox-server  = { workspace = true }
+toolbox-cluster = { workspace = true }
+tonic           = { workspace = true }
+tonic-types     = { workspace = true }
+tonic-health    = { workspace = true }
+tonic-reflection = { workspace = true }
+prost           = { workspace = true }
+tonic-prost     = { workspace = true }
+tower           = { workspace = true }
+http            = { workspace = true }
+tokio           = { workspace = true, features = ["rt", "net", "time", "sync"] }
+tokio-stream    = { workspace = true, features = ["net"] }
+pin-project-lite = { workspace = true }
+backon          = { workspace = true }
+secrecy         = { workspace = true }
+thiserror       = { workspace = true }
+getrandom       = { workspace = true }
+tracing         = { workspace = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true

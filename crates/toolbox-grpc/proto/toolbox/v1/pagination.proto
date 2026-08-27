@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+// Pagination and sorting, so every service's List RPCs speak one shape.
+//
+// A consumer imports this and deletes its own copy:
+//
+//   import "toolbox/v1/pagination.proto";
+//
+// with `toolbox_grpc::PROTO_INCLUDE` added to the build script's include path.
+package toolbox.v1;
+
+// Which page of a result set a caller wants.
+message PageRequest {
+  // Rows to skip. Must not be negative.
+  int64 offset = 1;
+  // Rows to return. Zero means unpaged: return everything, which is only safe
+  // on a set you know is bounded.
+  int64 limit = 2;
+  // The compact sort form, e.g. "-created_at,title". Empty means unsorted.
+  string sort = 3;
+}
+
+// What a page of results came with.
+message PageInfo {
+  // The offset that produced this page.
+  int64 offset = 1;
+  // The limit that produced it. Zero means the request was unpaged.
+  int64 limit = 2;
+  // Total rows matching the query, not just this page.
+  int64 total = 3;
+  // The sort that produced it.
+  string sort = 4;
+}
