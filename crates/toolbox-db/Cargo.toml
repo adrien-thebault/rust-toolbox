@@ -1,0 +1,53 @@
+[package]
+name         = "toolbox-db"
+description  = "Diesel over a blocking pool, with the blocking path unreachable from the async API."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[features]
+default = []
+# `Now` impls. NOT backend features - see the crate docs.
+chrono = ["dep:chrono"]
+time   = ["dep:time"]
+clap   = ["dep:clap"]
+
+[dependencies]
+toolbox-core       = { workspace = true }
+toolbox-macros     = { workspace = true }
+diesel             = { workspace = true, features = ["r2d2"] }
+diesel_migrations  = { workspace = true }
+tokio              = { workspace = true, features = ["rt"] }
+thiserror          = { workspace = true }
+tracing            = { workspace = true }
+chrono             = { workspace = true, optional = true, features = ["clock", "std"] }
+time               = { workspace = true, optional = true }
+clap               = { workspace = true, optional = true, features = ["derive", "env"] }
+
+[dev-dependencies]
+# toolbox-db declares no backend feature, so its own tests pick one here.
+# All three backends at once. This is the ADR 0001 spike, kept as a regression
+# test: it needs libpq and libmysqlclient present to build.
+diesel   = { workspace = true, features = [
+  "r2d2", "chrono", "returning_clauses_for_sqlite_3_35",
+  "sqlite", "postgres", "mysql",
+] }
+chrono   = { workspace = true, features = ["clock", "std"] }
+toolbox-core = { workspace = true }
+tokio    = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tempfile = { workspace = true }
+# The crate's own tests need its `chrono` feature; a self dev-dependency is how
+# a crate turns on one of its features for its own test build.
+toolbox-db = { path = ".", features = ["chrono"] }
+
+[lints]
+workspace = true
