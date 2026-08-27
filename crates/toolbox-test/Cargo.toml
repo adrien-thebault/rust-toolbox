@@ -1,0 +1,46 @@
+[package]
+name         = "toolbox-test"
+description  = "Test harness: throwaway databases, an in-process gateway, a gRPC cluster, and problem assertions."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[features]
+default = []
+db   = ["dep:toolbox-db", "dep:diesel", "dep:tempfile"]
+web  = ["dep:toolbox-web", "dep:axum", "dep:axum-test"]
+grpc = ["dep:toolbox-grpc", "dep:tonic", "dep:tokio-stream"]
+
+[dependencies]
+toolbox-core = { workspace = true }
+toolbox-db   = { workspace = true, optional = true }
+toolbox-web  = { workspace = true, optional = true }
+toolbox-grpc = { workspace = true, optional = true }
+axum         = { workspace = true, optional = true }
+axum-test    = { workspace = true, optional = true }
+tonic        = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true, features = ["net"] }
+diesel       = { workspace = true, optional = true, features = ["r2d2"] }
+tempfile     = { workspace = true, optional = true }
+tokio        = { workspace = true, features = ["rt", "net", "time", "macros"] }
+http         = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = { workspace = true }
+
+[dev-dependencies]
+tokio  = { workspace = true, features = ["rt-multi-thread", "macros"] }
+diesel = { workspace = true, features = ["r2d2", "sqlite"] }
+toolbox-test = { path = ".", features = ["db", "web"] }
+
+[lints]
+workspace = true
