@@ -1,2 +1,12 @@
 target/
-Cargo.lock
+
+# A copied .env.example, which holds real secrets once it is filled in.
+.env
+
+# Working documents for the rewrite. Root-anchored, and listed here rather than
+# in .git/info/exclude so that `git add -A` cannot sweep them into a commit from
+# a fresh clone either.
+/REWRITE.md
+/REVIEW.md
+/IMPLEMENTATION.md
+/MIGRATION.md
