@@ -1,0 +1,5 @@
+error: missing #[entity(..)]; #[derive(Entity)] needs at least `backend = <path>` and `id = <field>`
+  --> tests/ui/missing_entity_attribute.rs:13:12
+   |
+13 | pub struct Item {
+   |            ^^^^

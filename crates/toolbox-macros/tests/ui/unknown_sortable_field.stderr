@@ -1,0 +1,5 @@
+error: `sortable` names `nope`, which is not a field of this struct; fields are: id, title, created_at, deleted_at, version
+  --> tests/ui/unknown_sortable_field.rs:18:51
+   |
+18 | #[entity(backend = Backend, id = id, sortable(id, nope))]
+   |                                                   ^^^^

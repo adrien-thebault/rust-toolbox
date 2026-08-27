@@ -1,0 +1,5 @@
+error: #[derive(Entity)] needs named fields; a tuple struct has no column names
+ --> tests/ui/tuple_struct.rs:7:12
+  |
+7 | pub struct Item(i32, String);
+  |            ^^^^

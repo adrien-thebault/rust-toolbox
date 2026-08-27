@@ -1,0 +1,5 @@
+error: `version` names `title`, whose type is not an integer; optimistic locking increments the column, so it has to be one of i16, i32, i64, u16, u32, u64
+  --> tests/ui/version_not_an_integer.rs:18:48
+   |
+18 | #[entity(backend = Backend, id = id, version = title)]
+   |                                                ^^^^^

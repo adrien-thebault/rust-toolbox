@@ -1,0 +1,5 @@
+error: `#[entity(..)]` needs `id = <field>` naming the primary key
+  --> tests/ui/missing_id.rs:18:1
+   |
+18 | #[entity(backend = Backend)]
+   | ^

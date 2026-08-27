@@ -1,0 +1,5 @@
+error: `soft_delete` names `title`, whose type is not `Option<_>`; a column that marks a row deleted has to be nullable
+  --> tests/ui/soft_delete_not_nullable.rs:18:52
+   |
+18 | #[entity(backend = Backend, id = id, soft_delete = title)]
+   |                                                    ^^^^^

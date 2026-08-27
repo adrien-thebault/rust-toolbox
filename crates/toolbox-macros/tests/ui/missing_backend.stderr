@@ -1,0 +1,5 @@
+error: `#[entity(..)]` needs `backend = <path>`, e.g. `backend = crate::Backend`
+  --> tests/ui/missing_backend.rs:18:1
+   |
+18 | #[entity(id = id)]
+   | ^

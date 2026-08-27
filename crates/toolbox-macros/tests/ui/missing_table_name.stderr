@@ -1,0 +1,5 @@
+error: #[derive(Entity)] needs diesel's `#[diesel(table_name = ...)]` to know which table to generate against
+ --> tests/ui/missing_table_name.rs:7:12
+  |
+7 | pub struct Item {
+  |            ^^^^

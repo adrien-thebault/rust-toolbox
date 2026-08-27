@@ -1,0 +1,5 @@
+error: `autoincrement` needs the database to assign `id`, so the column must be left out of inserts; add #[diesel(skip_insertion)] to the `id` field
+  --> tests/ui/autoincrement_without_skip_insertion.rs:18:34
+   |
+18 | #[entity(backend = Backend, id = id, autoincrement)]
+   |                                  ^^

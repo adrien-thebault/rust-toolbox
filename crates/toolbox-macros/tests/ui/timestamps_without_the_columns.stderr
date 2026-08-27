@@ -1,0 +1,5 @@
+error: `timestamps` needs a `created_at` field, which this struct does not have; fields are: id, title
+  --> tests/ui/timestamps_without_the_columns.rs:15:1
+   |
+15 | #[entity(backend = Backend, id = id, timestamps)]
+   | ^
