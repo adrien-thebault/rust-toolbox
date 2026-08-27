@@ -1,0 +1,12 @@
+# Product names that appear in prose. Without these, `doc_markdown` demands
+# backticks around "SQLite" in an English sentence.
+doc-valid-idents = [
+  "..DEFAULT..",
+  "SQLite", "PostgreSQL", "MySQL",
+  "WebSocket", "WebSockets", "EventSource",
+  "IPv4", "IPv6",
+  "CloudEvents", "OpenAPI", "OIDC", "PKCE", "JWKS",
+  "Keycloak", "Authentik", "ShedLock", "Cloudflare", "Turnstile", "hCaptcha",
+  "SvelteKit", "Kubernetes", "TypeScript", "JavaScript", "Swagger",
+  "ETag", "ETags", "KiB", "MiB", "GiB", "SVG", "HTML", "PNG", "IdP",
+]

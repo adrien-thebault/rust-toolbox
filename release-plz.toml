@@ -1,0 +1,6 @@
+[workspace]
+git_release_enable  = true
+changelog_update    = true
+dependencies_update = false
+publish             = false     # never crates.io - tags and git releases only
+semver_check        = true

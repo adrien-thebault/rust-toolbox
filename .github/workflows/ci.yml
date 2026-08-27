@@ -1,26 +1,20 @@
-# mirrors scripts/test-all.sh: sqlite/postgresql/mysql are mutually
-# exclusive diesel backends, so there's no single --all-features run - each
-# meaningful feature combination gets its own job instead. The postgresql
-# and mysql jobs run the same backend-generic integration tests as sqlite,
-# against real servers provided as service containers (the tests find them
-# via TOOLBOX_TEST_POSTGRES_URL / TOOLBOX_TEST_MYSQL_URL and soft-skip when
-# unset, so a local `cargo test` without a server still passes).
 name: CI
 
 on:
   push:
-    branches: [master]
   pull_request:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Nightly, because `group_imports` is unstable. Nothing else here needs it,
+  # and stable `cargo fmt` still produces the right output for everyday editing.
   fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
       - run: cargo fmt --all --check
@@ -33,19 +27,79 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --no-default-features --features sqlite,axum,mail,tower,rate-limit -- -D warnings
+      - uses: arduino/setup-protoc@v3
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        features: ["axum,mail,tower,rate-limit", "sqlite"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --no-default-features --features "${{ matrix.features }}"
+      - uses: arduino/setup-protoc@v3
+      - run: cargo test --workspace --all-features
 
+  # The example is the regression test the macros do not otherwise have: a
+  # derive with no consumer in the repository is a derive nobody has checked.
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: arduino/setup-protoc@v3
+      - run: cargo test -p example-todo -p example-web
+
+  hack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: arduino/setup-protoc@v3
+      - uses: taiki-e/install-action@cargo-hack
+      - run: cargo hack --feature-powerset --depth 2 check -p toolbox-db -p toolbox-web -p toolbox-auth -p toolbox
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: arduino/setup-protoc@v3
+      - run: cargo check --workspace --all-features
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  docs:
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: arduino/setup-protoc@v3
+      - run: cargo doc --workspace --all-features --no-deps
+
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: committed
+      - run: committed --no-merge-commit origin/${{ github.base_ref }}..HEAD
+
+  # toolbox-db is generic over the backend, so its cross-backend tests need real
+  # servers. They soft-skip when TOOLBOX_TEST_*_URL is unset.
   test-postgresql:
     runs-on: ubuntu-latest
     services:
@@ -67,8 +121,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libpq-dev
-      - run: cargo test --no-default-features --features postgresql
+      - uses: arduino/setup-protoc@v3
+      - run: sudo apt-get update && sudo apt-get install -y libpq-dev default-libmysqlclient-dev
+      - run: cargo test --workspace --all-features
 
   test-mysql:
     runs-on: ubuntu-latest
@@ -90,5 +145,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev
-      - run: cargo test --no-default-features --features mysql
+      - uses: arduino/setup-protoc@v3
+      - run: sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev libpq-dev
+      - run: cargo test --workspace --all-features

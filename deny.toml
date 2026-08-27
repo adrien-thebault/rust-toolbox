@@ -1,0 +1,79 @@
+# Every entry below is reviewed and carries a reason. An entry with no comment
+# is a bug: the point of this file is that somebody looked, not that the build
+# is quiet.
+
+[bans]
+multiple-versions = "deny"
+
+# Duplicates we cannot fix from here, because they are two upstream crates
+# pinning different majors of a shared dependency. Each names who pulls what.
+skip = [
+  # reqwest (captcha, oidc) pins tower-http 0.6; the toolbox uses 0.7. This is
+  # NOT the bug the ban exists for - that was a consumer declaring tower-http
+  # itself alongside the toolbox's - and it disappears without the captcha and
+  # oidc features.
+  { crate = "tower-http@0.6.11" },
+
+  # rand 0.8 via rsa/argon2; 0.9 via jsonwebtoken; 0.10 via getrandom's newest
+  # consumers. Three majors are live across the ecosystem right now.
+  { crate = "rand@0.8.8" }, { crate = "rand@0.9.5" },
+  { crate = "rand_core@0.6.4" }, { crate = "rand_core@0.9.5" },
+  { crate = "rand_chacha@0.3.1" }, { crate = "rand_chacha@0.9.0" },
+  { crate = "getrandom@0.2.17" }, { crate = "getrandom@0.3.4" },
+  { crate = "r-efi@5.3.0" },
+
+  # hashbrown ships inside std as well as standalone, and diesel, indexmap,
+  # moka and lru each pin a different major.
+  { crate = "hashbrown@0.14.5" }, { crate = "hashbrown@0.15.5" },
+  { crate = "hashbrown@0.16.1" },
+  { crate = "foldhash@0.1.5" },
+
+  # thiserror 1 via older transitive crates; the workspace itself is on 2.
+  { crate = "thiserror@1.0.69" }, { crate = "thiserror-impl@1.0.69" },
+
+  # darling 0.20 via diesel_derives, 0.21 via utoipa, 0.23 via garde.
+  { crate = "darling@0.20.11" }, { crate = "darling@0.21.3" },
+  { crate = "darling_core@0.20.11" }, { crate = "darling_core@0.21.3" },
+  { crate = "darling_macro@0.20.11" }, { crate = "darling_macro@0.21.3" },
+
+  # Build-time only, and a proc-macro crate's syn version is invisible at
+  # runtime.
+  { crate = "syn@2.0.119" },
+  { crate = "winnow@0.7.15" },
+  { crate = "cpufeatures@0.2.17" },
+
+  # Windows bindings, on a workspace that targets Linux.
+  { crate = "windows-sys@0.52.0" }, { crate = "windows-sys@0.61.2" },
+]
+
+[licenses]
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  # foldhash, via hashbrown. Permissive.
+  "Zlib",
+  # webpki-roots, via rustls. The Mozilla root bundle is data, and this is its
+  # permissive data licence.
+  "CDLA-Permissive-2.0",
+]
+# cloudevents-sdk sets `license-file` rather than a license expression, so
+# cargo-deny reads the file (unmodified Apache 2.0) and warns while accepting
+# it. Informational only; a `[[licenses.clarify]]` does not silence it.
+
+[advisories]
+ignore = [
+  # RSA sidechannel (Marvin Attack). Reachable only through private-key
+  # operations - decryption and signing - and nothing here holds an RSA private
+  # key. `rsa` is pulled by openidconnect for RS256 ID-token *verification*,
+  # which is a public-key operation, and by jsonwebtoken's rust_crypto feature
+  # for algorithms this toolbox does not issue. There is no fixed release.
+  # Re-check on every `rsa` release.
+  { id = "RUSTSEC-2023-0071", reason = "public-key verification only; no RSA private key exists in this workspace" },
+
+  # `paste` is a proc-macro pulled by utoipa-axum. Unmaintained rather than
+  # vulnerable, build-time only, nothing in the shipped binary.
+  { id = "RUSTSEC-2024-0436", reason = "build-time proc-macro via utoipa-axum; unmaintained, not vulnerable" },
+]

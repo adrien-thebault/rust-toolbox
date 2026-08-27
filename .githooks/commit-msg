@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rejects a commit whose message doesn't follow Conventional Commits, using
-# `committed` (https://github.com/crate-ci/committed) — see CONTRIBUTING.md.
+# `committed` (https://github.com/crate-ci/committed) - see CONTRIBUTING.md.
 # Opt in with: git config core.hooksPath .githooks
 set -euo pipefail
 

@@ -5,4 +5,11 @@ allowed_types = [
   "feat", "fix", "docs", "style", "refactor", "perf", "test",
   "chore", "ci", "build", "revert",
 ]
-subject_length = 72
+# 100 rather than the default 72: the rewrite's commit subjects are the
+# changelog's content, and several name three things a package delivers.
+subject_length = 100
+# line_length also governs the subject line, so it has to match.
+line_length = 100
+# Subjects are lowercase here; cliff.toml renders them with `upper_first`, so the
+# changelog is capitalized either way.
+subject_capitalized = false
