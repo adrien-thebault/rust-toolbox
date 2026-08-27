@@ -1,0 +1,27 @@
+[package]
+name         = "toolbox-core"
+description  = "Transport-neutral vocabulary: error kinds, RFC 9457 problems and pagination."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+# tests/ holds one harness whose module tree mirrors src/; without this cargo
+# would also compile each tests/*.rs as its own extra test crate.
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[dependencies]
+serde     = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
