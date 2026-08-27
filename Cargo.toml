@@ -19,6 +19,7 @@ publish      = false    # never crates.io
 toolbox-core   = { version = "0.2.0", path = "crates/toolbox-core" }
 toolbox-db     = { version = "0.2.0", path = "crates/toolbox-db" }
 toolbox-macros = { version = "0.2.0", path = "crates/toolbox-macros" }
+toolbox-cluster = { version = "0.2.0", path = "crates/toolbox-cluster" }
 
 # external crates: ONE version per crate, workspace-wide.
 serde      = { version = "1.0" }
