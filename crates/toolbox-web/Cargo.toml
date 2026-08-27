@@ -1,0 +1,85 @@
+[package]
+name         = "toolbox-web"
+description  = "axum building blocks: RFC 9457 errors, typed RBAC extractors, health and rate limiting."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[features]
+default = []
+# Per-IP throttling. Separate from the crate's core because it pulls the
+# tower_governor/governor chain, which most consumers do not want.
+rate-limit = ["dep:tower_governor", "dep:governor", "dep:toolbox-cluster"]
+# tower_governor's KeyExtractor gains a `name` method only when its own tracing
+# feature is on, so ours has to be enabled through this rather than reached by
+# feature unification from elsewhere in a workspace.
+governor-tracing = ["rate-limit", "tower_governor/tracing"]
+# OpenAPI generation and a Scalar docs page. Separate because a service with no
+# public HTTP API has no use for either.
+openapi = ["dep:utoipa", "dep:utoipa-axum", "dep:utoipa-scalar"]
+# The login/refresh/logout router and the session middleware. It pulls
+# `rate-limit` because the credential routes are throttled by the router
+# itself: an opt-out would be a login endpoint with no limit by default.
+auth-router = ["rate-limit", "dep:secrecy"]
+# Captcha verification for login forms.
+captcha = ["dep:reqwest", "dep:secrecy", "dep:async-trait"]
+# Replaying the response for a repeated Idempotency-Key.
+idempotency = ["dep:toolbox-cluster"]
+# Server-sent events with a fan-out hub and ticket auth.
+realtime = ["dep:toolbox-cluster", "dep:cloudevents-sdk", "dep:futures-core", "dep:futures-util", "axum/macros"]
+
+[dependencies]
+toolbox-core   = { workspace = true }
+toolbox-server = { workspace = true }
+toolbox-auth   = { workspace = true }
+toolbox-cluster = { workspace = true, optional = true }
+cloudevents-sdk = { workspace = true, optional = true }
+axum           = { workspace = true, features = ["multipart"] }
+axum-extra     = { workspace = true, features = ["typed-header"] }
+http           = { workspace = true }
+tower          = { workspace = true }
+tower-http     = { workspace = true, features = ["cors"] }
+tokio          = { workspace = true, features = ["rt", "net", "signal"] }
+serde          = { workspace = true, features = ["derive"] }
+serde_json     = { workspace = true }
+garde          = { workspace = true, features = ["derive"] }
+thiserror      = { workspace = true }
+getrandom       = { workspace = true }
+tracing        = { workspace = true }
+tower_governor = { workspace = true, optional = true }
+governor       = { workspace = true, optional = true }
+utoipa         = { workspace = true, optional = true, features = ["axum_extras"] }
+utoipa-axum    = { workspace = true, optional = true }
+utoipa-scalar  = { workspace = true, optional = true, features = ["axum"] }
+futures-core   = { workspace = true, optional = true }
+futures-util   = { workspace = true, optional = true }
+secrecy        = { workspace = true, optional = true }
+async-trait    = { workspace = true, optional = true }
+reqwest        = { workspace = true, optional = true, features = ["json", "rustls-tls"] }
+
+[dev-dependencies]
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tower      = { workspace = true, features = ["util"] }
+http-body-util = { workspace = true }
+garde      = { workspace = true, features = ["derive", "email"] }
+utoipa     = { workspace = true, features = ["axum_extras", "macros"] }
+serde      = { workspace = true, features = ["derive"] }
+thiserror  = { workspace = true }
+toolbox-web = { path = ".", features = ["rate-limit", "openapi", "auth-router", "captcha", "idempotency", "realtime"] }
+toolbox-auth = { workspace = true, features = ["password"] }
+toolbox-cluster = { workspace = true }
+async-trait = { workspace = true }
+secrecy    = { workspace = true }
+futures-executor = { workspace = true }
+
+[lints]
+workspace = true
