@@ -1,0 +1,44 @@
+[package]
+name         = "toolbox-server"
+description  = "Transport-agnostic runtime: W3C trace context, layer stacks, deadlines and graceful drain."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[features]
+default = []
+clap = ["dep:clap"]
+
+[dependencies]
+toolbox-core     = { workspace = true }
+http             = { workspace = true }
+http-body        = { workspace = true }
+tower            = { workspace = true }
+tower-http       = { workspace = true, features = ["catch-panic", "trace", "util"] }
+tokio            = { workspace = true, features = ["rt", "time", "signal", "sync", "macros", "net"] }
+tracing          = { workspace = true }
+pin-project-lite = { workspace = true }
+uuid             = { workspace = true, features = ["v7"] }
+bytes            = { workspace = true }
+toolbox-cluster  = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
+thiserror        = { workspace = true }
+clap             = { workspace = true, optional = true, features = ["derive", "env"] }
+
+[dev-dependencies]
+tokio           = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }
+tower           = { workspace = true, features = ["util"] }
+http-body-util  = { workspace = true }
+toolbox-server  = { path = ".", features = ["clap"] }
+
+[lints]
+workspace = true
