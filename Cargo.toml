@@ -21,6 +21,7 @@ toolbox-server = { version = "0.2.0", path = "crates/toolbox-server" }
 toolbox-db     = { version = "0.2.0", path = "crates/toolbox-db" }
 toolbox-macros = { version = "0.2.0", path = "crates/toolbox-macros" }
 toolbox-cluster = { version = "0.2.0", path = "crates/toolbox-cluster" }
+toolbox-cluster-postgres = { version = "0.2.0", path = "crates/toolbox-cluster-postgres" }
 toolbox-auth   = { version = "0.2.0", path = "crates/toolbox-auth" }
 toolbox-web    = { version = "0.2.0", path = "crates/toolbox-web" }
 toolbox-grpc   = { version = "0.2.0", path = "crates/toolbox-grpc" }
