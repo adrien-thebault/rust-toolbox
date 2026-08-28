@@ -1,105 +1,172 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
 ## What this is
 
-A standalone library of generic Rust building blocks - diesel repository/service
-macros, tower logging/request-id layers, axum auth/RBAC/error types, a tonic
-`ServiceError` trait, and an SMTP mail sender. It was extracted out of a
-service backend because none of it is specific to that project's domain; it's
-consumed as a git dependency by that repo (and meant to be reusable by
-others).
+A cargo workspace of generic Rust building blocks - a diesel entity derive, a
+pool that keeps blocking calls off the async runtime, tower layer stacks, RFC
+9457 errors, axum extractors, tonic status conversion, the traits a cluster
+is wired from, and scheduled tasks. It was extracted out of a service backend because none of it is
+specific to that project's domain; it is consumed as a git dependency by that
+repo, and meant to be reusable by others.
 
-**This is the one hard rule for this repo**: nothing here may depend on, or
-encode assumptions about, any specific downstream project. If a change only
-makes sense in terms of one consumer's domain model, it belongs in that
-consumer's own crate, not here.
+Nothing here may depend on, or encode assumptions about, any specific
+downstream project. If a change only makes sense in terms of one consumer's
+domain model, it belongs in that consumer's own crate, not here.
 
 ## Architecture
 
-Every module lives behind its own Cargo feature flag and is independently
-optional - a consumer enables only what it needs:
+Dependency order, which is the thing to get right first:
 
-- `diesel_tools` (feature `diesel`, plus `sqlite`/`mysql`/`postgresql` for the
-  backend) - `impl_repository!` + `impl_save!` generate a diesel CRUD
-  repository from a schema module, entity type, and id column (`impl_save!`
-  has a plain-upsert and an `autoincrement` flavor, picked by the id column's
-  shape). `service/database_service.rs` (pool → tonic server) and
-  `service/entity_service.rs` (find/save/delete request handling) are the
-  two traits a `*Service` type implements. `pagination.rs` has `Page`,
-  `PageRequest`, `Sort`.
-- `tower_tools` (feature `tower`) - request-id assignment/propagation and
-  request-tracing layers.
-- `tonic_tools` (feature `tonic`) - the `ServiceError` trait
-  (`code`/`domain`/`status_code`/`metadata`) and `to_status`/`from_status`
-  conversions to/from `tonic::Status` via `google.rpc.ErrorInfo`
-  (`tonic-types`). Deliberately *not* a blanket `impl From<E: ServiceError>
-  for tonic::Status` - that would violate Rust's orphan rules for any
-  downstream crate defining its own `E`. Each consumer keeps its own
-  one-line `impl From<XError> for Status { to_status(err) }` instead.
-- `axum_tools` (feature `axum`, implies `tonic` - a hard compile-time
-  dependency, `api_error.rs` references `tonic_tools` unconditionally; does
-  *not* imply `tower`, since axum_tools' own code never touches it) -
-  `auth.rs` (`User`, `Credential`, `AuthBackend`, `SessionSecretProvider`),
-  `auth/jwt.rs` (session issue/verify), `auth/in_memory.rs` (a basic-auth
-  backend), `api_error.rs` (`ApiError`/`Problem`, an HTTP error type that
-  checks `tonic_tools::from_status` first before falling back to a flat
-  code→variant match). Role/permission types are deliberately *not* defined
-  here - a consumer defines its own `Role` enum with `impl AsRef<str>` and
-  calls `user.require_role(...)` with it.
-- `axum_tools::rate_limit` (feature `rate-limit`, implies `axum`) - a
-  separate feature from plain `axum` since it pulls in the
-  `tower_governor`/`governor` dependency chain that most `axum`-feature
-  consumers won't want. `resolve_client_ip` (the real client IP from the
-  rightmost, proxy-appended `X-Forwarded-For` entry, falling back to the raw
-  TCP peer), `ForwardedForKeyExtractor` (keys a `tower_governor` limiter by
-  `resolve_client_ip`'s IP, not `tower_governor`'s own leftmost-trusting
-  `SmartIpKeyExtractor`),
-  and `error_response_handler` (maps a `GovernorError` to
-  `ApiError`/`application/problem+json`, so a throttled request isn't the
-  one response shape that doesn't match every other error).
-- `mail_tools` (feature `mail`) - a reusable SMTP sender, configured
-  explicitly (no reading env vars itself - that's the consumer's job).
+```
+core -> db -> cluster -> server -> {web, grpc}
+```
 
-Module names are `diesel_tools`/`tower_tools`/`axum_tools`/`tonic_tools`
-rather than plain `diesel`/`tower`/`axum`/`tonic` on purpose: naming a module
-identically to the extern crate it wraps makes the crate name ambiguous
-wherever both are in scope, including inside the module's own macro-generated
-code.
+| Crate | Owns |
+|---|---|
+| `toolbox-core` | `ErrorKind`, `ServiceError`, `ErrorInfo`, RFC 9457 `Problem`, `Page`/`PageRequest`/`Sort`. serde and thiserror only |
+| `toolbox-macros` | `#[derive(Entity)]`. Proc-macro crate, so necessarily separate |
+| `toolbox-db` | `Db<C>`, `DbError`, `Entity`/`Now`, `Paginate`, locked `migrate()`, `SqlitePragmas`, `DatabaseArgs` |
+| `toolbox-cluster` | `CloudEvent`; the `EventBus`/`KeyValueStore`/`LockManager`/`Clock` traits, their local adapters, and the deployment guard |
+| `toolbox-cluster-postgres` | the shared adapters: outbox, key-value, leased locks |
+| `toolbox-schedule` | scheduled tasks that run once per cluster |
+| `toolbox-server` | trace context, `http_stack`/`grpc_stack`/`realtime_stack`, deadlines, shutdown, telemetry, `ServerArgs`/`DeploymentArgs`, `bind` |
+| `toolbox-auth` | `Principal`, `Role`, providers, sessions, refresh tokens, OIDC. No transport dependency, so a gRPC backend can validate a token without compiling axum |
+| `toolbox-web` | `ApiError`, `Authenticated<R>`, `ValidJson`, `PageQuery`, `Idempotent`, health, CORS, rate limiting, `client_ip`, OpenAPI, SSE, `serve_http` |
+| `toolbox-grpc` | `to_status`/`from_status`, `backend()`, `Discovery`, `pagination.proto`, health, reflection, service auth, `serve_grpc` |
+| `toolbox-test` | `temp_db`, `TestApp`, `TestCluster`, `assert_problem!`. Dev-only |
+| `toolbox` | facade features, prelude, `toolbox::deps` |
+
+Two boundaries that are easy to break by accident:
+
+- **`toolbox-web` must not depend on `toolbox-grpc`.** The seam is
+  `ErrorInfo`: grpc owns `Status -> ErrorInfo`, web owns
+  `ErrorInfo -> ApiError`. There is no exception and no feature that adds one:
+  code needing both transports belongs in the consumer, not here.
+- **`toolbox-db` declares no backend feature.** It is generic over
+  `C: R2D2Connection`, and the entity names the backend as a *type*.
+
+Anything with a domain of its own goes in `incubator/`, which is outside the
+workspace and has its own README. That is where `toolbox-files` went.
 
 ## Commands
 
 ```sh
-cargo build --features sqlite,axum,mail
-cargo fmt --all
-cargo clippy --all-targets --features sqlite,axum,mail
-cargo test --features sqlite,axum,mail <substring>   # single test, substring match
-./scripts/test-all.sh   # cargo test once per feature combination (see below)
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo +nightly fmt --all           # group_imports is nightly-only
+cargo hack --feature-powerset --depth 2 check -p toolbox-db -p toolbox-web -p toolbox-auth -p toolbox
+cargo deny check
+./scripts/changelog.sh
+./scripts/example.sh                 # the gRPC cluster example, end to end
+./scripts/openapi.sh                 # regenerate the example's committed spec
+./scripts/hash-password.sh           # an argon2 hash in PHC format
 ```
 
-There's no workspace here - just this one crate. `sqlite`/`mysql`/`postgresql`
-are mutually exclusive diesel backends (all three enabled together, e.g. via
-`--all-features`, fails to compile with re-export/impl conflicts), so
-there's no single "test everything" command - `scripts/test-all.sh` runs
-`cargo test --no-default-features --features <set>` once for each of
-`axum,mail`; `sqlite`; `postgresql`; `mysql`.
+Needs `protoc`, and `libpq` + `libmysqlclient` for `toolbox-db`'s
+three-backend test.
+
+`examples/grpc-cluster` and `templates/service` are the **same tree**: same
+crate layout, same modules, same two `main.rs`. The template adds the
+placeholders, the Dockerfile and the compose file; the example adds the
+end-to-end test. A change to one belongs in both, and the example's test is
+what proves the shape still works. Neither ships a second binary - a tool that
+prints a file is an `[[example]]`, not a `[[bin]]`.
+
+Each crate carries its own `README.md` describing its modules; the top-level
+README links them.
 
 ## Conventions to preserve
 
-- **Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)**
-  and commits should be signed - see [CONTRIBUTING.md](CONTRIBUTING.md).
-  `CHANGELOG.md` is generated from commit history with
-  [git-cliff](https://git-cliff.org/) (`scripts/changelog.sh`), so a
-  malformed type/scope means a commit silently drops out of, or gets
-  miscategorized in, the changelog.
-- **No project-specific naming or assumptions.** Error domains, table names,
-  role strings, etc. are all supplied by the consumer at the call site, not
-  hardcoded here.
-- **`#![warn(missing_docs)]` is on** (`src/lib.rs`) - every public item needs
-  a doc comment.
-- Diesel `AsChangeset` skips `Option<T>` fields on `None` by default (doesn't
-  null them out) - this is diesel's behavior, not this crate's, but it's a
-  common gotcha for anyone extending `diesel_tools`: a nullable column that
-  needs to be clearable needs `#[diesel(treat_none_as_null = true)]` on that
-  field in the *consumer's* model, not here.
+**Three questions before adding anything**, in order:
+
+1. **Does a crate already do this?** Read the top two results' docs, not their
+   names. Then say what the module adds: it unifies an error type across a
+   boundary; it encodes a decision you would otherwise re-make wrong; it
+   removes a trap the underlying crate makes easy; it bridges two crates that
+   do not know about each other; or it is invoked identically in every project
+   *and* the underlying API needs more than ten lines of setup. If the answer
+   is "it is nicer than calling X directly", **stop**.
+2. **Does a standard already define this?** For any format, header, envelope
+   or wire contract. If one exists and fits, implement it even when bespoke
+   would be 20% less code. If it does not fit, write why in the doc comment.
+3. **Does it hold state across requests?** Then it is a **trait with
+   adapters**, not a struct: a local adapter, at least one shared adapter,
+   capabilities declared rather than assumed, and unsupported operations
+   failing at wiring time rather than at runtime.
+
+**Write the answer into the module's doc comment.** One sentence, straight
+after the summary line, saying why the module is there. No "Why this exists:"
+preamble - just the reason. It is what lets the decision be re-opened in two
+years when the ecosystem moves.
+
+**One datetime library, named once per project.** `chrono`, through the
+consumer's own `crate::Timestamp` alias. Use it where it is the clearest thing
+to use - a scheduler's next fire time is a `DateTime`, not an integer - and
+keep it out of a signature where a plain `Duration` or an IANA name string says
+the same thing. The point is that swapping it later is one alias, not that it
+is banned.
+
+**A trait needs two implementations or `dyn`.** Otherwise write a function.
+This is the rule that deleted `Controller`, `EntityService`, `DatabaseService`,
+`Find`, `Save`, `Delete` and `Repository`.
+
+**Never block the async runtime.** Any diesel call reachable from an `async fn`
+goes through `Db::run`, `Db::query` or `Db::transaction`. The one escape hatch
+is named `blocking_conn()` so it shows up in review.
+
+**Backends and datetimes are named exactly once per project** -
+`crate::Backend` and `crate::Timestamp`. That is what makes swapping either a
+one-line change.
+
+**Keep comments short.** One line saying what the item is, plus at most a
+sentence of *why* when the why is not obvious. No restating the signature in
+prose. Reasoning that needs a paragraph goes in the crate's README, not in
+a `//`. The
+two exceptions are the one-line "why this exists" and a note where getting it
+wrong is a bug.
+
+**Hyphens only.** Use `-`. Never an em dash (U+2014), an en dash (U+2013), a
+figure dash (U+2012) or a horizontal bar (U+2015) - in code, comments, error
+strings, commit messages, markdown or generated output. Box-drawing characters
+in tree diagrams are not dashes and are fine.
+
+**Conventional Commits, scoped by crate** (`feat(db):`, `feat(web):`). The
+changelog is generated from them, so a malformed type or scope silently drops
+a commit.
+
+**`missing_docs` is warned workspace-wide** - every public item needs a doc
+comment. The exception is a `diesel::table!` schema module, which generates
+undocumented items; put `#![allow(missing_docs)]` there.
+
+**Rust and tooling only.** No npm package, no Svelte, nothing published to
+crates.io.
+
+### The diesel gotcha worth keeping
+
+`AsChangeset` skips `Option<T>` fields on `None` by default rather than
+nulling them. That is diesel's behaviour, not this crate's, but it bites: a
+nullable column that needs to be clearable needs
+`#[diesel(treat_none_as_null = true)]` on that field in the **consumer's**
+model.
+
+## What was deleted, and why
+
+Do not helpfully reintroduce these:
+
+- `Repository`, `Find`, `Save`, `Delete`, `impl_repository!` and friends -
+  replaced by `#[derive(Entity)]` generating inherent methods.
+- `EntityService` - its logging moved into `Db::run_named`, one span at DEBUG
+  instead of a dozen hand-written `info!` lines that logged reads at INFO.
+- `DatabaseService` - a service is a struct with `new(db)` and
+  `into_server()`.
+- `Controller<S>` - a router is `pub fn router() -> Router<S>`. A trait with
+  one method and one implementation is a function.
+- `request_id_layer()` / `propagate_request_id_layer()` - one-line renames of
+  `tower-http` calls, replaced by W3C trace context.
+- A hand-rolled `Cidr`, an RFC 3339 formatter and a `CloudEvent` struct -
+  `ipnet` and `cloudevents-sdk` already exist.
+- The three mutually exclusive backend features and their `compile_error!`
+  blocks.
