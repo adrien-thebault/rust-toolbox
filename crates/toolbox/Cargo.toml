@@ -1,0 +1,50 @@
+[package]
+name         = "toolbox"
+description  = "One dependency line for the toolbox: feature re-exports, a prelude, and the versions it was built against."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[features]
+default = ["core"]
+core    = ["dep:toolbox-core"]
+db      = ["core", "dep:toolbox-db", "dep:toolbox-macros"]
+cluster = ["core", "dep:toolbox-cluster"]
+server  = ["core", "cluster", "dep:toolbox-server"]
+auth    = ["core", "dep:toolbox-auth"]
+web     = ["server", "auth", "dep:toolbox-web", "dep:axum", "dep:axum-extra"]
+grpc    = ["server", "dep:toolbox-grpc", "dep:tonic"]
+# Everything. Named rather than relying on --all-features so a consumer can ask
+# for it explicitly.
+full    = ["db", "web", "grpc"]
+
+[dependencies]
+toolbox-core    = { workspace = true, optional = true }
+toolbox-db      = { workspace = true, optional = true }
+toolbox-macros  = { workspace = true, optional = true }
+toolbox-cluster = { workspace = true, optional = true }
+toolbox-server  = { workspace = true, optional = true }
+toolbox-auth    = { workspace = true, optional = true }
+toolbox-web     = { workspace = true, optional = true }
+toolbox-grpc    = { workspace = true, optional = true }
+
+# Re-exported through `toolbox::deps`. See that module's docs for the rule
+# about which crates can and cannot be re-exported.
+axum       = { workspace = true, optional = true }
+axum-extra = { workspace = true, optional = true }
+tonic      = { workspace = true, optional = true }
+http       = { workspace = true }
+tower      = { workspace = true }
+tower-http = { workspace = true }
+
+[lints]
+workspace = true

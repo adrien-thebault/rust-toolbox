@@ -26,6 +26,7 @@ toolbox-schedule = { version = "0.2.0", path = "crates/toolbox-schedule" }
 toolbox-auth   = { version = "0.2.0", path = "crates/toolbox-auth" }
 toolbox-web    = { version = "0.2.0", path = "crates/toolbox-web" }
 toolbox-grpc   = { version = "0.2.0", path = "crates/toolbox-grpc" }
+toolbox        = { version = "0.2.0", path = "crates/toolbox" }
 toolbox-test   = { version = "0.2.0", path = "crates/toolbox-test" }
 
 # external crates: ONE version per crate, workspace-wide.

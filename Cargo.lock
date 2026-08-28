@@ -3893,6 +3893,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "toolbox"
+version = "0.2.0"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "http",
+ "tonic",
+ "toolbox-auth",
+ "toolbox-cluster",
+ "toolbox-core",
+ "toolbox-db",
+ "toolbox-grpc",
+ "toolbox-macros",
+ "toolbox-server",
+ "toolbox-web",
+ "tower",
+ "tower-http 0.7.0",
+]
+
+[[package]]
 name = "toolbox-auth"
 version = "0.2.0"
 dependencies = [
