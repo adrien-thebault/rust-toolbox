@@ -1,0 +1,23 @@
+name: OpenAPI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # A route whose schema changed without the committed spec being regenerated
+  # fails here, with a diff naming exactly what moved. Stable key ordering in
+  # dump_openapi is what makes this work at all.
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: arduino/setup-protoc@v3
+      - run: cargo run -p example-web --example dump-openapi > examples/grpc-cluster/web/openapi.json
+      - name: The committed spec is out of date - run the command above and commit the result
+        run: git diff --exit-code examples/grpc-cluster/web/openapi.json
