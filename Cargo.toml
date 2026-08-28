@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members  = ["crates/*"]
+# `examples/*/grpc/*` because a domain is a crate and `grpc/` only groups them.
+members  = ["crates/*", "examples/*/grpc/*", "examples/*/web"]
 # `incubator/` is deliberately absent: those crates carry their own
 # `[workspace]` table, so they are not built, tested or linted here.
 # See incubator/README.md.

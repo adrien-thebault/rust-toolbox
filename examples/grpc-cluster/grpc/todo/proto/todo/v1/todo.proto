@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package todo.v1;
+
+import "toolbox/v1/pagination.proto";
+
+// The backend the gateway talks to. Note that it imports the toolbox's
+// pagination messages rather than declaring its own: that import is the
+// ~90-line conversion block every consumer used to copy.
+service TodoService {
+  rpc GetTodo(GetTodoRequest) returns (Todo);
+  rpc ListTodos(ListTodosRequest) returns (ListTodosResponse);
+  rpc CreateTodo(CreateTodoRequest) returns (Todo);
+  rpc CompleteTodo(CompleteTodoRequest) returns (Todo);
+  rpc DeleteTodo(DeleteTodoRequest) returns (DeleteTodoResponse);
+}
+
+message Todo {
+  int32 id = 1;
+  string title = 2;
+  bool done = 3;
+  int32 version = 4;
+}
+
+message GetTodoRequest {
+  int32 id = 1;
+}
+
+message ListTodosRequest {
+  toolbox.v1.PageRequest page = 1;
+  // Only todos whose title contains this. Exercises a hand-written filter
+  // composing with the toolbox's pagination.
+  string title_contains = 2;
+}
+
+message ListTodosResponse {
+  repeated Todo items = 1;
+  toolbox.v1.PageInfo page = 2;
+}
+
+message CreateTodoRequest {
+  string title = 1;
+}
+
+message CompleteTodoRequest {
+  int32 id = 1;
+  // The version the caller read, for optimistic locking.
+  int32 version = 2;
+}
+
+message DeleteTodoRequest {
+  int32 id = 1;
+}
+
+message DeleteTodoResponse {
+  int32 deleted = 1;
+}

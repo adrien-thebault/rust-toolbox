@@ -1,0 +1,68 @@
+# `docker compose up` runs the two services; `docker compose run --rm test`
+# runs the end-to-end proof. Both mount the repository and build inside the
+# official image, so there is no Dockerfile here to keep in step with the
+# template's - that one is the shape you actually deploy.
+x-rust: &rust
+  image: rust:1.88-bookworm
+  working_dir: /work
+  env_file: [.env]
+  volumes:
+    - ../..:/work
+    - cargo-registry:/usr/local/cargo/registry
+    # A named volume, so a container build never writes into the host's target
+    # directory and the two cannot invalidate each other.
+    - target:/work/target
+    - data:/data
+
+services:
+  todo:
+    <<: *rust
+    environment:
+      LISTEN_ADDR: 0.0.0.0:50051
+    command:
+      - bash
+      - -euo
+      - pipefail
+      - -c
+      - |
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends protobuf-compiler libsqlite3-dev
+        cargo run -p example-todo
+
+  gateway:
+    <<: *rust
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8080
+      TODO_BACKEND: http://todo:50051
+    ports: ["8080:8080"]
+    # Ordering only: `backend()` connects lazily, so the gateway starts whether
+    # or not the backend is listening yet and the first call retries.
+    depends_on: [todo]
+    command:
+      - bash
+      - -euo
+      - pipefail
+      - -c
+      - |
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends protobuf-compiler libsqlite3-dev
+        cargo run -p example-web
+
+  test:
+    <<: *rust
+    # Behind a profile, so `up` does not start it: `docker compose run --rm test`.
+    profiles: [test]
+    command:
+      - bash
+      - -euo
+      - pipefail
+      - -c
+      - |
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends protobuf-compiler libsqlite3-dev
+        cargo test -p example-todo -p example-web
+
+volumes:
+  cargo-registry:
+  target:
+  data:

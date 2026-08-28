@@ -1,0 +1,39 @@
+[package]
+name         = "example-todo"
+description  = "The example's todo domain: it owns the database and knows nothing about HTTP."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+build      = "build.rs"
+
+[lib]
+name = "example_todo"
+path = "src/lib.rs"
+
+[dependencies]
+toolbox-core    = { workspace = true }
+toolbox-db      = { workspace = true, features = ["chrono", "clap"] }
+toolbox-grpc    = { workspace = true }
+toolbox-server  = { workspace = true, features = ["clap"] }
+
+diesel     = { workspace = true, features = ["r2d2", "sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
+# Required by `toolbox_db::embed_migrations!`, which expands to a path in it.
+diesel_migrations = { workspace = true }
+chrono     = { workspace = true, features = ["clock", "std"] }
+clap       = { workspace = true, features = ["derive", "env"] }
+prost      = { workspace = true }
+tonic-prost = { workspace = true }
+thiserror  = { workspace = true }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net"] }
+tonic      = { workspace = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true }
+toolbox-grpc      = { workspace = true }
+
+[lints]
+workspace = true

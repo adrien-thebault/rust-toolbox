@@ -1086,6 +1086,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-todo"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "diesel",
+ "diesel_migrations",
+ "prost",
+ "thiserror 2.0.20",
+ "tokio",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "toolbox-core",
+ "toolbox-db",
+ "toolbox-grpc",
+ "toolbox-server",
+]
+
+[[package]]
+name = "example-web"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "clap",
+ "diesel",
+ "example-todo",
+ "garde",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tonic",
+ "toolbox-auth",
+ "toolbox-cluster",
+ "toolbox-core",
+ "toolbox-db",
+ "toolbox-grpc",
+ "toolbox-server",
+ "toolbox-test",
+ "toolbox-web",
+ "utoipa",
+]
+
+[[package]]
 name = "expect-json"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
