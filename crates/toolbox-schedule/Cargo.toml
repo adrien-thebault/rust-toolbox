@@ -1,0 +1,35 @@
+[package]
+name         = "toolbox-schedule"
+description  = "Cluster-safe scheduled tasks: cron with a DST policy, exclusive runs and a mandatory timeout."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[dependencies]
+toolbox-core    = { workspace = true }
+toolbox-cluster = { workspace = true }
+# A separate crate rather than a feature on toolbox-cluster: cargo unifies
+# features across a workspace, so a gateway that schedules nothing would
+# compile croner and the metrics facade anyway.
+chrono          = { workspace = true, features = ["clock", "std"] }
+croner          = { workspace = true }
+async-trait     = { workspace = true }
+metrics         = { workspace = true }
+thiserror       = { workspace = true }
+tokio           = { workspace = true, features = ["rt", "time", "sync", "macros"] }
+tracing         = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true
