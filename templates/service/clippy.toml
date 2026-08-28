@@ -1,0 +1,9 @@
+# Product names that appear in prose. Without these, `doc_markdown` demands
+# backticks around "SQLite" in an English sentence. Add your own domain's names
+# rather than sprinkling backticks through the documentation.
+doc-valid-idents = [
+  "..DEFAULT..",
+  "SQLite", "PostgreSQL", "MySQL",
+  "OpenAPI", "OIDC", "Keycloak", "Kubernetes",
+  "IPv4", "IPv6", "KiB", "MiB", "GiB",
+]

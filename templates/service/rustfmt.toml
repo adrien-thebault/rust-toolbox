@@ -1,0 +1,15 @@
+edition = "2024"
+
+# Both are nightly-only: stable rustfmt prints one warning per crate and ignores
+# them, so `cargo fmt` still works for everyday editing and CI runs the check on
+# nightly.
+#
+# `group_imports`: "StdExternalCrate" is three groups separated by a blank line -
+# std/core/alloc, then external crates, then self/super/crate. The alternatives
+# are "Preserve" (whatever the author wrote) and "One" (a single sorted block).
+#
+# `imports_granularity`: "Crate" merges every path from one crate into a single
+# `use`. The alternatives are "Preserve", "Module" (one `use` per module),
+# "Item" (one per imported name) and "One" (one `use` for the whole file).
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"

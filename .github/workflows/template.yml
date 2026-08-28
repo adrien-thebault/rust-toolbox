@@ -1,0 +1,75 @@
+name: Template
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # A template that is not generated and built is a template that is broken and
+  # nobody knows. All four variants, every commit.
+  generate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        gateway: ["true", "false"]
+        database: ["sqlite", "postgres"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # rustfmt from nightly, because the generated rustfmt.toml sets
+      # `group_imports`.
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: arduino/setup-protoc@v3
+      - run: sudo apt-get update && sudo apt-get install -y libpq-dev
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-generate
+
+      - name: Generate
+        run: |
+          mkdir -p /tmp/generated && cd /tmp/generated
+          cargo generate --path "$GITHUB_WORKSPACE/templates/service" \
+            --name svc \
+            --define "gateway=${{ matrix.gateway }}" \
+            --define "database=${{ matrix.database }}" \
+            --silent
+
+      # The template pins a released tag, which does not exist for the commit
+      # under test. Point it at this checkout so CI verifies the code rather
+      # than the last release.
+      - name: Point the generated project at this checkout
+        run: |
+          cd /tmp/generated/svc
+          python3 - <<'PY'
+          import os, re
+          root = os.environ["GITHUB_WORKSPACE"]
+          s = open("Cargo.toml").read()
+          def f(m):
+              name, rest = m.group(1), m.group(2)
+              feats = re.search(r'(features\s*=\s*\[[^\]]*\])', rest)
+              extra = ", " + feats.group(1) if feats else ""
+              return f'{name} = {{ path = "{root}/crates/{name}"{extra} }}'
+          s = re.sub(r'^(toolbox-[a-z]+)\s*=\s*\{ git = "[^"]+", tag = "[^"]+"(.*?)\}$', f, s, flags=re.M)
+          open("Cargo.toml", "w").write(s)
+          PY
+
+      # A freshly generated project must pass its own CI, or the first thing a
+      # user does is fix the template.
+      - name: The generated project passes its own checks
+        run: |
+          cd /tmp/generated/svc
+          cargo +nightly fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo build --workspace
+          # The Dockerfile does `COPY Cargo.lock` with --locked, so the README
+          # tells you to build once and commit the result. Assert that works.
+          test -f Cargo.lock

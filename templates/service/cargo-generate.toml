@@ -1,0 +1,11 @@
+[template]
+cargo_generate_version = ">=0.20.0"
+
+[placeholders]
+gateway = { type = "bool", prompt = "Include an HTTP gateway alongside the gRPC service?", default = true }
+database = { type = "string", prompt = "Database backend", choices = ["sqlite", "postgres"], default = "sqlite" }
+
+# One template, not two. rust-template-grpc and rust-template-api were the same
+# code with different placeholders; the difference is this one prompt.
+[conditional.'gateway == false']
+ignore = ["web"]

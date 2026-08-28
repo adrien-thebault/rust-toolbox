@@ -1,0 +1,53 @@
+# A workspace, not one crate: a **domain** is a crate under `grpc/`, and a gRPC
+# service is a file under that crate's `service/`. Adding a second domain is a
+# new directory here and no edit to this file.
+[workspace]
+resolver = "3"
+members  = ["grpc/*"{% if gateway %}, "web"{% endif %}]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+# Pinned to a tag, never a branch: a branch means the next `cargo update` can
+# bring a breaking change nobody chose.
+toolbox-core    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
+toolbox-db      = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["chrono", "clap"] }
+toolbox-cluster = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
+toolbox-server  = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["clap"] }
+toolbox-grpc    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
+{% if gateway %}toolbox-auth    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["password"] }
+toolbox-web     = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["rate-limit", "auth-router"] }
+{% endif %}
+# Declared directly, not through toolbox::deps: their derives emit absolute
+# `diesel::` and `serde::` paths.
+{% if database == "postgres" %}diesel = { version = "2.3", features = ["r2d2", "chrono", "postgres"] }
+{% else %}diesel = { version = "2.3", features = ["r2d2", "chrono", "sqlite", "returning_clauses_for_sqlite_3_35"] }
+{% endif %}# Required by `toolbox_db::embed_migrations!`, which expands to a path in it.
+diesel_migrations = "2.3"
+
+{% if gateway %}async-trait = "0.1"
+axum        = "0.8"
+garde       = { version = "0.23", features = ["derive"] }
+secrecy     = "0.10"
+{% endif %}chrono      = { version = "0.4", features = ["clock", "std"] }
+clap        = { version = "4", features = ["derive", "env"] }
+prost       = "0.14"
+serde       = { version = "1.0", features = ["derive"] }
+serde_json  = "1.0"
+thiserror   = "2.0"
+tokio       = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+tonic       = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tracing     = "0.1"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code  = "forbid"
+
+[workspace.lints.clippy]
+all      = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }

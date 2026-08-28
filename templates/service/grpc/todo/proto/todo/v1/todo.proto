@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package todo.v1;
+
+// The toolbox's pagination messages, imported rather than copied.
+import "toolbox/v1/pagination.proto";
+
+service TodoService {
+  rpc GetTodo(GetTodoRequest) returns (Todo);
+  rpc ListTodos(ListTodosRequest) returns (ListTodosResponse);
+  rpc CreateTodo(CreateTodoRequest) returns (Todo);
+}
+
+message Todo {
+  int32 id = 1;
+  string title = 2;
+  bool done = 3;
+  int32 version = 4;
+}
+
+message GetTodoRequest { int32 id = 1; }
+message CreateTodoRequest { string title = 1; }
+message ListTodosRequest { toolbox.v1.PageRequest page = 1; }
+
+message ListTodosResponse {
+  repeated Todo items = 1;
+  toolbox.v1.PageInfo page = 2;
+}

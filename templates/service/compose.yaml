@@ -1,0 +1,54 @@
+# Values come from .env - copy .env.example first.
+services:
+  {{project-name}}:
+    build: .
+    env_file: [.env]
+    environment:
+      LISTEN_ADDR: 0.0.0.0:50051
+    volumes:
+      - data:/data
+    {% if database == "postgres" %}
+    depends_on:
+      db:
+        condition: service_healthy
+    {% endif %}
+
+{% if gateway %}
+  gateway:
+    build: .
+    entrypoint: ["gateway"]
+    env_file: [.env]
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8080
+    ports: ["8080:8080"]
+    depends_on:
+      - {{project-name}}
+    healthcheck:
+      # /ready, not /health: readiness is what decides whether to send traffic,
+      # and it fails during a drain while liveness stays up.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+{% endif %}
+
+{% if database == "postgres" %}
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+{% endif %}
+
+volumes:
+  data:
+{% if database == "postgres" %}  pgdata:{% endif %}

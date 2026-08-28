@@ -1,0 +1,4 @@
+target/
+
+# A copied .env.example, which holds real secrets once it is filled in.
+.env
