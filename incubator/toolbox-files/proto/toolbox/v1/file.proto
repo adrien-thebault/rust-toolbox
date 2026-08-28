@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+// File transfer as a stream, so a file is never a single message.
+//
+// This is what makes the message-size apparatus evaporate: MAX_FILE_SIZE,
+// GRPC_MESSAGE_SIZE_LIMIT, UPLOAD_BODY_LIMIT and max_encoding_message_size on
+// both ends only ever existed to let whole files be one message.
+package toolbox.v1;
+
+service FileService {
+  // The first message must carry `info`; every message after it carries a
+  // chunk. Nothing on this path ever holds the whole file.
+  rpc Upload(stream UploadRequest) returns (FileInfo);
+  rpc Download(DownloadRequest) returns (stream Chunk);
+  rpc Stat(StatRequest) returns (FileInfo);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+message UploadRequest {
+  oneof payload {
+    UploadInfo info = 1;
+    bytes chunk = 2;
+  }
+}
+
+// Sent once, before any chunk.
+message UploadInfo {
+  // What the client called it. A label; the served type comes from sniffing.
+  string filename = 1;
+  // What the client claims it is. Recorded, never trusted.
+  string declared_mime = 2;
+}
+
+message FileInfo {
+  // The content-addressed key.
+  string key = 1;
+  // The blake3 hash, hex.
+  string hash = 2;
+  string filename = 3;
+  // Sniffed from the content.
+  string mime_type = 4;
+  uint64 size = 5;
+  // Whether identical content was already stored, so nothing was written.
+  bool deduplicated = 6;
+}
+
+message DownloadRequest {
+  string key = 1;
+  // An optional byte range, inclusive at both ends.
+  optional uint64 range_start = 2;
+  optional uint64 range_end = 3;
+}
+
+message Chunk {
+  bytes data = 1;
+}
+
+message StatRequest {
+  string key = 1;
+}
+
+message DeleteRequest {
+  string key = 1;
+}
+
+message DeleteResponse {
+  bool deleted = 1;
+}

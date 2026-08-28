@@ -1,0 +1,25 @@
+name: incubator
+
+# The crates in `incubator/` are outside the workspace, so nothing else builds
+# them. This keeps them compiling while they wait for a home.
+on:
+  push:
+    paths: ["incubator/**", "crates/**"]
+  pull_request:
+    paths: ["incubator/**", "crates/**"]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: check every incubated crate
+        run: |
+          for manifest in incubator/*/Cargo.toml; do
+            echo "==> $manifest"
+            cargo check --manifest-path "$manifest" --all-features --all-targets
+          done
