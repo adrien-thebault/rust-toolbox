@@ -12,10 +12,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use secrecy::SecretString;
 use toolbox_auth::{
-    AuthError, JwtCodec, PasswordProvider, ProviderRegistry, Role, SessionCodec, StoredUser,
+    AuthError, JwtIdentityProvider, PasswordIdentityProvider, ProviderRegistry, Role, StoredUser,
     UserStore,
 };
-use toolbox_cluster::InMemoryKeyValue;
 
 use crate::state::AppState;
 
@@ -90,7 +89,9 @@ pub enum ConfigError {
 /// A [`UserStore`] holding the single account this project seeds.
 #[derive(Debug, Clone)]
 pub struct SeededAdmin {
+    /// The one account's username.
     username: String,
+    /// Its PHC-format argon2 hash.
     password_hash: String,
 }
 
@@ -100,8 +101,8 @@ impl SeededAdmin {
     /// # Arguments
     ///
     /// * `config` - Read for the username and the PHC hash. The hash is never
-    ///   compared here: `PasswordProvider` verifies it either way, so a miss
-    ///   and a hit take the same time and response timing cannot enumerate
+    ///   compared here: `PasswordIdentityProvider` verifies it either way, so a
+    ///   miss and a hit take the same time and response timing cannot enumerate
     ///   accounts.
     #[must_use]
     pub fn new(config: &AuthConfig) -> Self {
@@ -129,18 +130,23 @@ impl UserStore for SeededAdmin {
     }
 }
 
-/// Everything a caller may log in with.
+/// Everything a caller may present, plus the verifier for the sessions this
+/// gateway mints.
 ///
 /// # Arguments
 ///
 /// * `config` - Read for the seeded account. Adding OIDC is one more
-///   `.with(...)` here and nothing else.
+///   `PasswordIdentityProvider`-style `.with(...)` here and nothing else.
+/// * `issuer` - The session codec, registered first so a bearer token on a
+///   normal request is verified before the password provider is consulted.
 #[must_use]
-pub fn providers(config: &AuthConfig) -> ProviderRegistry {
-    ProviderRegistry::new().with(PasswordProvider::new(SeededAdmin::new(config)))
+pub fn providers(config: &AuthConfig, issuer: Arc<JwtIdentityProvider>) -> ProviderRegistry {
+    ProviderRegistry::new()
+        .with_arc(issuer)
+        .with(PasswordIdentityProvider::new(SeededAdmin::new(config)))
 }
 
-/// How sessions are issued and verified.
+/// The codec that signs and verifies this gateway's sessions.
 ///
 /// # Arguments
 ///
@@ -148,11 +154,11 @@ pub fn providers(config: &AuthConfig) -> ProviderRegistry {
 ///
 /// # Errors
 /// [`ConfigError`] when the secret is too short for HS256.
-pub fn sessions(config: &AuthConfig) -> Result<SessionCodec, ConfigError> {
-    Ok(SessionCodec::Local(JwtCodec::new(
+pub fn session_issuer(config: &AuthConfig) -> Result<JwtIdentityProvider, ConfigError> {
+    Ok(JwtIdentityProvider::hmac(
         &config.session_secret,
         config.issuer.clone(),
-    )?))
+    )?)
 }
 
 /// Assemble the state the gateway runs on.
@@ -161,20 +167,19 @@ pub fn sessions(config: &AuthConfig) -> Result<SessionCodec, ConfigError> {
 ///
 /// * `todos` - A channel to the backend.
 /// * `config` - What identity is configured from.
-/// * `kv` - Where refresh tokens are kept. In process here; a clustered
-///   deployment passes the PostgreSQL adapter and nothing else changes.
 ///
 /// # Errors
-/// [`ConfigError`] when the session codec or the refresh store refuses.
+/// [`ConfigError`] when the session codec refuses the secret.
 pub fn state(
     todos: toolbox_grpc::BackendChannel,
     config: &AuthConfig,
-    kv: Arc<InMemoryKeyValue>,
 ) -> Result<AppState, ConfigError> {
+    let issuer = Arc::new(session_issuer(config)?);
     Ok(AppState {
         todos,
-        providers: Arc::new(providers(config)),
-        sessions: Arc::new(sessions(config)?),
-        refresh: Some(Arc::new(toolbox_auth::RefreshTokens::new(kv)?)),
+        providers: Arc::new(providers(config, Arc::clone(&issuer))),
+        issuer,
+        users: SeededAdmin::new(config),
+        session_secret: config.session_secret.clone(),
     })
 }

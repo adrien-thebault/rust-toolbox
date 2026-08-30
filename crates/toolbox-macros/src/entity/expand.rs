@@ -189,9 +189,24 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
                         _ => __q,
                     };
                 }
-                __q.select(<Self as ::diesel::SelectableHelper<#backend>>::as_select())
+                let __page: ::toolbox_core::Page<Self> = __q
+                    .select(<Self as ::diesel::SelectableHelper<#backend>>::as_select())
                     .paginate(request)
-                    .load_page::<Self, __C>(conn)
+                    .load_page::<Self, __C>(conn)?;
+                if __page.is_empty() {
+                    // The window count rides on the rows, so an offset past the
+                    // end brings back no total. `page()` adds no filter beyond
+                    // the soft-delete one, so the table count is the real total.
+                    let __total = Self::count(conn)?;
+                    if __total != __page.total() {
+                        return ::core::result::Result::Ok(::toolbox_core::Page::new(
+                            ::std::vec::Vec::new(),
+                            ::core::clone::Clone::clone(request),
+                            __total,
+                        ));
+                    }
+                }
+                ::core::result::Result::Ok(__page)
             }
 
             /// Insert or update this row, returning it as stored.
@@ -416,15 +431,29 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
     let update = cfg.version.as_ref().map_or_else(
         || {
             quote! {
-                ::diesel::update(#table::table.filter(#table::#id_field.eq(&__row.#id_field)))
-                    .set(&__row)
-                    .execute(conn)?;
+                let __changed = ::diesel::update(
+                    #table::table.filter(#table::#id_field.eq(&__row.#id_field)),
+                )
+                .set(&__row)
+                .execute(conn)?;
+                if __changed == 0 {
+                    // The row was there for the existence probe and gone by the
+                    // time we wrote it.
+                    return ::core::result::Result::Err(::toolbox_db::DbError::NotFound);
+                }
             }
         },
         |v| {
             quote! {
                 let __expected = __row.#v;
-                __row.#v = __expected + 1;
+                let ::core::option::Option::Some(__next) = __expected.checked_add(1) else {
+                    // The version column has run out of room; optimistic locking
+                    // cannot continue on a value it would have to reuse.
+                    return ::core::result::Result::Err(
+                        ::toolbox_db::DbError::VersionOverflow,
+                    );
+                };
+                __row.#v = __next;
                 let __changed = ::diesel::update(
                     #table::table
                         .filter(#table::#id_field.eq(&__row.#id_field))
@@ -441,6 +470,10 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
         },
     );
 
+    // An update has the whole row in hand, incremented version and all, so it
+    // is the stored state; only an insert has to read back what the database
+    // filled in.
+    let updated_row = quote! { ::core::result::Result::Ok(__row) };
     let reload = quote! {
         Self::find_by_id(conn, &__row.#id_field)?
             .ok_or(::toolbox_db::DbError::NotFound)
@@ -462,13 +495,20 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
             Dialect::Mysql => quote! {
                 #touch_created
                 #touch_updated
-                // Two statements, so they must see the same connection state.
+                // Two statements in one transaction: LAST_INSERT_ID() is scoped
+                // to this connection, so `WHERE id = LAST_INSERT_ID()` names the
+                // row this INSERT just created even while other sessions insert.
                 ::diesel::insert_into(#table::table).values(&__row).execute(conn)?;
-                let __new_id: Self = #table::table
-                    .select(<Self as ::diesel::SelectableHelper<#backend>>::as_select())
-                    .order(#table::#id_field.desc())
-                    .first::<Self>(conn)?;
-                ::core::result::Result::Ok(__new_id)
+                ::core::result::Result::Ok(
+                    #table::table
+                        .filter(#table::#id_field.eq(
+                            ::diesel::dsl::sql::<
+                                ::diesel::dsl::SqlTypeOf<#table::#id_field>,
+                            >("LAST_INSERT_ID()"),
+                        ))
+                        .select(<Self as ::diesel::SelectableHelper<#backend>>::as_select())
+                        .first::<Self>(conn)?,
+                )
             },
         };
         quote! {
@@ -477,7 +517,7 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
             } else {
                 #touch_updated
                 #update
-                #reload
+                #updated_row
             }
         }
     } else {
@@ -492,12 +532,13 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
             if __existing > 0 {
                 #touch_updated
                 #update
+                #updated_row
             } else {
                 #touch_created
                 #touch_updated
                 ::diesel::insert_into(#table::table).values(&__row).execute(conn)?;
+                #reload
             }
-            #reload
         }
     }
 }
@@ -560,13 +601,22 @@ fn delete_many_body(cfg: &EntityConfig) -> TokenStream {
                 )
             }
         },
-        |_col| {
+        |col| {
+            let ty = cfg
+                .soft_delete_type
+                .as_ref()
+                .expect("parsed alongside the column");
             quote! {
-                let mut __n = 0usize;
-                for __id in ids {
-                    __n += Self::delete_by_id(conn, __id)?;
-                }
-                ::core::result::Result::Ok(__n)
+                let __now: #ty = ::toolbox_db::Now::now();
+                ::core::result::Result::Ok(
+                    ::diesel::update(
+                        #table::table
+                            .filter(#table::#id_field.eq_any(ids.to_vec()))
+                            .filter(#table::#col.is_null()),
+                    )
+                    .set(#table::#col.eq(::core::option::Option::Some(__now)))
+                    .execute(conn)?,
+                )
             }
         },
     )

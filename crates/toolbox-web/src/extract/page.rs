@@ -10,8 +10,11 @@ use crate::error::ApiError;
 /// The raw query parameters, before validation.
 #[derive(Debug, Deserialize)]
 struct RawPage {
+    /// `?offset=`.
     offset: Option<i64>,
+    /// `?limit=`.
     limit: Option<i64>,
+    /// `?sort=`.
     sort: Option<String>,
 }
 

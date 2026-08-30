@@ -1,14 +1,16 @@
 use std::net::IpAddr;
 
 use ipnet::IpNet;
-use toolbox_auth::{AuthError, ForwardedIdentity, ProxyHeaderProvider, parse_network};
+use toolbox_auth::{
+    AuthError, ForwardedHeaders, ForwardedIdentity, ForwardedIdentityProvider, parse_network,
+};
 
 fn ip(s: &str) -> IpAddr {
     s.parse().unwrap()
 }
 
-fn provider() -> ProxyHeaderProvider {
-    ProxyHeaderProvider::new(&["10.0.0.0/8", "192.168.1.5"]).unwrap()
+fn provider() -> ForwardedIdentityProvider {
+    ForwardedIdentityProvider::new(&["10.0.0.0/8", "192.168.1.5"]).unwrap()
 }
 
 fn forwarded(peer: &str) -> ForwardedIdentity {
@@ -23,9 +25,23 @@ fn forwarded(peer: &str) -> ForwardedIdentity {
 /// A spoofable header is total authentication bypass, so there is no default
 /// and no "trust everything in development" mode - that mode is what reaches
 /// production.
+/// Different proxies use different header names; the default is oauth2-proxy's
+/// and the presets cover Authelia and the `X-Auth-Request-*` mode.
+#[test]
+fn the_header_set_is_configurable() {
+    assert_eq!(provider().headers().user, "x-forwarded-user");
+
+    let authelia = provider().with_headers(ForwardedHeaders::authelia());
+    assert_eq!(authelia.headers().user, "remote-user");
+    assert_eq!(authelia.headers().groups, "remote-groups");
+
+    let alt = provider().with_headers(ForwardedHeaders::x_auth_request());
+    assert_eq!(alt.headers().email, "x-auth-request-email");
+}
+
 #[test]
 fn it_refuses_to_construct_without_a_trusted_proxy_list() {
-    let err = ProxyHeaderProvider::new(&[]).unwrap_err();
+    let err = ForwardedIdentityProvider::new(&[]).unwrap_err();
     assert!(matches!(err, AuthError::Malformed(_)));
     assert!(
         err.to_string().contains("bypass"),
@@ -35,8 +51,8 @@ fn it_refuses_to_construct_without_a_trusted_proxy_list() {
 
 #[test]
 fn a_malformed_cidr_is_refused_at_construction() {
-    assert!(ProxyHeaderProvider::new(&["not-an-ip"]).is_err());
-    assert!(ProxyHeaderProvider::new(&["10.0.0.0/99"]).is_err());
+    assert!(ForwardedIdentityProvider::new(&["not-an-ip"]).is_err());
+    assert!(ForwardedIdentityProvider::new(&["10.0.0.0/99"]).is_err());
 }
 
 #[test]
@@ -84,7 +100,7 @@ fn a_trusted_peer_asserting_no_user_is_refused() {
 
 #[test]
 fn an_exact_address_is_a_host_route_not_a_network() {
-    let provider = ProxyHeaderProvider::new(&["192.168.1.5"]).unwrap();
+    let provider = ForwardedIdentityProvider::new(&["192.168.1.5"]).unwrap();
     assert!(provider.trusts(ip("192.168.1.5")));
     assert!(!provider.trusts(ip("192.168.1.6")));
 }

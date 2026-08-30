@@ -32,6 +32,7 @@ pub type HttpStacked<S> = CatchPanic<
 /// The body limit is not here - see [`StackConfig::max_body_bytes`].
 #[derive(Debug, Clone, Copy)]
 pub struct HttpStack {
+    /// Timeouts, trace level and the rest, shared with the other stacks.
     cfg: StackConfig,
 }
 

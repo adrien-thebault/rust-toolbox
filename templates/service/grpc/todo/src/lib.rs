@@ -36,7 +36,7 @@ pub const MIGRATIONS: toolbox_db::EmbeddedMigrations = toolbox_db::embed_migrati
 
 /// The generated protobuf types and service stubs.
 pub mod proto {
-    #![allow(missing_docs, clippy::pedantic, clippy::all)]
+    #![allow(missing_docs, clippy::missing_docs_in_private_items, clippy::pedantic, clippy::all)]
     tonic::include_proto!("todo.v1");
 
     /// The descriptor set, so `grpcurl` works without the protos to hand.

@@ -54,11 +54,12 @@ pub enum PageError {
 
 /// What a caller asked for: either a bounded window, or everything.
 ///
-/// The fields are private and the constructors validate, so an invalid window
-/// cannot be built. That is what removes the defensive clamp that used to sit
-/// in the query layer.
+/// [`PageRequest::paged`] and deserialization both reject a negative offset, a
+/// non-positive limit or a limit past the cap, so a request that reached the
+/// query layer has already been checked. Building the `Paged` variant with a
+/// struct literal skips that check, so prefer the constructor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", try_from = "PageRequestRepr")]
 pub enum PageRequest {
     /// A bounded window.
     Paged {
@@ -76,6 +77,43 @@ pub enum PageRequest {
         /// The requested ordering.
         sort: Sort,
     },
+}
+
+/// The wire shape of a [`PageRequest`], routed through the validating
+/// constructor on the way in so a deserialized window cannot skip the bounds
+/// check.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PageRequestRepr {
+    /// A bounded window.
+    Paged {
+        /// Rows to skip.
+        offset: i64,
+        /// Rows to return.
+        limit: i64,
+        /// The order to apply.
+        sort: Sort,
+    },
+    /// Every matching row, in `sort` order.
+    Unpaged {
+        /// The order to apply.
+        sort: Sort,
+    },
+}
+
+impl TryFrom<PageRequestRepr> for PageRequest {
+    type Error = PageError;
+
+    fn try_from(repr: PageRequestRepr) -> Result<Self, Self::Error> {
+        match repr {
+            PageRequestRepr::Paged {
+                offset,
+                limit,
+                sort,
+            } => Self::paged(offset, limit, sort),
+            PageRequestRepr::Unpaged { sort } => Ok(Self::Unpaged { sort }),
+        }
+    }
 }
 
 impl Default for PageRequest {
@@ -215,8 +253,11 @@ impl PageRequest {
 /// count that matched.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Page<T> {
+    /// The loaded window.
     items: Vec<T>,
+    /// The request that produced it.
     request: PageRequest,
+    /// Total rows that matched, ignoring the window.
     total: i64,
 }
 
@@ -306,10 +347,13 @@ impl<T> Page<T> {
     }
 
     /// The zero-based index of this page, or `None` when unpaged.
+    ///
+    /// A validated request never carries a non-positive limit; the `.max(1)`
+    /// only keeps a hand-built [`Page`] from dividing by zero.
     #[must_use]
     pub fn page_number(&self) -> Option<i64> {
         match &self.request {
-            PageRequest::Paged { offset, limit, .. } => Some(offset / *limit),
+            PageRequest::Paged { offset, limit, .. } => Some(offset / (*limit).max(1)),
             PageRequest::Unpaged { .. } => None,
         }
     }
@@ -319,7 +363,8 @@ impl<T> Page<T> {
     pub fn total_pages(&self) -> Option<i64> {
         match &self.request {
             PageRequest::Paged { limit, .. } => {
-                Some(self.total.saturating_add(*limit - 1) / *limit)
+                let limit = (*limit).max(1);
+                Some(self.total.saturating_add(limit - 1) / limit)
             }
             PageRequest::Unpaged { .. } => None,
         }

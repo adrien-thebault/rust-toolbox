@@ -24,18 +24,18 @@ required-features = ["password"]
 [features]
 default = []
 # Password logins. Separate because a deployment that only federates has no
-# use for argon2.
-password = ["dep:argon2", "dep:password-hash"]
-# OIDC, which pulls openidconnect and reqwest.
-oidc = ["dep:openidconnect"]
+# use for argon2. Also pulls the HMAC used to fingerprint a stored credential
+# for stateless refresh, and tokio for keeping argon2 off the async runtime.
+password = ["dep:argon2", "dep:password-hash", "dep:hmac", "dep:sha2", "dep:hex", "dep:tokio"]
+# Verifying a third party's bearer token against its published JWKS. Pulls
+# reqwest for the fetch and tokio for the rotation cache.
+jwks = ["dep:reqwest", "dep:tokio"]
 
 [dependencies]
 toolbox-core    = { workspace = true }
-toolbox-cluster = { workspace = true }
 serde           = { workspace = true, features = ["derive"] }
 serde_json      = { workspace = true }
 thiserror       = { workspace = true }
-getrandom       = { workspace = true }
 async-trait     = { workspace = true }
 # rust_crypto rather than aws_lc_rs: jsonwebtoken 11 requires exactly one and
 # panics at first use if neither is enabled. Pure Rust means no C toolchain and
@@ -47,7 +47,11 @@ ipnet           = { workspace = true }
 tracing         = { workspace = true }
 argon2          = { workspace = true, optional = true }
 password-hash   = { workspace = true, optional = true, features = ["getrandom", "std"] }
-openidconnect   = { workspace = true, optional = true, features = ["reqwest", "rustls-tls"], default-features = false }
+hmac            = { workspace = true, optional = true }
+sha2            = { workspace = true, optional = true }
+hex             = { workspace = true, optional = true }
+reqwest         = { workspace = true, optional = true, features = ["json", "rustls-tls"] }
+tokio           = { workspace = true, optional = true, features = ["rt", "sync"] }
 
 [dev-dependencies]
 rpassword       = { workspace = true }

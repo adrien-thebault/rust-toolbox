@@ -20,6 +20,7 @@ pub const TEST_PEER: SocketAddr =
 /// No port is bound and there is no readiness wait, because there is nothing
 /// to wait for: `axum-test` calls the router directly.
 pub struct TestApp {
+    /// The in-process axum-test server driving the router.
     server: axum_test::TestServer,
 }
 

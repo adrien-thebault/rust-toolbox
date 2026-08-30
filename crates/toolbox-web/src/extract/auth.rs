@@ -46,6 +46,7 @@ where
 {
     type Rejection = ApiError;
 
+    #[allow(clippy::unused_async_trait_impl)] // trait-required async signature
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let principal = parts
             .extensions
@@ -73,6 +74,7 @@ pub struct MaybeAuthenticated(pub Option<Principal>);
 impl<S: Send + Sync> FromRequestParts<S> for MaybeAuthenticated {
     type Rejection = std::convert::Infallible;
 
+    #[allow(clippy::unused_async_trait_impl)] // trait-required async signature
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         Ok(Self(parts.extensions.get::<Principal>().cloned()))
     }

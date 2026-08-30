@@ -1,5 +1,7 @@
 //! Who is making a request.
 
+pub mod mapping;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -7,8 +9,7 @@ use toolbox_core::{ErrorKind, ServiceError};
 
 /// A role, named by the consumer.
 ///
-/// Role *values* are deliberately not defined here: a toolbox that ships an
-/// `Admin` variant has an opinion about your domain. A consumer writes its own
+/// Role *values* are deliberately not defined here: A consumer writes its own
 /// enum, implements this, and gets `Authenticated<Admin>` in a handler
 /// signature.
 pub trait Role: Send + Sync + 'static {
@@ -31,8 +32,7 @@ pub struct Principal {
     pub subject: String,
     /// Who vouched for this principal.
     pub issuer: String,
-    /// The roles they hold, as strings, so the toolbox never needs to know
-    /// what a role means.
+    /// The roles they hold, as strings
     #[serde(default)]
     pub roles: BTreeSet<String>,
     /// For display only.
@@ -127,24 +127,29 @@ impl Principal {
         self
     }
 
-    /// Whether this principal holds `role`.
+    /// Whether this principal holds `role`, compared exactly.
     ///
     /// For a genuinely dynamic check. Prefer `Authenticated<R>` in the handler
-    /// signature, which cannot be forgotten.
+    /// signature, which cannot be forgotten. `"*"` is a literal here, not a
+    /// wildcard: for "any authenticated caller" use [`Principal::has`] with
+    /// [`AnyRole`].
     ///
     /// # Arguments
     ///
-    /// * `role` - The role to test for, compared exactly. The mapping's case
-    ///   rule is what makes that comparison safe.
+    /// * `role` - The role to test for. The mapping's case rule is what makes
+    ///   that comparison safe.
     #[must_use]
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.contains(role)
     }
 
     /// Whether this principal satisfies `R`.
+    ///
+    /// This is [`Principal::has_role`] plus one thing: [`AnyRole`] is satisfied
+    /// by any authenticated caller, roles or not.
     #[must_use]
     pub fn has<R: Role>(&self) -> bool {
-        R::NAME == AnyRole::NAME || self.roles.contains(R::NAME)
+        R::NAME == AnyRole::NAME || self.has_role(R::NAME)
     }
 
     /// Fail unless this principal holds `role`.

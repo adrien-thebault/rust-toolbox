@@ -1,4 +1,4 @@
-use toolbox_auth::ClaimsMapping;
+use toolbox_auth::PrincipalMapping;
 
 fn keycloak_token() -> serde_json::Value {
     serde_json::json!({
@@ -12,7 +12,7 @@ fn keycloak_token() -> serde_json::Value {
 
 #[test]
 fn keycloak_reads_realm_and_client_roles() {
-    let principal = ClaimsMapping::keycloak("admin-ui")
+    let principal = PrincipalMapping::keycloak("admin-ui")
         .apply(&keycloak_token(), "keycloak")
         .unwrap();
 
@@ -24,8 +24,8 @@ fn keycloak_reads_realm_and_client_roles() {
     assert!(principal.has_role("OFFLINE_ACCESS"), "so is the realm role");
 }
 
-/// Keycloak client roles *are* per-application roles, which is why the
-/// principals service never needs to manage roles itself.
+/// Keycloak client roles *are* per-application roles, so a service reading
+/// this mapping needs no role table of its own.
 #[test]
 fn keycloak_reads_a_different_clients_roles_when_asked() {
     let claims = serde_json::json!({
@@ -35,7 +35,7 @@ fn keycloak_reads_a_different_clients_roles_when_asked() {
             "other-app": { "roles": ["superuser"] }
         }
     });
-    let principal = ClaimsMapping::keycloak("other-app")
+    let principal = PrincipalMapping::keycloak("other-app")
         .apply(&claims, "keycloak")
         .unwrap();
     assert!(principal.has_role("SUPERUSER"));
@@ -50,7 +50,7 @@ fn authentik_reads_groups() {
     let claims = serde_json::json!({
         "sub": "u1", "preferred_username": "ada", "groups": ["admins", "staff"]
     });
-    let principal = ClaimsMapping::authentik()
+    let principal = PrincipalMapping::authentik()
         .apply(&claims, "authentik")
         .unwrap();
     assert!(principal.has_role("ADMINS"));
@@ -63,7 +63,7 @@ fn the_auth0_namespaced_convention_works_with_or_without_a_trailing_slash() {
         "sub": "auth0|1", "https://example.test/roles": ["admin"]
     });
     for namespace in ["https://example.test", "https://example.test/"] {
-        let principal = ClaimsMapping::namespaced(namespace)
+        let principal = PrincipalMapping::namespaced(namespace)
             .apply(&claims, "auth0")
             .unwrap();
         assert!(principal.has_role("ADMIN"), "for `{namespace}`");
@@ -77,7 +77,7 @@ fn a_role_prefix_filters_and_strips() {
     let claims = serde_json::json!({
         "sub": "u1", "groups": ["billing:admin", "billing:viewer", "crm:admin"]
     });
-    let principal = ClaimsMapping::authentik()
+    let principal = PrincipalMapping::authentik()
         .with_role_prefix("billing:")
         .apply(&claims, "authentik")
         .unwrap();
@@ -90,7 +90,7 @@ fn a_role_prefix_filters_and_strips() {
 #[test]
 fn a_single_string_role_claim_works_as_well_as_a_list() {
     let claims = serde_json::json!({"sub": "u1", "groups": "admin"});
-    let principal = ClaimsMapping::authentik()
+    let principal = PrincipalMapping::authentik()
         .apply(&claims, "authentik")
         .unwrap();
     assert!(principal.has_role("ADMIN"));
@@ -99,7 +99,7 @@ fn a_single_string_role_claim_works_as_well_as_a_list() {
 #[test]
 fn a_missing_roles_claim_is_no_roles_rather_than_an_error() {
     let claims = serde_json::json!({"sub": "u1"});
-    let principal = ClaimsMapping::authentik()
+    let principal = PrincipalMapping::authentik()
         .apply(&claims, "authentik")
         .unwrap();
     assert!(principal.roles.is_empty());
@@ -110,7 +110,7 @@ fn a_missing_roles_claim_is_no_roles_rather_than_an_error() {
 fn a_missing_subject_produces_nothing() {
     let claims = serde_json::json!({"name": "Ada", "groups": ["admin"]});
     assert!(
-        ClaimsMapping::authentik()
+        PrincipalMapping::authentik()
             .apply(&claims, "authentik")
             .is_none()
     );
@@ -119,7 +119,7 @@ fn a_missing_subject_produces_nothing() {
 #[test]
 fn uppercasing_can_be_turned_off_for_case_sensitive_role_names() {
     let claims = serde_json::json!({"sub": "u1", "groups": ["Admin"]});
-    let principal = ClaimsMapping::authentik()
+    let principal = PrincipalMapping::authentik()
         .uppercase_roles(false)
         .apply(&claims, "authentik")
         .unwrap();
@@ -127,28 +127,46 @@ fn uppercasing_can_be_turned_off_for_case_sensitive_role_names() {
     assert!(!principal.has_role("ADMIN"));
 }
 
+/// An attribute is keyed by its full dotted path, not the last segment, so two
+/// claims that share a leaf name do not collide.
+#[test]
+fn an_attribute_is_keyed_by_its_full_path() {
+    let claims = serde_json::json!({
+        "sub": "u1",
+        "org": { "id": "acme" },
+        "team": { "id": "platform" }
+    });
+    let principal = PrincipalMapping::authentik()
+        .with_attribute("org.id")
+        .with_attribute("team.id")
+        .apply(&claims, "authentik")
+        .unwrap();
+    assert_eq!(principal.attributes["org.id"], "acme");
+    assert_eq!(principal.attributes["team.id"], "platform");
+}
+
 #[test]
 fn a_dotted_path_resolves_through_nested_objects() {
-    use toolbox_auth::ClaimPath;
+    use toolbox_auth::MappingPath;
     let claims = serde_json::json!({"a": {"b": {"c": "found"}}});
-    assert_eq!(ClaimPath::new("a.b.c").resolve(&claims).unwrap(), "found");
-    assert!(ClaimPath::new("a.b.missing").resolve(&claims).is_none());
-    assert!(ClaimPath::new("nope").resolve(&claims).is_none());
+    assert_eq!(MappingPath::new("a.b.c").resolve(&claims).unwrap(), "found");
+    assert!(MappingPath::new("a.b.missing").resolve(&claims).is_none());
+    assert!(MappingPath::new("nope").resolve(&claims).is_none());
 }
 
 /// A claim *name* may itself contain dots - Auth0's namespaced convention and
 /// Zitadel's URN both do - so a literal key has to win over a dotted path.
 #[test]
 fn a_literal_key_containing_dots_resolves_before_being_split() {
-    use toolbox_auth::ClaimPath;
+    use toolbox_auth::MappingPath;
     let claims = serde_json::json!({
         "https://example.test/roles": ["admin"],
         "a": {"b": "nested"}
     });
     assert!(
-        ClaimPath::new("https://example.test/roles")
+        MappingPath::new("https://example.test/roles")
             .resolve(&claims)
             .is_some()
     );
-    assert_eq!(ClaimPath::new("a.b").resolve(&claims).unwrap(), "nested");
+    assert_eq!(MappingPath::new("a.b").resolve(&claims).unwrap(), "nested");
 }

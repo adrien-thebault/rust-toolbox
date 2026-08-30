@@ -162,10 +162,15 @@ impl BackendConfig {
 /// at one call site and not another.
 #[derive(Debug, Clone)]
 pub struct BackendChannel {
+    /// The backend's name, for spans and errors.
     name: &'static str,
+    /// The underlying tonic channel.
     channel: Channel,
+    /// Encoded-message size limits.
     limits: MessageLimits,
+    /// When and how a call is retried.
     retry: RetryPolicy,
+    /// Adds the outbound service credential and trace headers.
     interceptor: BackendInterceptor,
 }
 

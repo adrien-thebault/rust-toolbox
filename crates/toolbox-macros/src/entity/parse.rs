@@ -23,37 +23,58 @@ pub enum Dialect {
 
 /// Everything `#[entity(..)]` declared, resolved against the struct.
 pub struct EntityConfig {
+    /// The struct the derive is on.
     pub ident: Ident,
+    /// Its `diesel::table!` path.
     pub table: Path,
+    /// The backend type the queries are generic over.
     pub backend: Path,
+    /// Which SQL dialect to emit for inserts.
     pub dialect: Dialect,
+    /// The primary-key column.
     pub id_field: Ident,
+    /// The primary-key column's type.
     pub id_type: Type,
+    /// Whether the database assigns the id.
     pub autoincrement: bool,
+    /// The created/updated columns, if `timestamps` was set.
     pub timestamps: Option<Timestamps>,
+    /// The nullable timestamp column that marks a row deleted, if any.
     pub soft_delete: Option<Ident>,
     /// `T` from the soft-delete column's `Option<T>`.
     pub soft_delete_type: Option<Type>,
+    /// The optimistic-locking version column, if any.
     pub version: Option<Ident>,
+    /// Columns the generated `page` may sort on.
     pub sortable: Vec<Ident>,
 }
 
 /// The two columns `timestamps` maintains.
 pub struct Timestamps {
+    /// The insert-time column.
     pub created_at: Ident,
+    /// The column touched on every write.
     pub updated_at: Ident,
 }
 
 /// One `key = value` or bare `key` or `key(a, b)` item inside `#[entity(..)]`.
 enum Item {
+    /// `backend = <path>`.
     Backend(Path),
+    /// `dialect = <ident>`.
     Dialect(Ident),
+    /// `id = <ident>`.
     Id(Ident),
+    /// bare `autoincrement`.
     Autoincrement,
+    /// bare `timestamps`.
     Timestamps,
+    /// `soft_delete = <ident>`.
     SoftDelete(Ident),
+    /// `version = <ident>`.
     Version(Ident),
-    Sortable(Vec<Ident>, Span),
+    /// `sortable(a, b, ...)`.
+    Sortable(Vec<Ident>),
 }
 
 /// Resolve `#[entity(..)]` against the struct it is attached to.
@@ -88,7 +109,7 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
     let mut timestamps = false;
     let mut soft_delete = None;
     let mut version = None;
-    let mut sortable: Option<(Vec<Ident>, Span)> = None;
+    let mut sortable: Option<Vec<Ident>> = None;
 
     for item in parse_items(entity_attr)? {
         match item {
@@ -99,7 +120,7 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
             Item::Timestamps => timestamps = true,
             Item::SoftDelete(i) => soft_delete = Some(i),
             Item::Version(i) => version = Some(i),
-            Item::Sortable(v, span) => sortable = Some((v, span)),
+            Item::Sortable(v) => sortable = Some(v),
         }
     }
 
@@ -189,7 +210,7 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
 
     let sortable = match sortable {
         None => Vec::new(),
-        Some((names, _)) => {
+        Some(names) => {
             for n in &names {
                 field_type(&fields, n, "sortable")?;
             }
@@ -237,11 +258,10 @@ fn parse_items(attr: &Attribute) -> syn::Result<Vec<Item>> {
             "soft_delete" => items.push(Item::SoftDelete(meta.value()?.parse::<Ident>()?)),
             "version" => items.push(Item::Version(meta.value()?.parse::<Ident>()?)),
             "sortable" => {
-                let span = meta.path.span();
                 let content;
                 syn::parenthesized!(content in meta.input);
                 let names = Punctuated::<Ident, syn::Token![,]>::parse_terminated(&content)?;
-                items.push(Item::Sortable(names.into_iter().collect(), span));
+                items.push(Item::Sortable(names.into_iter().collect()));
             }
             other => {
                 return Err(meta.error(format!(
@@ -258,8 +278,11 @@ fn parse_items(attr: &Attribute) -> syn::Result<Vec<Item>> {
 /// One named field: its name, its type, and whether diesel was told to leave
 /// it out of inserts.
 pub struct Field {
+    /// The field name.
     pub ident: Ident,
+    /// The field type.
     pub ty: Type,
+    /// Whether `#[diesel(skip_insertion)]` was on it.
     pub skip_insertion: bool,
 }
 

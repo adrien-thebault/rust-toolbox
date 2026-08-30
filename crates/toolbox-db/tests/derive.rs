@@ -267,6 +267,32 @@ async fn page_orders_by_the_declared_fields_only() {
     );
 }
 
+#[tokio::test]
+async fn page_past_the_end_is_empty_but_still_reports_the_real_total() {
+    let (db, _d) = db();
+    db.run(|c: &mut SqliteConnection| {
+        for i in 1..=7 {
+            Article::new(i, &format!("t{i}")).save(c)?;
+        }
+        Ok::<_, DbError>(())
+    })
+    .await
+    .unwrap();
+
+    let request = PageRequest::paged(1000, 10, Sort::unsorted()).unwrap();
+    let page = db
+        .run(move |c: &mut SqliteConnection| Article::page(c, &request))
+        .await
+        .unwrap();
+    assert!(page.is_empty());
+    assert_eq!(
+        page.total(),
+        7,
+        "the window count had no row to ride on, so `page` fell back to `count`"
+    );
+    assert_eq!(page.total_pages(), Some(1));
+}
+
 #[test]
 fn the_sortable_allowlist_is_exactly_what_was_declared() {
     assert_eq!(Article::sortable_fields(), ["id", "title"]);

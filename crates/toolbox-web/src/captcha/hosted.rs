@@ -16,16 +16,22 @@ use crate::error::ApiError;
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Deserialize)]
+/// The siteverify response shared by the three hosted providers.
 struct SiteVerify {
+    /// Whether the token passed.
     success: bool,
+    /// Provider error codes, when it did not.
     #[serde(default, rename = "error-codes")]
     error_codes: Vec<String>,
 }
 
 /// Verifies against one of the three hosted providers.
 pub struct HostedCaptcha {
+    /// Which hosted provider to verify against.
     provider: CaptchaProvider,
+    /// The provider secret key.
     secret: secrecy::SecretString,
+    /// The client used for the siteverify call.
     http: reqwest::Client,
 }
 

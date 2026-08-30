@@ -67,10 +67,10 @@ allow = [
 ignore = [
   # RSA sidechannel (Marvin Attack). Reachable only through private-key
   # operations - decryption and signing - and nothing here holds an RSA private
-  # key. `rsa` is pulled by openidconnect for RS256 ID-token *verification*,
-  # which is a public-key operation, and by jsonwebtoken's rust_crypto feature
-  # for algorithms this toolbox does not issue. There is no fixed release.
-  # Re-check on every `rsa` release.
+  # key. `rsa` is pulled by jsonwebtoken's rust_crypto feature for RS256
+  # verification, which `toolbox-auth`'s `jwks` and `public_key` strategies do
+  # against a third party's public key - a public-key operation. There is no
+  # fixed release. Re-check on every `rsa` release.
   { id = "RUSTSEC-2023-0071", reason = "public-key verification only; no RSA private key exists in this workspace" },
 
   # `paste` is a proc-macro pulled by utoipa-axum. Unmaintained rather than

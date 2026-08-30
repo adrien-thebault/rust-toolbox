@@ -17,12 +17,15 @@ use tracing::error;
 /// serialized.
 #[derive(Debug)]
 pub struct ApiError {
+    /// The HTTP status to send.
     status: StatusCode,
     /// Boxed because `Result<T, ApiError>` is the return type of every
     /// handler, so the error's size is paid on the success path too. Inline it
     /// and that is ~240 bytes per return; boxed it is ~48.
     problem: Box<Problem>,
+    /// The underlying error, logged but never serialized.
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    /// Seconds for a `Retry-After` header, when the status warrants one.
     retry_after: Option<u64>,
 }
 

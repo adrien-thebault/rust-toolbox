@@ -29,6 +29,9 @@ pub enum DbError {
     /// An optimistic-locking check matched no rows: someone else wrote first.
     #[error("the row was modified concurrently")]
     Conflict,
+    /// The optimistic-locking version column has no room left to increment.
+    #[error("the version column overflowed its integer type")]
+    VersionOverflow,
     /// The row does not exist.
     #[error("no such row")]
     NotFound,
@@ -57,6 +60,7 @@ impl ServiceError for DbError {
             Self::Migration(_) => "DB_MIGRATION_FAILED",
             Self::Interact(_) => "DB_TASK_FAILED",
             Self::Conflict => "DB_CONFLICT",
+            Self::VersionOverflow => "DB_VERSION_OVERFLOW",
             Self::NotFound => "DB_NOT_FOUND",
             Self::InvalidSortField { .. } => "INVALID_SORT_FIELD",
         }

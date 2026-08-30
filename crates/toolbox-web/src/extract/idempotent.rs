@@ -49,6 +49,7 @@ pub struct Idempotent(pub Option<IdempotencyKey>);
 impl<S: Send + Sync> FromRequestParts<S> for Idempotent {
     type Rejection = ApiError;
 
+    #[allow(clippy::unused_async_trait_impl)] // trait-required async signature
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let Some(value) = parts.headers.get(IDEMPOTENCY_KEY) else {
             return Ok(Self(None));

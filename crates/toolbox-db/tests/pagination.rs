@@ -123,7 +123,7 @@ async fn an_unpaged_request_returns_everything_in_one_statement() {
 }
 
 #[tokio::test]
-async fn an_offset_past_the_end_is_an_empty_page_with_the_real_total() {
+async fn an_offset_past_the_end_has_no_window_count_to_ride_back() {
     let (db, _dir) = temp_db();
     let page = db
         .query(|c: &mut SqliteConnection| {
@@ -139,7 +139,8 @@ async fn an_offset_past_the_end_is_an_empty_page_with_the_real_total() {
         .unwrap();
 
     assert!(page.is_empty());
-    // No rows came back, so no window count did either. The alternative - a
-    // second COUNT query - is what this design gives up to keep one statement.
+    // No rows came back, so no window count did either. `load_page` is the
+    // one-statement primitive and reports zero here; `Entity::page` reconciles
+    // it against `Entity::count` (see the derive tests).
     assert_eq!(page.total(), 0);
 }

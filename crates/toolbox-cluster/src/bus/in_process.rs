@@ -6,8 +6,7 @@ use async_trait::async_trait;
 use tokio_stream::StreamExt as _;
 
 use super::{
-    BusCapabilities, BusError, BusOrdering, Delivery, EventBus, EventStream, MissingCapability,
-    StartPosition, Topic,
+    BusCapabilities, BusError, BusOrdering, Delivery, EventBus, EventStream, StartPosition, Topic,
 };
 use crate::{
     deployment::{Adapter, Scope},
@@ -21,7 +20,9 @@ use crate::{
 /// most of the stream. That is why it declares [`Scope::Local`] and the
 /// startup guard refuses to run it clustered.
 pub struct InProcessBus {
+    /// One broadcast sender per topic, created on first use.
     topics: Mutex<HashMap<Topic, tokio::sync::broadcast::Sender<CloudEvent>>>,
+    /// Per-topic channel capacity; a slow subscriber past this lags.
     buffer: usize,
 }
 
@@ -46,12 +47,13 @@ impl InProcessBus {
     ///
     /// * `buffer` - How many events to hold per topic for a subscriber that has
     ///   fallen behind. Past it, the slow subscriber loses events rather than
-    ///   the publisher blocking.
+    ///   the publisher blocking. Clamped to at least 1, since a zero-capacity
+    ///   broadcast channel cannot be constructed.
     #[must_use]
     pub fn new(buffer: usize) -> Self {
         Self {
             topics: Mutex::new(HashMap::new()),
-            buffer,
+            buffer: buffer.max(1),
         }
     }
 
@@ -91,12 +93,10 @@ impl EventBus for InProcessBus {
     }
 
     async fn subscribe(&self, topic: &Topic, from: StartPosition) -> Result<EventStream, BusError> {
-        if matches!(from, StartPosition::Cursor(_)) {
-            return Err(BusError::Unsupported {
-                needed: MissingCapability::Replay,
-                adapter: "in-process",
-            });
-        }
+        // No replay: only `Now` is honest here. `Earliest` used to be accepted
+        // and then silently behave like `Now`, since a fresh receiver holds no
+        // history.
+        self.capabilities().check_start(&from, "in-process")?;
         let rx = self.sender(topic).subscribe();
         let stream =
             tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(std::result::Result::ok);

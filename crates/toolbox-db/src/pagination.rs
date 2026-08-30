@@ -31,9 +31,25 @@ pub trait Paginate: Sized {
 
 impl<T> Paginate for T {
     fn paginate(self, request: &PageRequest) -> Paginated<Self> {
+        // Clamp non-negative before the values reach `LIMIT`/`OFFSET`: SQLite
+        // reads a negative `LIMIT` as unbounded, so a window built by a struct
+        // literal rather than the validating constructor must not become a
+        // whole-table read.
+        let request = match request {
+            PageRequest::Paged {
+                offset,
+                limit,
+                sort,
+            } => PageRequest::Paged {
+                offset: (*offset).max(0),
+                limit: (*limit).max(0),
+                sort: sort.clone(),
+            },
+            PageRequest::Unpaged { sort } => PageRequest::Unpaged { sort: sort.clone() },
+        };
         Paginated {
             query: self,
-            request: request.clone(),
+            request,
         }
     }
 }
@@ -45,7 +61,9 @@ impl<T> Paginate for T {
 /// does, under concurrent writes.
 #[derive(Debug, Clone, QueryId)]
 pub struct Paginated<Q> {
+    /// The wrapped query.
     query: Q,
+    /// The window to apply.
     request: PageRequest,
 }
 
@@ -86,7 +104,14 @@ where
 }
 
 impl<Q> Paginated<Q> {
-    /// Load the page and its total.
+    /// Load the page and its total, in one statement.
+    ///
+    /// The total is `COUNT(*) OVER ()` carried on every row, so it cannot
+    /// disagree with the rows the way a separate `COUNT` query can. The one
+    /// gap: a window whose offset is past the end returns no rows, so no count
+    /// rides back with them and the total reads as zero. `Entity::page`
+    /// reconciles that against `Entity::count`; a hand-written filtered query
+    /// that needs the real total for an empty page has to run its own `COUNT`.
     ///
     /// # Arguments
     ///
@@ -101,8 +126,6 @@ impl<Q> Paginated<Q> {
     {
         let request = self.request.clone();
         let rows: Vec<(U, i64)> = self.load(conn)?;
-        // Every row carries the same window count; an empty page means zero
-        // matched, which is exactly what the window would have reported.
         let total = rows.first().map_or(0, |row| row.1);
         Ok(Page::new(
             rows.into_iter().map(|row| row.0).collect(),

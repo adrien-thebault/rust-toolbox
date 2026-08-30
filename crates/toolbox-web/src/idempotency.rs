@@ -53,7 +53,9 @@ const IN_FLIGHT: &[u8] = b"\x00in-flight";
 
 /// Claims keys and stores responses against them.
 pub struct Idempotency {
+    /// Where in-flight markers and stored responses live.
     kv: Arc<dyn KeyValueStore>,
+    /// How long a stored response is replayable.
     ttl: Duration,
 }
 

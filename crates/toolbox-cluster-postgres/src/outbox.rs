@@ -34,7 +34,9 @@ const BATCH: i64 = 100;
 /// An event bus backed by an outbox table.
 #[derive(Clone)]
 pub struct OutboxBus {
+    /// The shared pool the outbox table lives in.
     db: Db<PgConnection>,
+    /// How often the relay polls for unsent rows.
     poll: Duration,
 }
 

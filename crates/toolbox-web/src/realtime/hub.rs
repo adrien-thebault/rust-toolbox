@@ -69,7 +69,9 @@ impl HubConfig {
 
 /// Fans one upstream stream per topic out to many connections.
 pub struct Hub<T> {
+    /// One fan-out sender per topic, created on first subscribe.
     topics: Mutex<HashMap<String, broadcast::Sender<T>>>,
+    /// Buffer size and idle timeout.
     config: HubConfig,
 }
 

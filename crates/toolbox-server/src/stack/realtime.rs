@@ -27,6 +27,7 @@ pub type RealtimeStacked<S> = CatchPanic<
 /// that reconnects instantly.
 #[derive(Debug, Clone, Copy)]
 pub struct RealtimeStack {
+    /// The level a dropped long-lived connection is logged at.
     trace_level: Level,
 }
 

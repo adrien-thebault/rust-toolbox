@@ -10,15 +10,20 @@ use toolbox_server::{
     telemetry::TelemetryArgs,
 };
 
+/// Command-line arguments.
 #[derive(Parser)]
 #[command(name = "{{project-name}}")]
 struct Args {
+    /// Log format and level.
     #[command(flatten)]
     telemetry: TelemetryArgs,
+    /// Listen address.
     #[command(flatten)]
     server: ServerArgs,
+    /// `single` or `clustered`.
     #[command(flatten)]
     deployment: DeploymentArgs,
+    /// The database URL and pool settings.
     #[command(flatten)]
     database: DatabaseArgs,
 }

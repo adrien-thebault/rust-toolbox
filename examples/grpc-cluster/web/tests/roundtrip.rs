@@ -4,7 +4,6 @@ use diesel::connection::SimpleConnection;
 use example_todo::{Connection, MIGRATIONS, TodoService};
 use example_web::{auth::AuthConfig, routes::router};
 use secrecy::SecretString;
-use toolbox_cluster::InMemoryKeyValue;
 use toolbox_grpc::{BackendConfig, backend};
 use toolbox_test::{TestApp, TestCluster, assert_problem, temp_db};
 use toolbox_web::{TrustedHops, auth::LoginLimit};
@@ -49,8 +48,7 @@ async fn cluster_with(login: LoginLimit) -> (TestApp, TestCluster, toolbox_test:
     .await
     .expect("a channel to the backend");
 
-    let state = example_web::auth::state(channel, &config(), Arc::new(InMemoryKeyValue::default()))
-        .expect("the gateway configured");
+    let state = example_web::auth::state(channel, &config()).expect("the gateway configured");
 
     (TestApp::new(router(state, &login)), cluster, guard)
 }
@@ -172,16 +170,6 @@ async fn a_stale_version_is_a_conflict_all_the_way_to_the_client() {
     assert_problem!(second, 409, "TODO_CONFLICT", "id");
 }
 
-/// A login page renders its buttons from this, so adding OIDC to a deployment
-/// needs no frontend change.
-#[tokio::test]
-async fn the_gateway_advertises_what_you_can_log_in_with() {
-    let (app, _cluster, _guard) = cluster().await;
-    let listed: serde_json::Value = app.get("/auth/providers").await.json();
-    assert_eq!(listed[0]["id"], "password");
-    assert_eq!(listed[0]["kind"], "credential");
-}
-
 #[tokio::test]
 async fn the_wrong_password_is_a_401_and_says_nothing_else() {
     let (app, _cluster, _guard) = cluster().await;
@@ -271,10 +259,11 @@ async fn an_admin_can_delete_and_the_row_soft_deletes() {
     assert_eq!(listed["total"], 0);
 }
 
-/// A refresh token is single-use: presenting it twice is what a stolen token
-/// looks like, and the family is revoked rather than reissued.
+/// A refresh token is a stateless JWT: it redeems for a fresh, usable session,
+/// and the rolled token is itself redeemable. Revocation is a credential
+/// change, not server-side consumption.
 #[tokio::test]
-async fn a_refresh_token_rotates_and_cannot_be_replayed() {
+async fn a_refresh_token_redeems_for_a_usable_session() {
     let (app, _cluster, _guard) = cluster().await;
 
     let session: serde_json::Value = app
@@ -297,19 +286,23 @@ async fn a_refresh_token_rotates_and_cannot_be_replayed() {
         .await;
     assert_eq!(rotated.status_code(), 200, "{}", rotated.text());
     let rotated: serde_json::Value = rotated.json();
-    assert_ne!(rotated["refresh_token"], serde_json::json!(refresh));
 
-    let replayed = app
+    // The new access token authorizes a real call.
+    let listed = app
+        .server()
+        .get("/api/todos")
+        .authorization_bearer(rotated["access_token"].as_str().unwrap())
+        .await;
+    assert_eq!(listed.status_code(), 200, "{}", listed.text());
+
+    // The rolled refresh token is itself redeemable.
+    let again = app
         .post_json(
             "/auth/refresh",
-            &serde_json::json!({"refresh_token": refresh}),
+            &serde_json::json!({"refresh_token": rotated["refresh_token"]}),
         )
         .await;
-    assert_eq!(
-        replayed.status_code(),
-        401,
-        "the first token was consumed by the rotation"
-    );
+    assert_eq!(again.status_code(), 200, "{}", again.text());
 }
 
 /// The credential routes are throttled and nothing else is, which is the whole
@@ -348,10 +341,8 @@ async fn repeated_login_attempts_are_throttled_and_the_rest_of_the_api_is_not() 
         "RATE_LIMITED"
     );
 
-    // Reading a todo is not a credential check, and asking what you may log in
-    // with is not either.
+    // Reading a todo is not a credential check, so it is not throttled.
     assert_eq!(app.get("/api/todos").await.status_code(), 200);
-    assert_eq!(app.get("/auth/providers").await.status_code(), 200);
 }
 
 /// The migrations run through `Db::migrate`, which takes the backend-native

@@ -95,6 +95,38 @@ async fn an_adapter_without_replay_rejects_a_cursor_subscribe() {
 }
 
 #[tokio::test]
+async fn an_adapter_without_replay_rejects_an_earliest_subscribe() {
+    let bus = InProcessBus::default();
+    let result = bus
+        .subscribe(&Topic::new("a"), StartPosition::Earliest)
+        .await;
+    match result {
+        Err(BusError::Unsupported {
+            needed: MissingCapability::Replay,
+            adapter: "in-process",
+        }) => {}
+        Err(other) => panic!("wrong error: {other:?}"),
+        Ok(_) => panic!("`Earliest` has no history to give here, so it must be refused"),
+    }
+}
+
+#[tokio::test]
+async fn a_zero_buffer_is_clamped_rather_than_panicking() {
+    let bus = InProcessBus::new(0);
+    let topic = Topic::new("a");
+    let mut stream = bus.subscribe(&topic, StartPosition::Now).await.unwrap();
+    bus.publish(&topic, signal("e", "/e").unwrap())
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), stream.next())
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn the_in_process_bus_declares_what_it_actually_does() {
     let caps = InProcessBus::default().capabilities();
     assert_eq!(

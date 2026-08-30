@@ -15,6 +15,7 @@ use crate::trace_context::TraceContext;
 /// user quoting it from an error page lands on exactly these log lines.
 #[derive(Debug, Clone, Copy)]
 pub struct MakeRequestSpan {
+    /// The level the request span is recorded at.
     level: Level,
 }
 

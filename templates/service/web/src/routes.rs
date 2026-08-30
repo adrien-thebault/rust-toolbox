@@ -8,7 +8,7 @@ pub mod todo;
 use axum::Router;
 use toolbox_web::{
     ApiError,
-    auth::{LoginLimit, auth_router, session_layer},
+    auth::{ForwardedConfig, LoginLimit, auth_router, forwarded_auth_layer, session_layer},
 };
 
 use crate::state::AppState;
@@ -27,9 +27,20 @@ use crate::state::AppState;
 ///   the API is not, which is why the limiter goes inside `auth_router` rather
 ///   than over the whole gateway.
 pub fn router(state: AppState, login: &LoginLimit) -> Router {
+    // A forwarded-identity fallback: harmless with no `ForwardedIdentityProvider`
+    // in the registry, and one `.with(...)` in `auth::providers` away from being
+    // live. `session_layer` is the outer layer, so a real bearer token wins.
+    let forwarded = ForwardedConfig {
+        hops: login.hops,
+        ..ForwardedConfig::default()
+    };
     Router::new()
         .merge(todo::router())
         .merge(auth_router::<AppState>(login))
+        .layer(axum::middleware::from_fn_with_state(
+            (state.clone(), forwarded),
+            forwarded_auth_layer::<AppState>,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             session_layer::<AppState>,

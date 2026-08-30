@@ -76,5 +76,5 @@ they have in common.
 - a real login: the token comes out of `/auth/login` and is checked by
   `Authenticated<Admin>`, so the codec and the extractor are both exercised
 - an unknown username failing identically to a wrong password
-- a refresh token rotating once and being refused on replay
+- a stateless refresh token redeeming for a usable session
 - a caller deadline reaching the backend as `grpc-timeout`

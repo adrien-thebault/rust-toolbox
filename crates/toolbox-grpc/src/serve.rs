@@ -65,8 +65,11 @@ impl GrpcConfig {
 
 /// Collects services, then serves them with the standard drain sequence.
 pub struct GrpcServerBuilder<'a> {
+    /// Listen address, deployment and shutdown handle.
     cfg: ServeConfig<'a>,
+    /// gRPC-specific stack and limit settings.
     grpc: GrpcConfig,
+    /// The services collected so far.
     routes: RoutesBuilder,
 }
 

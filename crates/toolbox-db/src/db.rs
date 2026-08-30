@@ -32,7 +32,9 @@ pub type PooledConn<C> = diesel::r2d2::PooledConnection<ConnectionManager<C>>;
 ///
 /// Clone it freely: clones share one pool.
 pub struct Db<C: R2D2Connection + 'static> {
+    /// The shared r2d2 pool.
     pool: Pool<C>,
+    /// The connection URL, kept for diagnostics. Carries credentials.
     url: Arc<str>,
 }
 
@@ -268,10 +270,15 @@ impl<C: R2D2Connection + 'static> Db<C> {
 
 /// Configures a [`Db`] before building it.
 pub struct DbBuilder<C: R2D2Connection + 'static> {
+    /// The connection URL.
     url: String,
+    /// Pool ceiling, if overridden.
     max_size: Option<u32>,
+    /// Idle connections to keep warm, if set.
     min_idle: Option<u32>,
+    /// How long to wait for a connection, if set.
     connect_timeout: Option<Duration>,
+    /// A per-connection setup hook, if any.
     customizer: Option<Box<dyn CustomizeConnection<C, R2d2Error>>>,
 }
 

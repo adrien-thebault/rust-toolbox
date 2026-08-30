@@ -90,11 +90,29 @@ fn lock_sql(locking: Locking, name: &str, acquiring: bool) -> Option<String> {
             Some(format!("SELECT pg_advisory_unlock({})", advisory_key(name)))
         }
         (Locking::MysqlNamed, true) => Some(format!(
-            "SELECT GET_LOCK('{name}', {MYSQL_LOCK_TIMEOUT_SECS})"
+            "SELECT GET_LOCK('{}', {MYSQL_LOCK_TIMEOUT_SECS})",
+            mysql_lock_name(name)
         )),
-        (Locking::MysqlNamed, false) => Some(format!("SELECT RELEASE_LOCK('{name}')")),
+        (Locking::MysqlNamed, false) => {
+            Some(format!("SELECT RELEASE_LOCK('{}')", mysql_lock_name(name)))
+        }
         (Locking::None, _) => None,
     }
+}
+
+/// The MySQL `GET_LOCK` name: the advisory key as fixed-width hex, so the
+/// caller's string is hashed rather than interpolated (matching the Postgres
+/// path) and the literal is always 16 characters of `[0-9a-f]`, well under
+/// MySQL's 64-character limit.
+///
+/// # Arguments
+///
+/// * `name` - The caller's lock name, which never reaches SQL verbatim.
+fn mysql_lock_name(name: &str) -> String {
+    format!(
+        "{:016x}",
+        u64::from_ne_bytes(advisory_key(name).to_ne_bytes())
+    )
 }
 
 /// Run `f` while holding a cluster-wide lock named `name`.
@@ -170,7 +188,7 @@ fn release<C: Connection>(conn: &mut C, locking: Locking, name: &str) -> DbResul
 
 #[cfg(test)]
 mod tests {
-    use super::{Locking, advisory_key, locking_for};
+    use super::{Locking, advisory_key, lock_sql, locking_for, mysql_lock_name};
 
     #[test]
     fn the_backend_is_read_from_the_url_scheme() {
@@ -187,5 +205,19 @@ mod tests {
         // Two replicas must derive the same number or the lock does nothing.
         assert_eq!(advisory_key("migrations"), advisory_key("migrations"));
         assert_ne!(advisory_key("a"), advisory_key("b"));
+    }
+
+    #[test]
+    fn the_mysql_lock_name_is_hashed_never_interpolated() {
+        // A name that would break or inject if it reached SQL verbatim.
+        let hostile = "x', 0); DROP TABLE schema_migrations; -- ";
+        let sql = lock_sql(Locking::MysqlNamed, hostile, true).unwrap();
+        assert!(!sql.contains("DROP TABLE"), "{sql}");
+        assert!(sql.contains(&mysql_lock_name(hostile)));
+
+        let name = mysql_lock_name(hostile);
+        assert_eq!(name.len(), 16);
+        assert!(name.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(name, mysql_lock_name(hostile), "stable across calls");
     }
 }

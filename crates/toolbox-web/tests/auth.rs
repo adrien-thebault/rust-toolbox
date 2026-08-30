@@ -1,17 +1,22 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use axum::{Router, routing::get};
 use http::StatusCode;
 use secrecy::SecretString;
 use toolbox_auth::{
-    AuthError, JwtCodec, PasswordProvider, Principal, ProviderRegistry, RefreshTokens,
-    SessionCodec, StoredUser, UserStore, hash_password,
+    AuthError, ForwardedIdentityProvider, JwtIdentityProvider, PasswordIdentityProvider, Principal,
+    ProviderRegistry, RefreshInfo, StoredUser, UserStore, hash_password,
 };
-use toolbox_cluster::InMemoryKeyValue;
 use toolbox_web::{
     TrustedHops,
-    auth::{AuthState, LoginLimit, auth_router, session_layer},
+    auth::{
+        AuthState, ForwardedConfig, LoginLimit, auth_router, forwarded_auth_layer, session_layer,
+    },
 };
 
 use crate::{call, get as get_req, post_json};
@@ -38,29 +43,48 @@ impl UserStore for Users {
 #[derive(Clone)]
 struct State {
     providers: Arc<ProviderRegistry>,
-    sessions: Arc<SessionCodec>,
-    refresh: Option<Arc<RefreshTokens>>,
+    issuer: Arc<JwtIdentityProvider>,
+    /// The credential fingerprint the deployment currently reports, if any.
+    epoch: Arc<Mutex<Option<String>>>,
 }
 
 impl AuthState for State {
     fn providers(&self) -> &ProviderRegistry {
         &self.providers
     }
-    fn sessions(&self) -> &SessionCodec {
-        &self.sessions
+    fn session_issuer(&self) -> &JwtIdentityProvider {
+        &self.issuer
     }
-    fn refresh_tokens(&self) -> Option<&Arc<RefreshTokens>> {
-        self.refresh.as_ref()
+    fn refresh_epoch(
+        &self,
+        _principal: &Principal,
+    ) -> impl std::future::Future<Output = Option<String>> + Send {
+        std::future::ready(self.epoch.lock().unwrap().clone())
+    }
+    fn resolve_refresh(
+        &self,
+        info: RefreshInfo,
+    ) -> impl std::future::Future<Output = Result<Principal, AuthError>> + Send {
+        let current = self.epoch.lock().unwrap().clone();
+        std::future::ready(match (info.epoch.as_deref(), current.as_deref()) {
+            (Some(bound), cur) if Some(bound) != cur => Err(AuthError::Unauthenticated),
+            _ => Ok(info.stale),
+        })
     }
 }
 
-fn state(with_refresh: bool) -> State {
-    let codec = JwtCodec::new(&SecretString::from("a".repeat(32)), "toolbox-test").unwrap();
+fn state() -> State {
+    let issuer: Arc<JwtIdentityProvider> = Arc::new(
+        JwtIdentityProvider::hmac(&SecretString::from("a".repeat(32)), "toolbox-test").unwrap(),
+    );
     State {
-        providers: Arc::new(ProviderRegistry::new().with(PasswordProvider::new(Users))),
-        sessions: Arc::new(SessionCodec::Local(codec)),
-        refresh: with_refresh
-            .then(|| Arc::new(RefreshTokens::new(Arc::new(InMemoryKeyValue::default())).unwrap())),
+        providers: Arc::new(
+            ProviderRegistry::new()
+                .with_arc(issuer.clone())
+                .with(PasswordIdentityProvider::new(Users)),
+        ),
+        issuer,
+        epoch: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -107,7 +131,7 @@ fn with_peer(router: Router) -> Router {
 #[tokio::test]
 async fn the_credential_routes_are_throttled_and_the_others_are_not() {
     let app = app_with(
-        state(false),
+        state(),
         LoginLimit {
             burst: 1,
             replenish_every: Duration::from_secs(60),
@@ -131,25 +155,19 @@ async fn the_credential_routes_are_throttled_and_the_others_are_not() {
     );
     assert!(body.contains("RATE_LIMITED"), "{body}");
 
-    // Asking what you may log in with is not a credential check.
-    let (providers, _) = call(app, get_req("/auth/providers")).await;
-    assert_eq!(providers.status(), StatusCode::OK);
-}
-
-/// Adding a provider becomes a deployment change rather than a frontend
-/// release, which is the whole value of this endpoint.
-#[tokio::test]
-async fn providers_describes_what_a_login_page_can_offer() {
-    let (res, body) = call(app(state(false)), get_req("/auth/providers")).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    assert!(body.contains("\"password\""), "{body}");
-    assert!(body.contains("\"credential\""), "{body}");
+    // `/auth/me` is not a credential check and is not throttled.
+    let (me, _) = call(app, get_req("/auth/me")).await;
+    assert_eq!(
+        me.status(),
+        StatusCode::UNAUTHORIZED,
+        "reached, not throttled"
+    );
 }
 
 #[tokio::test]
-async fn a_correct_login_returns_a_session() {
+async fn a_correct_login_returns_a_session_with_a_refresh_token() {
     let body = r#"{"username":"ada","password":"hunter2"}"#;
-    let (res, text) = call(app(state(false)), post_json("/auth/login", body)).await;
+    let (res, text) = call(app(state()), post_json("/auth/login", body)).await;
 
     assert_eq!(res.status(), StatusCode::OK, "{text}");
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -157,15 +175,15 @@ async fn a_correct_login_returns_a_session() {
     assert_eq!(v["expires_in"], 900, "fifteen minutes, not twelve hours");
     assert!(v["access_token"].as_str().is_some_and(|t| t.contains('.')));
     assert!(
-        v.get("refresh_token").is_none(),
-        "not issued when not configured"
+        v["refresh_token"].as_str().is_some_and(|t| t.contains('.')),
+        "a refresh token is always issued now"
     );
 }
 
 #[tokio::test]
 async fn a_wrong_password_is_a_401_problem() {
     let body = r#"{"username":"ada","password":"wrong"}"#;
-    let (res, text) = call(app(state(false)), post_json("/auth/login", body)).await;
+    let (res, text) = call(app(state()), post_json("/auth/login", body)).await;
 
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(res.headers()["content-type"], toolbox_core::PROBLEM_JSON);
@@ -177,67 +195,67 @@ async fn a_wrong_password_is_a_401_problem() {
 async fn an_unknown_user_fails_exactly_like_a_wrong_password() {
     let unknown = r#"{"username":"nobody","password":"hunter2"}"#;
     let wrong = r#"{"username":"ada","password":"wrong"}"#;
-    let (a, _) = call(app(state(false)), post_json("/auth/login", unknown)).await;
-    let (b, _) = call(app(state(false)), post_json("/auth/login", wrong)).await;
+    let (a, _) = call(app(state()), post_json("/auth/login", unknown)).await;
+    let (b, _) = call(app(state()), post_json("/auth/login", wrong)).await;
     assert_eq!(a.status(), b.status());
 }
 
 #[tokio::test]
-async fn a_refresh_token_is_issued_when_configured_and_rotates_on_use() {
-    let app = app(state(true));
-    let login = r#"{"username":"ada","password":"hunter2"}"#;
-    let (_, text) = call(app.clone(), post_json("/auth/login", login)).await;
-    let session: serde_json::Value = serde_json::from_str(&text).unwrap();
-    let refresh = session["refresh_token"]
-        .as_str()
-        .expect("a refresh token")
-        .to_owned();
-
-    let body = format!(r#"{{"refresh_token":"{refresh}"}}"#);
-    let (res, text) = call(app.clone(), post_json("/auth/refresh", &body)).await;
-    assert_eq!(res.status(), StatusCode::OK, "{text}");
-
-    let rotated: serde_json::Value = serde_json::from_str(&text).unwrap();
-    let next = rotated["refresh_token"].as_str().unwrap();
-    assert_ne!(next, refresh, "redeeming issues a different token");
-
-    // The old one is consumed, which is how a leak is noticed.
-    let (replayed, _) = call(app, post_json("/auth/refresh", &body)).await;
-    assert_eq!(replayed.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn refreshing_without_the_feature_says_so_rather_than_failing_obscurely() {
-    let body = r#"{"refresh_token":"anything"}"#;
-    let (res, text) = call(app(state(false)), post_json("/auth/refresh", body)).await;
-    assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
-    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(v["code"], "REFRESH_NOT_ENABLED");
-}
-
-#[tokio::test]
-async fn logout_revokes_the_refresh_token() {
-    let app = app(state(true));
+async fn a_refresh_token_can_be_redeemed_for_a_new_session() {
+    let app = app(state());
     let login = r#"{"username":"ada","password":"hunter2"}"#;
     let (_, text) = call(app.clone(), post_json("/auth/login", login)).await;
     let session: serde_json::Value = serde_json::from_str(&text).unwrap();
     let refresh = session["refresh_token"].as_str().unwrap().to_owned();
 
     let body = format!(r#"{{"refresh_token":"{refresh}"}}"#);
-    let (res, _) = call(app.clone(), post_json("/auth/logout", &body)).await;
-    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    let (res, text) = call(app.clone(), post_json("/auth/refresh", &body)).await;
+    assert_eq!(res.status(), StatusCode::OK, "{text}");
 
-    let (after, _) = call(app, post_json("/auth/refresh", &body)).await;
-    assert_eq!(
-        after.status(),
-        StatusCode::UNAUTHORIZED,
-        "the session is over"
+    let rotated: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(
+        rotated["access_token"]
+            .as_str()
+            .is_some_and(|t| t.contains('.'))
     );
+    assert!(rotated["refresh_token"].as_str().is_some());
+}
+
+/// Stateless refresh has no server-side record, so a changed credential
+/// fingerprint is the revocation mechanism.
+#[tokio::test]
+async fn a_changed_credential_fingerprint_invalidates_a_refresh_token() {
+    let state = state();
+    *state.epoch.lock().unwrap() = Some("epoch-1".to_owned());
+    let app = app(state.clone());
+
+    let login = r#"{"username":"ada","password":"hunter2"}"#;
+    let (_, text) = call(app.clone(), post_json("/auth/login", login)).await;
+    let refresh = serde_json::from_str::<serde_json::Value>(&text).unwrap()["refresh_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = format!(r#"{{"refresh_token":"{refresh}"}}"#);
+
+    // Same fingerprint: still good.
+    let (ok, _) = call(app.clone(), post_json("/auth/refresh", &body)).await;
+    assert_eq!(ok.status(), StatusCode::OK);
+
+    // The password changed.
+    *state.epoch.lock().unwrap() = Some("epoch-2".to_owned());
+    let (rejected, _) = call(app, post_json("/auth/refresh", &body)).await;
+    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn logout_is_a_no_op_the_client_drives() {
+    let (res, _) = call(app(state()), post_json("/auth/logout", "")).await;
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]
 async fn a_session_reaches_the_handler_through_the_middleware() {
-    let state = state(false);
+    let state = state();
     let app = app(state.clone());
     let login = r#"{"username":"ada","password":"hunter2"}"#;
     let (_, text) = call(app.clone(), post_json("/auth/login", login)).await;
@@ -261,7 +279,7 @@ async fn a_session_reaches_the_handler_through_the_middleware() {
 /// need an exception.
 #[tokio::test]
 async fn an_anonymous_request_passes_through_the_middleware() {
-    let (res, body) = call(app(state(false)), get_req("/me-or-anon")).await;
+    let (res, body) = call(app(state()), get_req("/me-or-anon")).await;
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(body, "anonymous");
 }
@@ -273,7 +291,7 @@ async fn a_garbage_token_is_treated_as_anonymous_rather_than_rejected() {
         .header(http::header::AUTHORIZATION, "Bearer nonsense")
         .body(axum::body::Body::empty())
         .unwrap();
-    let (res, body) = call(app(state(false)), request).await;
+    let (res, body) = call(app(state()), request).await;
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(body, "anonymous");
 }
@@ -282,22 +300,17 @@ async fn a_garbage_token_is_treated_as_anonymous_rather_than_rejected() {
 /// falling through anonymous would surface as a 403 from whatever came next.
 #[tokio::test]
 async fn an_expired_token_is_a_401_so_the_client_knows_to_refresh() {
-    let codec = JwtCodec::new(&SecretString::from("a".repeat(32)), "toolbox-test")
+    let codec = JwtIdentityProvider::hmac(&SecretString::from("a".repeat(32)), "toolbox-test")
         .unwrap()
-        .ttl(std::time::Duration::from_secs(0));
+        .ttl(Duration::from_secs(0));
     let expired = codec.issue(&Principal::new("ada", "toolbox-test")).unwrap();
-
-    // Wind past the verifier's clock leeway.
-    std::thread::sleep(std::time::Duration::from_millis(10));
-    let long_ago = JwtCodec::new(&SecretString::from("a".repeat(32)), "toolbox-test").unwrap();
-    let _ = long_ago;
 
     let request = http::Request::builder()
         .uri("/me-or-anon")
         .header(http::header::AUTHORIZATION, format!("Bearer {expired}"))
         .body(axum::body::Body::empty())
         .unwrap();
-    let (res, _) = call(app(state(false)), request).await;
+    let (res, _) = call(app(state()), request).await;
     // Leeway keeps a just-expired token valid, so this asserts the path works
     // rather than the exact instant.
     assert!(res.status() == StatusCode::OK || res.status() == StatusCode::UNAUTHORIZED);
@@ -305,6 +318,76 @@ async fn an_expired_token_is_a_401_so_the_client_knows_to_refresh() {
 
 #[tokio::test]
 async fn me_is_401_when_anonymous() {
-    let (res, _) = call(app(state(false)), get_req("/auth/me")).await;
+    let (res, _) = call(app(state()), get_req("/auth/me")).await;
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+// --- forwarded-identity layer ---------------------------------------------
+
+fn forwarded_app(peer: [u8; 4]) -> Router {
+    let issuer: Arc<JwtIdentityProvider> = Arc::new(
+        JwtIdentityProvider::hmac(&SecretString::from("a".repeat(32)), "toolbox-test").unwrap(),
+    );
+    let st = State {
+        providers: Arc::new(
+            ProviderRegistry::new()
+                .with_arc(issuer.clone())
+                .with(ForwardedIdentityProvider::new(&["127.0.0.1"]).unwrap()),
+        ),
+        issuer,
+        epoch: Arc::new(Mutex::new(None)),
+    };
+
+    let router = Router::new()
+        .route(
+            "/me-or-anon",
+            get(|p: Option<axum::Extension<Principal>>| async move {
+                p.map_or_else(|| "anonymous".to_owned(), |axum::Extension(p)| p.subject)
+            }),
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            (st.clone(), ForwardedConfig::default()),
+            forwarded_auth_layer::<State>,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            st.clone(),
+            session_layer::<State>,
+        ))
+        .with_state(st);
+
+    router.layer(axum::middleware::from_fn(
+        move |mut request: axum::extract::Request, next: axum::middleware::Next| async move {
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from((peer, 40_000)),
+            ));
+            next.run(request).await
+        },
+    ))
+}
+
+#[tokio::test]
+async fn a_trusted_proxy_can_forward_an_identity() {
+    let request = http::Request::builder()
+        .uri("/me-or-anon")
+        .header("x-forwarded-user", "ada")
+        .header("x-forwarded-groups", "admins,staff")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (res, body) = call(forwarded_app([127, 0, 0, 1]), request).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(body, "ada");
+}
+
+/// The same headers from an untrusted peer are ignored: a spoofable header is
+/// total authentication bypass.
+#[tokio::test]
+async fn the_same_headers_from_an_untrusted_peer_are_ignored() {
+    let request = http::Request::builder()
+        .uri("/me-or-anon")
+        .header("x-forwarded-user", "ada")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (res, body) = call(forwarded_app([203, 0, 113, 9]), request).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(body, "anonymous");
 }

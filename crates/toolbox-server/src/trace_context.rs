@@ -42,8 +42,11 @@ tokio::task_local! {
 /// hop, and the sampling flags.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceContext {
+    /// Shared by every hop of the request.
     trace_id: String,
+    /// Identifies this hop.
     span_id: String,
+    /// W3C sampling flags.
     flags: u8,
 }
 

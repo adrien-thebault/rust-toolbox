@@ -35,6 +35,7 @@ use crate::{
 /// entry per key.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ForwardedForKeyExtractor {
+    /// How many proxies to trust when picking the client entry.
     hops: TrustedHops,
 }
 

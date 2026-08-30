@@ -35,8 +35,11 @@ const MIN_LEASE: Duration = Duration::from_secs(30);
 
 /// A job's mutable state, kept per scheduler instance.
 struct JobState {
+    /// Set while an occurrence of this job is in flight.
     running: Arc<AtomicBool>,
+    /// When this job is next due.
     next_at: DateTime<Utc>,
+    /// When it last completed without error, if ever.
     last_success: Option<DateTime<Utc>>,
 }
 
@@ -46,9 +49,13 @@ struct JobState {
 /// different thing, and they compose: "every night at 3am, email 500 people"
 /// is one occurrence here that enqueues 500 jobs there.
 pub struct Scheduler {
+    /// Every registered job.
     jobs: Vec<ScheduledJob>,
+    /// Per-job mutable state, by job name.
     state: HashMap<&'static str, JobState>,
+    /// Takes the cluster-wide lease so an occurrence runs once.
     locks: Arc<dyn LockManager>,
+    /// The time source the schedule is evaluated against.
     clock: Arc<dyn Clock>,
 }
 
@@ -363,8 +370,11 @@ fn to_utc(t: std::time::SystemTime) -> DateTime<Utc> {
 
 /// Collects jobs before the scheduler starts.
 pub struct SchedulerBuilder {
+    /// The jobs collected so far.
     jobs: Vec<ScheduledJob>,
+    /// The lock manager the scheduler will use.
     locks: Arc<dyn LockManager>,
+    /// The clock the scheduler will use.
     clock: Arc<dyn Clock>,
 }
 

@@ -11,6 +11,7 @@ use toolbox_db::{Db, SqlitePragmas};
 /// `let (db, _guard) = temp_db();`
 #[derive(Debug)]
 pub struct TempDb {
+    /// The temp directory holding the database file; deleted on drop.
     dir: tempfile::TempDir,
 }
 

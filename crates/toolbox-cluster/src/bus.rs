@@ -91,6 +91,69 @@ pub struct BusCapabilities {
     pub durable: bool,
 }
 
+impl BusCapabilities {
+    /// Reject a [`StartPosition`] this adapter cannot serve, so the failure
+    /// lands at subscribe time rather than as a silently short stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `from` - Where the subscriber asked to start.
+    /// * `adapter` - The adapter name, for the error.
+    ///
+    /// # Errors
+    /// [`BusError::Unsupported`] when `from` is anything but the tail and this
+    /// adapter has no `replay`.
+    pub fn check_start(&self, from: &StartPosition, adapter: &'static str) -> Result<(), BusError> {
+        match from {
+            StartPosition::Now => Ok(()),
+            StartPosition::Earliest | StartPosition::Cursor(_) if self.replay.is_some() => Ok(()),
+            StartPosition::Earliest | StartPosition::Cursor(_) => Err(BusError::Unsupported {
+                needed: MissingCapability::Replay,
+                adapter,
+            }),
+        }
+    }
+
+    /// Reject a payload larger than [`BusCapabilities::max_payload`], for an
+    /// adapter to call in `publish` before it hands the event to its transport.
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - The serialized payload size in bytes.
+    ///
+    /// # Errors
+    /// [`BusError::TooLarge`] when `size` is over the limit.
+    pub fn check_payload(&self, size: usize) -> Result<(), BusError> {
+        if size > self.max_payload {
+            return Err(BusError::TooLarge {
+                size,
+                max: self.max_payload,
+            });
+        }
+        Ok(())
+    }
+
+    /// Reject a subscriber that needs delivery to survive a restart on an
+    /// adapter that is not durable.
+    ///
+    /// # Arguments
+    ///
+    /// * `adapter` - The adapter name, for the error.
+    ///
+    /// # Errors
+    /// [`BusError::Unsupported`] with [`MissingCapability::Durability`] when
+    /// this adapter is not durable.
+    pub fn require_durable(&self, adapter: &'static str) -> Result<(), BusError> {
+        if self.durable {
+            return Ok(());
+        }
+        Err(BusError::Unsupported {
+            needed: MissingCapability::Durability,
+            adapter,
+        })
+    }
+}
+
 /// A capability a caller asked for that an adapter does not have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissingCapability {

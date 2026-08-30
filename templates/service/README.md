@@ -15,8 +15,8 @@ the rust-toolbox template.
   `DEPLOYMENT=clustered`
 - gRPC health and reflection, so `grpcurl` works with no protos to hand
 - locked migrations, so replicas starting together do not race
-{% if gateway %}- login, refresh, logout, `/auth/me` and `/auth/providers`, with
-  the login rate limit already attached
+{% if gateway %}- login, refresh, logout and `/auth/me`, with the login rate
+  limit already attached
 {% endif %}
 
 ## Running it

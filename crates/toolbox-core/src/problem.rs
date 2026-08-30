@@ -166,7 +166,8 @@ impl Problem {
 /// # Arguments
 ///
 /// * `kind` - The transport-neutral failure kind to name.
-fn title_for(kind: ErrorKind) -> &'static str {
+#[must_use]
+pub fn title_for(kind: ErrorKind) -> &'static str {
     match kind {
         ErrorKind::NotFound => "Not Found",
         ErrorKind::InvalidArgument => "Invalid Argument",

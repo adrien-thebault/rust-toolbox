@@ -1,10 +1,8 @@
 //! The HTTP gateway.
 
-use std::sync::Arc;
-
 use clap::Parser;
 use {{crate_name}}_web::{auth, auth::AuthConfig, routes::router};
-use toolbox_cluster::{Adapter, InMemoryKeyValue};
+use toolbox_cluster::Adapter;
 use toolbox_grpc::{BackendConfig, backend};
 use toolbox_server::{
     args::{DeploymentArgs, ServerArgs},
@@ -20,13 +18,17 @@ use toolbox_web::{
     serve_http,
 };
 
+/// Command-line arguments.
 #[derive(Parser)]
 #[command(name = "gateway")]
 struct Args {
+    /// Log format and level.
     #[command(flatten)]
     telemetry: TelemetryArgs,
+    /// Listen address.
     #[command(flatten)]
     server: ServerArgs,
+    /// `single` or `clustered`.
     #[command(flatten)]
     deployment: DeploymentArgs,
 
@@ -56,8 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Everything identity needs, read once at startup so a missing variable is
     // a refusal to start rather than a 500 on the first login.
     let config = AuthConfig::from_env()?;
-    let kv = Arc::new(InMemoryKeyValue::default());
-    let state = auth::state(todos, &config, kv.clone())?;
+    let state = auth::state(todos, &config)?;
 
     let login = LoginLimit {
         hops: TrustedHops(args.trusted_hops),
@@ -66,9 +67,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let deployment = args.deployment.resolve()?;
     let limiter = RateLimitAdapter;
-    // Every stateful adapter this process built, so the guard can refuse to
-    // start a single-replica one under DEPLOYMENT=clustered.
-    let adapters: Vec<&dyn Adapter> = vec![&limiter, kv.as_ref()];
+    // Every stateful adapter this process built, so the guard can flag a
+    // single-replica one under DEPLOYMENT=clustered.
+    let adapters: Vec<&dyn Adapter> = vec![&limiter];
 
     let cfg = ServeConfig::new(args.server.listen_addr, &deployment).adapters(&adapters);
     let health = HealthState::new(cfg.shutdown_handle.readiness());

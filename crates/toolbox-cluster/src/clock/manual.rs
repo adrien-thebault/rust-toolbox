@@ -15,7 +15,9 @@ use super::Clock;
 /// A clock that only moves when a test moves it.
 #[derive(Debug, Clone)]
 pub struct ManualClock {
+    /// The current time, milliseconds since an arbitrary epoch.
     millis: Arc<AtomicU64>,
+    /// Woken on every advance so pending sleeps re-check the time.
     tick: Arc<tokio::sync::Notify>,
 }
 
@@ -77,10 +79,21 @@ impl Clock for ManualClock {
     }
 
     async fn sleep(&self, d: Duration) {
-        let deadline =
-            self.millis.load(Ordering::SeqCst) + u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
+        let deadline = self
+            .millis
+            .load(Ordering::SeqCst)
+            .saturating_add(u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+
+        let notified = self.tick.notified();
+        tokio::pin!(notified);
+        // Enable before the first deadline check: a wake that lands in the gap
+        // between the check and the await is then remembered rather than lost,
+        // which is what `notify_waiters` does not buffer on its own.
+        notified.as_mut().enable();
         while self.millis.load(Ordering::SeqCst) < deadline {
-            self.tick.notified().await;
+            notified.as_mut().await;
+            notified.set(self.tick.notified());
+            notified.as_mut().enable();
         }
     }
 }

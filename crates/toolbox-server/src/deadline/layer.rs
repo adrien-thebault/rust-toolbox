@@ -18,7 +18,9 @@ use super::{DEADLINE, GRPC_TIMEOUT, parse_grpc_timeout};
 /// configured default, so a caller may ask for less time but never for more.
 #[derive(Debug, Clone, Copy)]
 pub struct DeadlineLayer {
+    /// The deadline applied when the caller asks for none.
     default: Option<Duration>,
+    /// Whether to answer a timeout as `grpc-status: 4` rather than HTTP 504.
     grpc_status: bool,
 }
 
@@ -63,8 +65,11 @@ impl<S> Layer<S> for DeadlineLayer {
 /// The service [`DeadlineLayer`] produces.
 #[derive(Debug, Clone, Copy)]
 pub struct DeadlineService<S> {
+    /// The wrapped service.
     inner: S,
+    /// The deadline applied when the caller asks for none.
     default: Option<Duration>,
+    /// Whether to answer a timeout as `grpc-status: 4` rather than HTTP 504.
     grpc_status: bool,
 }
 

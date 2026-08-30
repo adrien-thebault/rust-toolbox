@@ -1,22 +1,22 @@
-//! Where roles live in an identity provider's token.
+//! How to read a [`Principal`] out of an identity provider's claims.
 //!
-//! **this is the entire reason OIDC belongs in a toolbox rather than in each
-//! project.** Discovery, PKCE and JWKS rotation are `openidconnect`'s job. What
-//! is deployment-specific, and what every project re-derives by reading its
-//! provider's token in a debugger, is which claim carries the roles - and every
-//! provider puts them somewhere different.
+//! Every provider puts the subject, the roles and the display fields somewhere
+//! different, and which claim carries the roles is the one thing a project
+//! otherwise re-derives by reading its provider's token in a debugger. This is
+//! that decision, written down once and reusable: give it the paths, hand it a
+//! decoded token, get a `Principal`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::principal::Principal;
+use super::Principal;
 
 /// A dotted path into a claims document: `realm_access.roles`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClaimPath(String);
+pub struct MappingPath(String);
 
-impl ClaimPath {
+impl MappingPath {
     /// A path from its dotted form.
     ///
     /// # Arguments
@@ -57,7 +57,7 @@ impl ClaimPath {
     }
 }
 
-impl From<&str> for ClaimPath {
+impl From<&str> for MappingPath {
     fn from(s: &str) -> Self {
         Self(s.to_owned())
     }
@@ -65,15 +65,15 @@ impl From<&str> for ClaimPath {
 
 /// How to read a principal out of a provider's claims.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClaimsMapping {
+pub struct PrincipalMapping {
     /// Where the stable subject is. Never the email: those get reassigned.
-    pub subject: ClaimPath,
+    pub subject: MappingPath,
     /// Where the display name is.
-    pub display_name: Option<ClaimPath>,
+    pub display_name: Option<MappingPath>,
     /// Where the email is.
-    pub email: Option<ClaimPath>,
+    pub email: Option<MappingPath>,
     /// Every place roles might be. All are read and merged.
-    pub roles: Vec<ClaimPath>,
+    pub roles: Vec<MappingPath>,
     /// Keep only roles starting with this, and strip it.
     ///
     /// A realm shared across applications prefixes roles with the application
@@ -81,16 +81,17 @@ pub struct ClaimsMapping {
     pub role_prefix: Option<String>,
     /// Uppercase roles after mapping, so `admin` and `ADMIN` are one role.
     pub uppercase_roles: bool,
-    /// Extra claims to carry into `Principal::attributes`.
-    pub attributes: Vec<ClaimPath>,
+    /// Extra claims to carry into `Principal::attributes`, each keyed by its
+    /// full dotted path.
+    pub attributes: Vec<MappingPath>,
 }
 
-impl Default for ClaimsMapping {
+impl Default for PrincipalMapping {
     fn default() -> Self {
         Self {
-            subject: ClaimPath::new("sub"),
-            display_name: Some(ClaimPath::new("name")),
-            email: Some(ClaimPath::new("email")),
+            subject: MappingPath::new("sub"),
+            display_name: Some(MappingPath::new("name")),
+            email: Some(MappingPath::new("email")),
             roles: Vec::new(),
             role_prefix: None,
             uppercase_roles: true,
@@ -99,12 +100,12 @@ impl Default for ClaimsMapping {
     }
 }
 
-impl ClaimsMapping {
+impl PrincipalMapping {
     /// Keycloak: realm roles and this client's roles.
     ///
     /// `resource_access.{client_id}.roles` is Keycloak's **per-application**
-    /// role list, which is why `toolbox-principals-service` never needs to
-    /// manage roles itself.
+    /// role list, so a service reading this mapping never needs a role table of
+    /// its own.
     ///
     /// # Arguments
     ///
@@ -115,10 +116,11 @@ impl ClaimsMapping {
     pub fn keycloak(client_id: &str) -> Self {
         Self {
             roles: vec![
-                ClaimPath::new("realm_access.roles"),
-                ClaimPath::new(format!("resource_access.{client_id}.roles")),
+                MappingPath::new("realm_access.roles"),
+                MappingPath::new(format!("resource_access.{client_id}.roles")),
             ],
-            ..preferred_username()
+            display_name: Some(MappingPath::new("preferred_username")),
+            ..Self::default()
         }
     }
 
@@ -126,8 +128,9 @@ impl ClaimsMapping {
     #[must_use]
     pub fn authentik() -> Self {
         Self {
-            roles: vec![ClaimPath::new("groups")],
-            ..preferred_username()
+            roles: vec![MappingPath::new("groups")],
+            display_name: Some(MappingPath::new("preferred_username")),
+            ..Self::default()
         }
     }
 
@@ -141,7 +144,7 @@ impl ClaimsMapping {
     pub fn namespaced(namespace: &str) -> Self {
         let namespace = namespace.trim_end_matches('/');
         Self {
-            roles: vec![ClaimPath::new(format!("{namespace}/roles"))],
+            roles: vec![MappingPath::new(format!("{namespace}/roles"))],
             ..Self::default()
         }
     }
@@ -154,7 +157,7 @@ impl ClaimsMapping {
     ///   splits them across two places.
     #[must_use]
     pub fn with_roles_at(mut self, path: impl Into<String>) -> Self {
-        self.roles.push(ClaimPath::new(path));
+        self.roles.push(MappingPath::new(path));
         self
     }
 
@@ -174,11 +177,11 @@ impl ClaimsMapping {
     ///
     /// # Arguments
     ///
-    /// * `path` - A claim to copy into the principal's attributes. The last
-    ///   path segment becomes the attribute name.
+    /// * `path` - A claim to copy into the principal's attributes. Its full
+    ///   dotted path becomes the attribute key.
     #[must_use]
     pub fn with_attribute(mut self, path: impl Into<String>) -> Self {
-        self.attributes.push(ClaimPath::new(path));
+        self.attributes.push(MappingPath::new(path));
         self
     }
 
@@ -214,7 +217,7 @@ impl ClaimsMapping {
             let Some(value) = path.resolve(claims) else {
                 continue;
             };
-            for role in as_strings(value) {
+            for role in as_string_list(value) {
                 if let Some(role) = self.normalize(&role) {
                     roles.insert(role);
                 }
@@ -224,7 +227,7 @@ impl ClaimsMapping {
         let mut attributes = BTreeMap::new();
         for path in &self.attributes {
             if let Some(value) = path.resolve(claims)
-                && let Some(text) = as_text(value)
+                && let Some(text) = as_string(value)
             {
                 attributes.insert(path.as_str().to_owned(), text);
             }
@@ -234,8 +237,11 @@ impl ClaimsMapping {
             subject,
             issuer: issuer.to_owned(),
             roles,
-            display_name: self.display_name.as_ref().and_then(|p| text_at(p, claims)),
-            email: self.email.as_ref().and_then(|p| text_at(p, claims)),
+            display_name: self
+                .display_name
+                .as_ref()
+                .and_then(|p| string_at(p, claims)),
+            email: self.email.as_ref().and_then(|p| string_at(p, claims)),
             attributes,
         })
     }
@@ -264,26 +270,12 @@ impl ClaimsMapping {
     }
 }
 
-/// The preset shared by providers that put the username in
-/// `preferred_username`.
-fn preferred_username() -> ClaimsMapping {
-    ClaimsMapping {
-        subject: ClaimPath::new("sub"),
-        display_name: Some(ClaimPath::new("preferred_username")),
-        email: Some(ClaimPath::new("email")),
-        roles: Vec::new(),
-        role_prefix: None,
-        uppercase_roles: true,
-        attributes: Vec::new(),
-    }
-}
-
 /// A claim may hold one role or a list of them; both are common.
 ///
 /// # Arguments
 ///
 /// * `value` - The claim's value: a single string, or an array of them.
-fn as_strings(value: &serde_json::Value) -> Vec<String> {
+fn as_string_list(value: &serde_json::Value) -> Vec<String> {
     match value {
         serde_json::Value::String(s) => vec![s.clone()],
         serde_json::Value::Array(items) => items
@@ -300,7 +292,7 @@ fn as_strings(value: &serde_json::Value) -> Vec<String> {
 /// # Arguments
 ///
 /// * `value` - The claim's value.
-fn as_text(value: &serde_json::Value) -> Option<String> {
+fn as_string(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => Some(s.clone()),
         serde_json::Value::Bool(b) => Some(b.to_string()),
@@ -315,6 +307,6 @@ fn as_text(value: &serde_json::Value) -> Option<String> {
 ///
 /// * `path` - Where to look.
 /// * `claims` - The document to look in.
-fn text_at(path: &ClaimPath, claims: &serde_json::Value) -> Option<String> {
-    path.resolve(claims).and_then(as_text)
+fn string_at(path: &MappingPath, claims: &serde_json::Value) -> Option<String> {
+    path.resolve(claims).and_then(as_string)
 }

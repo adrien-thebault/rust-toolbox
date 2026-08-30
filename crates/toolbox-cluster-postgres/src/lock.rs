@@ -38,6 +38,7 @@ use crate::schema::toolbox_locks;
 /// Locks every replica shares, held as leases.
 #[derive(Clone)]
 pub struct PostgresLocks {
+    /// The shared pool the lock table lives in.
     db: Db<PgConnection>,
 }
 
@@ -123,7 +124,9 @@ fn to_chrono(d: Duration) -> chrono::Duration {
     chrono::Duration::from_std(d).unwrap_or_else(|_| chrono::Duration::hours(1))
 }
 
+/// The drop-time release hook a lease guard calls.
 struct Release {
+    /// The pool to run the release statement on.
     db: Db<PgConnection>,
 }
 
@@ -220,6 +223,7 @@ impl LockManager for PostgresLocks {
 /// The owner returned by the take-the-lease statement.
 #[derive(diesel::QueryableByName)]
 struct Holder {
+    /// The owner token that currently holds the lease.
     #[diesel(sql_type = diesel::sql_types::Text)]
     owner: String,
 }

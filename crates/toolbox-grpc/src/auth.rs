@@ -61,6 +61,7 @@ impl ServiceAuth {
 /// Reject any request that does not carry the expected service credential.
 #[derive(Clone)]
 pub struct ServiceAuthLayer {
+    /// The credential every request must present.
     expected: SecretString,
 }
 
@@ -99,7 +100,9 @@ impl<S> Layer<S> for ServiceAuthLayer {
 /// The service [`ServiceAuthLayer`] produces.
 #[derive(Clone)]
 pub struct ServiceAuthService<S> {
+    /// The wrapped service.
     inner: S,
+    /// The credential every request must present.
     expected: SecretString,
 }
 

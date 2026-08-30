@@ -23,6 +23,7 @@ use crate::{
 /// The todo service.
 #[derive(Clone)]
 pub struct TodoService {
+    /// The pool every handler runs its queries on.
     db: Db<Connection>,
 }
 

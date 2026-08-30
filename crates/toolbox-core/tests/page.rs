@@ -187,3 +187,36 @@ fn an_empty_page_is_empty() {
     assert!(page.is_empty());
     assert_eq!(page.total(), 0);
 }
+
+#[test]
+fn deserializing_a_page_request_runs_the_bounds_check() {
+    let ok: PageRequest = serde_json::from_str(r#"{"paged":{"offset":0,"limit":10,"sort":[]}}"#)
+        .expect("a valid window deserializes");
+    assert_eq!(ok, PageRequest::paged(0, 10, Sort::unsorted()).unwrap());
+
+    for body in [
+        r#"{"paged":{"offset":0,"limit":0,"sort":[]}}"#,
+        r#"{"paged":{"offset":0,"limit":-1,"sort":[]}}"#,
+        r#"{"paged":{"offset":-1,"limit":10,"sort":[]}}"#,
+        r#"{"paged":{"offset":0,"limit":100000,"sort":[]}}"#,
+    ] {
+        assert!(
+            serde_json::from_str::<PageRequest>(body).is_err(),
+            "{body} should be rejected on the wire"
+        );
+    }
+}
+
+#[test]
+fn a_hand_built_page_with_a_zero_limit_does_not_panic() {
+    // `Page::new` bypasses the constructor, so the accessors must not divide by
+    // zero on a window that never passed validation.
+    let bad = PageRequest::Paged {
+        offset: 0,
+        limit: 0,
+        sort: Sort::unsorted(),
+    };
+    let page = Page::<u8>::new(vec![], bad, 0);
+    assert_eq!(page.page_number(), Some(0));
+    assert_eq!(page.total_pages(), Some(0));
+}

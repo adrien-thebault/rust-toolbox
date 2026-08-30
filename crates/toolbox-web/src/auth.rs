@@ -1,22 +1,22 @@
 //! The login routes and the session middleware.
 //!
-//! Login, refresh, logout, "who am I" and "what can I log in with" are the same
-//! five endpoints in every project, and three of them have a security-relevant
-//! detail that is easy to get wrong.
+//! Login, refresh, logout and "who am I" are the same four endpoints in every
+//! project, and two of them have a security-relevant detail that is easy to get
+//! wrong.
 //!
-//! Three things here that are otherwise re-derived per project:
+//! Two things here that are otherwise re-derived per project:
 //!
 //! - **The credential rate limit is attached here**, to `/auth/login` and
 //!   `/auth/refresh` and to nothing else. Wiring it by hand means reasoning
 //!   about axum's "a layer only wraps routes already added" ordering rule
 //!   every time, and getting it wrong throttles `/auth/me` on every page load.
-//! - **Refresh tokens exist.** A twelve-hour access token with no refresh
-//!   means the admin is silently logged out mid-session; a short one without
-//!   refresh means they are logged out constantly.
-//! - **`GET /auth/providers`** lets a login page render "Sign in with
-//!   Keycloak" without a frontend change. Small endpoint, large decoupling.
+//! - **Refresh tokens are stateless JWTs.** A short access token with no
+//!   refresh logs the user out constantly; a long one is a revocation window
+//!   nobody wants. The refresh token carries the principal and, optionally, a
+//!   fingerprint of the stored credential so "change your password" revokes it
+//!   ([`AuthState::refresh_epoch`]).
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
@@ -25,30 +25,58 @@ use axum::{
     routing::{get, post},
 };
 use governor::{clock::QuantaInstant, middleware::NoOpMiddleware};
-use http::StatusCode;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use toolbox_auth::{
-    AuthError, Credential, Principal, ProviderInfo, ProviderRegistry, RefreshTokens, SessionCodec,
+    AuthError, Credential, ForwardedHeaders, ForwardedIdentity, JwtIdentityProvider, Principal,
+    ProviderRegistry, RefreshInfo,
 };
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tracing::debug;
 
 use crate::{
-    client_ip::TrustedHops,
+    client_ip::{TrustedHops, client_ip_of},
     error::ApiError,
     rate_limit::{ForwardedForKeyExtractor, error_response_handler},
 };
 
 /// What the auth routes need from the application's state.
 pub trait AuthState: Clone + Send + Sync + 'static {
-    /// Everything a caller may log in with.
+    /// Everything a caller may present, including the bearer verifier.
     fn providers(&self) -> &ProviderRegistry;
-    /// How sessions are issued and verified.
-    fn sessions(&self) -> &SessionCodec;
-    /// Refresh tokens, when the deployment issues them.
-    fn refresh_tokens(&self) -> Option<&Arc<RefreshTokens>> {
-        None
+
+    /// The codec that mints this gateway's sessions.
+    fn session_issuer(&self) -> &JwtIdentityProvider;
+
+    /// The credential fingerprint to bind a **new** refresh token to, at login.
+    ///
+    /// Return `Some(toolbox_auth::auth_epoch(secret, &stored_hash))` to make
+    /// "change your password" invalidate every refresh token for that user. The
+    /// default, `None`, issues refresh tokens with no credential binding.
+    ///
+    /// # Arguments
+    ///
+    /// * `_principal` - Who the refresh token will be for, fresh from login.
+    fn refresh_epoch(
+        &self,
+        _principal: &Principal,
+    ) -> impl std::future::Future<Output = Option<String>> + Send {
+        std::future::ready(None)
+    }
+
+    /// Re-resolve a principal when a refresh token is redeemed.
+    ///
+    /// Given what the token carried ([`RefreshInfo`]), return the principal
+    /// **as it is now** - re-read your user store so a demotion or a disabled
+    /// account takes effect on the next refresh, not after the full refresh
+    /// TTL. Return `Err(AuthError::Unauthenticated)` to reject: the account is
+    /// gone, or `info.epoch` no longer matches the stored credential. The
+    /// default trusts the token as-is.
+    fn resolve_refresh(
+        &self,
+        info: RefreshInfo,
+    ) -> impl std::future::Future<Output = Result<Principal, AuthError>> + Send {
+        std::future::ready(Ok(info.stale))
     }
 }
 
@@ -70,9 +98,8 @@ pub struct SessionResponse {
     pub token_type: &'static str,
     /// How many seconds the access token is good for.
     pub expires_in: u64,
-    /// The refresh token, when the deployment issues them.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub refresh_token: Option<String>,
+    /// The refresh token, to trade for a new access token later.
+    pub refresh_token: String,
 }
 
 /// A refresh request.
@@ -92,7 +119,7 @@ pub struct LoginLimit {
     /// How many attempts one caller may make back to back.
     pub burst: u32,
     /// How long before one of those attempts is replenished.
-    pub replenish_every: Duration,
+    pub replenish_every: std::time::Duration,
     /// How many proxies append to `X-Forwarded-For`.
     ///
     /// It must match what the rest of the process uses. Set too low behind a
@@ -109,7 +136,7 @@ impl Default for LoginLimit {
     fn default() -> Self {
         Self {
             burst: 5,
-            replenish_every: Duration::from_secs(5),
+            replenish_every: std::time::Duration::from_secs(5),
             hops: TrustedHops::default(),
         }
     }
@@ -131,8 +158,7 @@ pub fn auth_router<S: AuthState>(limit: &LoginLimit) -> Router<S> {
         // Applied to the two routes above and no others, because a layer wraps
         // what was already added. `/auth/me` is called on every page load.
         .layer(login_limiter(limit))
-        .route("/auth/providers", get(providers::<S>))
-        .route("/auth/logout", post(logout::<S>))
+        .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
 }
 
@@ -162,23 +188,12 @@ fn login_limiter(
     GovernorLayer::new(Arc::new(config)).error_handler(error_response_handler)
 }
 
-/// `GET`: what a login page may offer, so the frontend does not hard-code the
-/// list.
-///
-/// # Arguments
-///
-/// * `state` - The application state, read for the provider registry.
-#[allow(clippy::unused_async)]
-async fn providers<S: AuthState>(State(state): State<S>) -> Json<Vec<ProviderInfo>> {
-    Json(state.providers().info())
-}
-
 /// `POST`: exchange a credential for a session.
 ///
 /// # Arguments
 ///
-/// * `state` - The application state, which is where the codec, the registry
-///   and the refresh store are reached.
+/// * `state` - The application state, which is where the registry and the
+///   session issuer are reached.
 /// * `body` - The credential presented. Every registered provider is tried in
 ///   order until one claims it.
 async fn login<S: AuthState>(
@@ -194,53 +209,38 @@ async fn login<S: AuthState>(
     issue(&state, &principal).await
 }
 
-/// `POST`: rotate a refresh token and mint a new session.
+/// `POST`: redeem a refresh token and mint a new session.
 ///
 /// # Arguments
 ///
-/// * `state` - The application state, which is where the codec, the registry
-///   and the refresh store are reached.
-/// * `body` - The refresh token being redeemed. It is consumed, so presenting
-///   it twice fails.
+/// * `state` - The application state.
+/// * `body` - The refresh token being redeemed.
 async fn refresh<S: AuthState>(
     State(state): State<S>,
     Json(body): Json<RefreshRequest>,
 ) -> Result<Json<SessionResponse>, ApiError> {
-    let tokens = state.refresh_tokens().ok_or_else(|| {
-        ApiError::new(StatusCode::NOT_IMPLEMENTED, "Not Implemented")
-            .with_code("REFRESH_NOT_ENABLED")
-            .with_detail("this deployment does not issue refresh tokens")
-    })?;
-
-    let rotated = tokens.rotate(&body.refresh_token).await?;
-    let access_token = state.sessions().issue(&rotated.principal)?;
+    let issuer = state.session_issuer();
+    let refreshed = issuer
+        .refresh(&body.refresh_token, |info| state.resolve_refresh(info))
+        .await?;
 
     Ok(Json(SessionResponse {
-        access_token,
+        access_token: refreshed.access_token,
         token_type: "Bearer",
-        expires_in: ttl_seconds(state.sessions()),
-        refresh_token: Some(rotated.token),
+        expires_in: issuer.token_ttl().as_secs(),
+        refresh_token: refreshed.refresh_token,
     }))
 }
 
-/// `POST`: revoke the caller's refresh token.
+/// `POST`: end the caller's session.
 ///
-/// # Arguments
-///
-/// * `state` - The application state, which is where the codec, the registry
-///   and the refresh store are reached.
-/// * `body` - The token to revoke, if the client sent one. Logging out without
-///   it still succeeds, because the access token expires on its own.
-async fn logout<S: AuthState>(
-    State(state): State<S>,
-    body: Option<Json<RefreshRequest>>,
-) -> Result<StatusCode, ApiError> {
-    // Revoking the refresh token is what actually ends the session; the access
-    // token stays valid until it expires, which is the trade ADR 0004 records.
-    if let (Some(tokens), Some(Json(body))) = (state.refresh_tokens(), body) {
-        tokens.revoke(&body.refresh_token).await?;
-    }
-    Ok(StatusCode::NO_CONTENT)
+/// With stateless sessions there is nothing server-side to revoke: the client
+/// discards its tokens and the access token expires on its own. "Log out
+/// everywhere" is a password change. The endpoint stays so a client has one
+/// call to make.
+#[allow(clippy::unused_async)]
+async fn logout() -> http::StatusCode {
+    http::StatusCode::NO_CONTENT
 }
 
 /// `GET`: the caller's principal, so a frontend can render its own interface
@@ -257,42 +257,25 @@ async fn me(principal: Option<axum::Extension<Principal>>) -> Result<Json<Princi
         .ok_or_else(|| AuthError::Unauthenticated.into())
 }
 
-/// Build the session response both login and refresh return, so the two cannot
-/// drift apart.
+/// Build the session response, so login and refresh cannot drift apart.
 ///
 /// # Arguments
 ///
-/// * `state` - The application state, for the codec and the refresh store.
+/// * `state` - The application state, for the issuer and the epoch hook.
 /// * `principal` - Who the session is for.
 async fn issue<S: AuthState>(
     state: &S,
     principal: &Principal,
 ) -> Result<Json<SessionResponse>, ApiError> {
-    let access_token = state.sessions().issue(principal)?;
-    let refresh_token = match state.refresh_tokens() {
-        Some(tokens) => Some(tokens.issue(principal).await?),
-        None => None,
-    };
+    let issuer = state.session_issuer();
+    let epoch = state.refresh_epoch(principal).await;
 
     Ok(Json(SessionResponse {
-        access_token,
+        access_token: issuer.issue(principal)?,
         token_type: "Bearer",
-        expires_in: ttl_seconds(state.sessions()),
-        refresh_token,
+        expires_in: issuer.token_ttl().as_secs(),
+        refresh_token: issuer.issue_refresh(principal, epoch.as_deref())?,
     }))
-}
-
-/// The access-token lifetime to advertise, so a client knows when to refresh
-/// rather than guessing.
-///
-/// # Arguments
-///
-/// * `codec` - The codec that will issue the token, which is what owns the
-///   lifetime.
-fn ttl_seconds(codec: &SessionCodec) -> u64 {
-    match codec {
-        SessionCodec::Local(c) | SessionCodec::Either(c, _) => c.token_ttl().as_secs(),
-    }
 }
 
 /// Put the caller's `Principal` in the request extensions, when they have one.
@@ -303,8 +286,7 @@ fn ttl_seconds(codec: &SessionCodec) -> u64 {
 ///
 /// # Arguments
 ///
-/// * `state` - The application state, which is where the codec, the registry
-///   and the refresh store are reached.
+/// * `state` - The application state, read for the provider registry.
 /// * `request` - The incoming request. Its `Authorization` header is read, and
 ///   the principal is inserted into its extensions.
 /// * `next` - The rest of the stack, called whether or not a principal was
@@ -315,17 +297,19 @@ pub async fn session_layer<S: AuthState>(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     if let Some(token) = bearer(&request) {
-        match state.sessions().verify(&token) {
+        match state
+            .providers()
+            .authenticate(&Credential::Bearer(SecretString::from(token)))
+            .await
+        {
             Ok(principal) => {
                 request.extensions_mut().insert(principal);
             }
-            Err(e) => {
-                // An expired token has to reach the client as a 401 so it
-                // knows to refresh; silently continuing anonymous would turn
-                // it into a 403 from whatever came next.
-                if matches!(e, AuthError::Expired) {
-                    return ApiError::from(e).into_response();
-                }
+            // An expired token has to reach the client as a 401 so it knows to
+            // refresh; continuing anonymous would turn it into a 403 from
+            // whatever came next.
+            Err(AuthError::Expired) => return ApiError::from(AuthError::Expired).into_response(),
+            Err(_) => {
                 debug!("a request carried a session that did not verify");
             }
         }
@@ -347,4 +331,78 @@ fn bearer(request: &axum::extract::Request) -> Option<String> {
         .ok()?
         .strip_prefix("Bearer ")
         .map(str::to_owned)
+}
+
+/// What [`forwarded_auth_layer`] needs: which headers a trusting proxy sets,
+/// and how far back the peer address is.
+#[derive(Debug, Clone, Default)]
+pub struct ForwardedConfig {
+    /// The header names this proxy uses. Defaults to oauth2-proxy's
+    /// `X-Forwarded-*`; `ForwardedHeaders::authelia()` and friends cover the
+    /// rest.
+    pub headers: ForwardedHeaders,
+    /// How many proxy hops to trust when resolving the peer address, matching
+    /// what the rest of the process uses.
+    pub hops: TrustedHops,
+}
+
+/// Populate the caller's `Principal` from an authenticating proxy's headers.
+///
+/// The registry's [`toolbox_auth::ForwardedIdentityProvider`] does the peer
+/// check: this layer only reads the headers and the peer and hands them over.
+/// Mount it *after* [`session_layer`] so a real bearer token wins over a
+/// forwarded header.
+///
+/// # Arguments
+///
+/// * `state` - The application state and the header configuration, passed as a
+///   pair to `axum::middleware::from_fn_with_state`.
+/// * `request` - The incoming request. Its forwarded headers and peer are read.
+/// * `next` - The rest of the stack.
+pub async fn forwarded_auth_layer<S: AuthState>(
+    State((state, config)): State<(S, ForwardedConfig)>,
+    mut request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // The proxy header is the fallback, not an override: a bearer token that
+    // already resolved wins.
+    if request.extensions().get::<Principal>().is_none() {
+        let identity = forwarded_identity(request.headers(), request.extensions(), &config);
+        if identity.user.is_some()
+            && let Ok(principal) = state
+                .providers()
+                .authenticate(&Credential::Custom(Box::new(identity)))
+                .await
+        {
+            request.extensions_mut().insert(principal);
+        }
+    }
+    next.run(request).await
+}
+
+/// Read a [`ForwardedIdentity`] out of a request.
+///
+/// # Arguments
+///
+/// * `headers` - The request headers.
+/// * `extensions` - The request extensions, where the connect info lives.
+/// * `config` - Which headers to read and how many hops to trust.
+fn forwarded_identity(
+    headers: &http::HeaderMap,
+    extensions: &http::Extensions,
+    config: &ForwardedConfig,
+) -> ForwardedIdentity {
+    let read = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+            .filter(|s| !s.is_empty())
+    };
+    ForwardedIdentity {
+        user: read(&config.headers.user),
+        groups: read(&config.headers.groups),
+        email: read(&config.headers.email),
+        peer: client_ip_of(headers, extensions, config.hops),
+    }
 }

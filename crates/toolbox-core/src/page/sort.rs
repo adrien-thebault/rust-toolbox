@@ -147,8 +147,9 @@ impl Sort {
     ///
     /// # Arguments
     ///
-    /// * `s` - A comma-separated sort expression such as `created_at:desc,id`.
-    ///   An omitted direction means ascending.
+    /// * `s` - A comma-separated list of terms, each a field name optionally
+    ///   prefixed with `-` for descending or `+` for ascending, e.g.
+    ///   `-created_at,title`. No prefix means ascending.
     ///
     /// # Errors
     /// [`PageError::EmptySortField`] when a term is blank.

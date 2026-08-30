@@ -29,6 +29,7 @@ pub type GrpcStacked<S> = CatchPanic<
 /// deadline is answered as `grpc-status: 4` rather than as HTTP 504.
 #[derive(Debug, Clone, Copy)]
 pub struct GrpcStack {
+    /// Timeouts, trace level and the rest, shared with the other stacks.
     cfg: StackConfig,
 }
 

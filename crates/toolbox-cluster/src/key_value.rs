@@ -22,6 +22,10 @@ pub struct KeyValueCapabilities {
     /// Whether `take` is genuinely atomic. A caller that needs it must check,
     /// because an adapter without it turns rotation into a race.
     pub atomic_take: bool,
+    /// Whether `add` is genuinely atomic. A caller that needs it must check,
+    /// because an adapter without it lets two racing requests both create the
+    /// same key - which is the trap an idempotency claim exists to close.
+    pub atomic_add: bool,
     /// Whether per-entry expiry is honoured.
     pub ttl: bool,
     /// Whether entries survive a restart.
@@ -81,6 +85,31 @@ pub trait KeyValueStore: Send + Sync {
         value: Vec<u8>,
         ttl: Option<Duration>,
     ) -> Result<(), KeyValueError>;
+
+    /// Create a key only if it is not already present.
+    ///
+    /// **Atomic**, or the adapter must not claim
+    /// [`KeyValueCapabilities::atomic_add`]. Returns `true` when this call
+    /// created the entry and `false` when a live entry was already there. An
+    /// expired entry counts as absent and is overwritten. This is what makes an
+    /// idempotency claim safe: two racing requests cannot both create the key.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to create.
+    /// * `value` - The bytes to store if the key is new.
+    /// * `ttl` - How long the new entry lives, or `None` to keep it until
+    ///   deleted.
+    ///
+    /// # Errors
+    /// [`KeyValueError::Unsupported`] on an adapter without an atomic add, or
+    /// [`KeyValueError::Backend`] when the store fails.
+    async fn add(
+        &self,
+        key: &str,
+        value: Vec<u8>,
+        ttl: Option<Duration>,
+    ) -> Result<bool, KeyValueError>;
 
     /// Read and delete a key in one operation.
     ///

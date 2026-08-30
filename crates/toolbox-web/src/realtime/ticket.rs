@@ -38,7 +38,9 @@ pub struct TicketClaims {
 
 /// Issues and redeems stream tickets.
 pub struct Tickets {
+    /// Where single-use tickets are stored.
     kv: Arc<dyn KeyValueStore>,
+    /// How long an unredeemed ticket lives.
     ttl: Duration,
 }
 

@@ -79,7 +79,9 @@ pub enum ClusterError {
 /// Several gRPC backends, each on its own ephemeral port.
 #[derive(Debug, Default)]
 pub struct TestCluster {
+    /// The ephemeral address of each started backend, by name.
     addrs: BackendAddrs,
+    /// The serve task for each backend, aborted on drop.
     handles: Vec<tokio::task::JoinHandle<()>>,
 }
 

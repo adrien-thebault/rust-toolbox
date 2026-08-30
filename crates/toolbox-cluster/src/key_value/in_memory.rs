@@ -11,7 +11,9 @@ use crate::deployment::{Adapter, Scope};
 /// An entry, carrying its own expiry so the cache can honour per-key TTLs.
 #[derive(Debug, Clone)]
 struct CacheEntry {
+    /// The stored value.
     bytes: Vec<u8>,
+    /// The TTL it was written with, if any.
     ttl: Option<Duration>,
     /// When this entry stops being valid.
     ///
@@ -63,6 +65,7 @@ impl Expiry<String, CacheEntry> for PerEntryTtl {
 /// where it was made. Bounded, so a key space an attacker controls cannot grow
 /// without limit.
 pub struct InMemoryKeyValue {
+    /// The bounded moka cache backing every operation.
     cache: Cache<String, CacheEntry>,
 }
 
@@ -104,6 +107,7 @@ impl KeyValueStore for InMemoryKeyValue {
     fn capabilities(&self) -> KeyValueCapabilities {
         KeyValueCapabilities {
             atomic_take: true,
+            atomic_add: true,
             ttl: true,
             durable: false,
             shared: false,
@@ -136,6 +140,33 @@ impl KeyValueStore for InMemoryKeyValue {
             )
             .await;
         Ok(())
+    }
+
+    async fn add(
+        &self,
+        key: &str,
+        value: Vec<u8>,
+        ttl: Option<Duration>,
+    ) -> Result<bool, KeyValueError> {
+        // An expired-but-not-evicted entry must not block a new claim, so it is
+        // removed first; `remove` does not consult the expiry policy.
+        if self.cache.get(key).await.is_some_and(|e| e.is_expired()) {
+            self.cache.remove(key).await;
+        }
+        // moka runs the init future at most once per key across racing calls,
+        // so exactly one caller sees `is_fresh()`.
+        let entry = self
+            .cache
+            .entry(key.to_owned())
+            .or_insert_with(async move {
+                CacheEntry {
+                    bytes: value,
+                    ttl,
+                    expires_at: ttl.map(|d| Instant::now() + d),
+                }
+            })
+            .await;
+        Ok(entry.is_fresh())
     }
 
     async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KeyValueError> {

@@ -44,9 +44,13 @@ pub trait LockRelease: Send + Sync {
 
 /// A held lock. Releases on drop, unless [`LockGuard::keep`] was called.
 pub struct LockGuard {
+    /// The lock key.
     key: String,
+    /// The owner token that holds it.
     owner: String,
+    /// Where the drop-time release goes.
     manager: Arc<dyn LockRelease>,
+    /// Cleared by [`LockGuard::keep`] to suppress the drop release.
     release_on_drop: bool,
 }
 

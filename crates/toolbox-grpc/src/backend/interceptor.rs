@@ -19,6 +19,7 @@ use crate::auth::ServiceAuth;
 /// type for every backend.
 #[derive(Clone)]
 pub struct BackendInterceptor {
+    /// The `authorization` value to attach, if a credential was configured.
     auth: Option<MetadataValue<Ascii>>,
 }
 

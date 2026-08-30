@@ -1,3 +1,5 @@
+mod mapping;
+
 use toolbox_auth::{AuthError, Principal, Role};
 use toolbox_core::{ErrorKind, ServiceError};
 
@@ -33,6 +35,19 @@ fn the_default_role_matches_any_authenticated_caller() {
         p.has::<AnyRole>(),
         "no roles at all still satisfies AnyRole"
     );
+}
+
+/// `has` is `has_role` plus the `AnyRole` wildcard; `"*"` is a literal
+/// everywhere else.
+#[test]
+fn the_wildcard_is_only_special_in_has() {
+    let p = Principal::new("u", "local").with_role("ADMIN");
+    assert!(
+        !p.has_role("*"),
+        "has_role does not treat `*` as a wildcard"
+    );
+    assert!(p.has_role("ADMIN"));
+    assert!(p.require_role("*").is_err());
 }
 
 #[test]

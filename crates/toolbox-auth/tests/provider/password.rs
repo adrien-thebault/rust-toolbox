@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use secrecy::SecretString;
 use toolbox_auth::{
-    AuthError, Credential, IdentityProvider, PasswordProvider, Principal, ProviderRegistry,
+    AuthError, Credential, IdentityProvider, PasswordIdentityProvider, Principal, ProviderRegistry,
     StoredUser, UserStore, hash_password, verify_password,
 };
 
@@ -52,7 +52,7 @@ fn a_malformed_hash_does_not_verify_anything() {
 
 #[tokio::test]
 async fn the_right_password_produces_a_principal() {
-    let provider = PasswordProvider::new(store("hunter2"));
+    let provider = PasswordIdentityProvider::new(store("hunter2"));
     let result = provider
         .authenticate(&credential("ada", "hunter2"))
         .await
@@ -65,7 +65,7 @@ async fn the_right_password_produces_a_principal() {
 
 #[tokio::test]
 async fn the_wrong_password_is_refused() {
-    let provider = PasswordProvider::new(store("hunter2"));
+    let provider = PasswordIdentityProvider::new(store("hunter2"));
     let err = provider
         .authenticate(&credential("ada", "wrong"))
         .await
@@ -78,7 +78,7 @@ async fn the_wrong_password_is_refused() {
 /// response time, which turns the login endpoint into a user enumerator.
 #[tokio::test]
 async fn an_unknown_username_is_refused_the_same_way_as_a_wrong_password() {
-    let provider = PasswordProvider::new(store("hunter2"));
+    let provider = PasswordIdentityProvider::new(store("hunter2"));
     let unknown = provider
         .authenticate(&credential("nobody", "hunter2"))
         .await
@@ -94,7 +94,7 @@ async fn an_unknown_username_is_refused_the_same_way_as_a_wrong_password() {
 /// registry tries the next one rather than failing the login.
 #[tokio::test]
 async fn a_credential_of_the_wrong_kind_is_passed_on() {
-    let provider = PasswordProvider::new(store("hunter2"));
+    let provider = PasswordIdentityProvider::new(store("hunter2"));
     let result = provider
         .authenticate(&Credential::ApiKey(SecretString::from("k".to_owned())))
         .await;
@@ -103,7 +103,7 @@ async fn a_credential_of_the_wrong_kind_is_passed_on() {
 
 #[tokio::test]
 async fn a_registry_tries_providers_in_order() {
-    let registry = ProviderRegistry::new().with(PasswordProvider::new(store("hunter2")));
+    let registry = ProviderRegistry::new().with(PasswordIdentityProvider::new(store("hunter2")));
     assert_eq!(registry.ids(), ["password"]);
 
     let principal: Principal = registry
@@ -115,7 +115,7 @@ async fn a_registry_tries_providers_in_order() {
 
 #[tokio::test]
 async fn a_registry_with_nothing_that_claims_the_credential_is_unauthenticated() {
-    let registry = ProviderRegistry::new().with(PasswordProvider::new(store("hunter2")));
+    let registry = ProviderRegistry::new().with(PasswordIdentityProvider::new(store("hunter2")));
     let err = registry
         .authenticate(&Credential::ApiKey(SecretString::from("k".to_owned())))
         .await
@@ -123,16 +123,46 @@ async fn a_registry_with_nothing_that_claims_the_credential_is_unauthenticated()
     assert_eq!(err, AuthError::Unauthenticated);
 }
 
-/// Adding a provider becomes a deployment change rather than a frontend
-/// release, which is the whole value of this endpoint.
+/// The label a provider carries is renamable without touching the login route.
+#[test]
+fn a_provider_label_is_overridable() {
+    let provider = PasswordIdentityProvider::new(store("x")).with_display_name("Staff login");
+    assert_eq!(provider.display_name(), "Staff login");
+}
+
+/// A `HashMap<String, StoredUser>` is a user store out of the box, for a fixed
+/// set of accounts or a fixture.
 #[tokio::test]
-async fn the_registry_describes_itself_for_a_login_page() {
-    let registry =
-        ProviderRegistry::new().with(PasswordProvider::new(store("x")).display_name("Staff login"));
-    let info = registry.info();
-    assert_eq!(info.len(), 1);
-    assert_eq!(info[0].display_name, "Staff login");
-    assert_eq!(info[0].kind, toolbox_auth::ProviderKind::Credential);
+async fn a_hashmap_is_a_user_store() {
+    let users = std::collections::HashMap::from([(
+        "ada".to_owned(),
+        StoredUser {
+            subject: "ada".to_owned(),
+            password_hash: hash_password("hunter2").unwrap(),
+            roles: vec!["ADMIN".to_owned()],
+            display_name: None,
+            email: None,
+            attributes: BTreeMap::new(),
+        },
+    )]);
+    let provider = PasswordIdentityProvider::new(users);
+
+    let principal = provider
+        .authenticate(&credential("ada", "hunter2"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(principal.subject, "ada");
+    assert!(principal.has_role("ADMIN"));
+
+    assert_eq!(
+        provider
+            .authenticate(&credential("nobody", "hunter2"))
+            .await
+            .unwrap()
+            .unwrap_err(),
+        AuthError::Unauthenticated
+    );
 }
 
 /// A Debug of a login request ends up in a log.
@@ -150,7 +180,7 @@ fn debug_never_prints_a_credential() {
 fn the_unknown_user_path_actually_hashes() {
     use std::time::Instant;
 
-    let provider = PasswordProvider::new(store("hunter2"));
+    let provider = PasswordIdentityProvider::new(store("hunter2"));
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();

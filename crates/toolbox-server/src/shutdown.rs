@@ -68,7 +68,9 @@ pub async fn shutdown_signal() {
 /// A clonable handle to the process's shutdown state.
 #[derive(Debug, Clone)]
 pub struct Shutdown {
+    /// Whether the process is still accepting new traffic.
     ready: Arc<AtomicBool>,
+    /// Broadcasts the drain signal to every waiter.
     tx: watch::Sender<bool>,
 }
 
@@ -143,6 +145,7 @@ impl Shutdown {
 /// Readable readiness state, handed to the `/ready` route.
 #[derive(Debug, Clone)]
 pub struct ReadinessHandle {
+    /// Whether the process should receive new traffic.
     ready: Arc<AtomicBool>,
 }
 

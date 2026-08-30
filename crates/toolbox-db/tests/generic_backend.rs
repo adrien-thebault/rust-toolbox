@@ -160,6 +160,37 @@ fn two_pools_in_one_process() {
     let _mysql = toolbox_db::Db::<MysqlConnection>::builder("mysql://localhost/c");
 }
 
+// --- The `dialect = mysql` save arm compiles ---------------------------------
+//
+// `#[derive(Entity)]` only expands the MySQL `save()` body when an entity
+// declares `dialect = mysql`, and nothing else in the suite does, so this is
+// what type-checks the `WHERE id = LAST_INSERT_ID()` read-back.
+
+diesel::table! {
+    mysql_widgets (id) {
+        id -> Integer,
+        name -> Text,
+        version -> Integer,
+    }
+}
+
+#[derive(Debug, Clone, Queryable, Selectable, Insertable, AsChangeset, toolbox_db::Entity)]
+#[diesel(table_name = mysql_widgets)]
+#[entity(backend = Mysql, dialect = mysql, id = id, autoincrement, version = version)]
+struct MysqlWidget {
+    #[diesel(skip_insertion)]
+    id: i32,
+    name: String,
+    version: i32,
+}
+
+#[allow(dead_code)]
+fn the_mysql_save_arm_type_checks() {
+    let _: fn(&MysqlWidget, &mut MysqlConnection) -> DbResult<MysqlWidget> = MysqlWidget::save;
+    let _: fn(&mut MysqlConnection, &[MysqlWidget]) -> DbResult<Vec<MysqlWidget>> =
+        MysqlWidget::save_all;
+}
+
 // --- And they actually run ----------------------------------------------
 
 #[tokio::test]

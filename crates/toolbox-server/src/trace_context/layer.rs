@@ -37,6 +37,7 @@ impl<S> Layer<S> for TraceContextLayer {
 /// The service [`TraceContextLayer`] produces.
 #[derive(Debug, Clone, Copy)]
 pub struct TraceContextService<S> {
+    /// The wrapped service.
     inner: S,
 }
 

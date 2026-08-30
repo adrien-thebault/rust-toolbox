@@ -131,5 +131,6 @@ pub fn init(format: LogFormat, filter: EnvFilter) -> Result<TelemetryGuard, Tele
 /// Held for the process's lifetime. Dropping it flushes any exporter.
 #[derive(Debug)]
 pub struct TelemetryGuard {
+    /// Blocks construction outside this module.
     _private: (),
 }

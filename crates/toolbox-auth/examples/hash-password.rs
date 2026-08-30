@@ -1,8 +1,5 @@
 //! Print an argon2 hash for a password, for seeding a user store.
 //!
-//! An example rather than a `[[bin]]`: it is a one-off tool, and the crate's
-//! binary surface should stay empty. `cargo test` still compiles it.
-//!
 //! ```sh
 //! ./scripts/hash-password.sh 'correct horse battery staple'
 //! ./scripts/hash-password.sh          # prompts, so it stays out of your shell history

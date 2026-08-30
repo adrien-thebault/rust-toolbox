@@ -14,7 +14,9 @@ use crate::deployment::{Adapter, Scope};
 /// Who holds a lock, and until when.
 #[derive(Debug, Clone)]
 struct Lease {
+    /// The owner token that took it.
     owner: String,
+    /// When it lapses if not renewed.
     until: Instant,
 }
 
@@ -24,6 +26,7 @@ struct Lease {
 /// the work, so it declares [`Scope::Local`].
 #[derive(Debug, Default)]
 pub struct InProcessLocks {
+    /// Every currently held lock, by key.
     held: Arc<Mutex<HashMap<String, Lease>>>,
 }
 
@@ -35,7 +38,9 @@ impl InProcessLocks {
     }
 }
 
+/// The drop-time release hook a [`LockGuard`] calls, sharing the lock table.
 struct InProcessRelease {
+    /// The same table [`InProcessLocks`] holds.
     held: Arc<Mutex<HashMap<String, Lease>>>,
 }
 

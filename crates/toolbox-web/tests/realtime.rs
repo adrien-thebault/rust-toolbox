@@ -86,6 +86,7 @@ async fn tickets_refuse_a_store_that_cannot_take_atomically() {
         fn capabilities(&self) -> toolbox_cluster::KeyValueCapabilities {
             toolbox_cluster::KeyValueCapabilities {
                 atomic_take: false,
+                atomic_add: false,
                 ttl: true,
                 durable: false,
                 shared: false,
@@ -101,6 +102,14 @@ async fn tickets_refuse_a_store_that_cannot_take_atomically() {
             _t: Option<Duration>,
         ) -> Result<(), toolbox_cluster::KeyValueError> {
             Ok(())
+        }
+        async fn add(
+            &self,
+            _k: &str,
+            _v: Vec<u8>,
+            _t: Option<Duration>,
+        ) -> Result<bool, toolbox_cluster::KeyValueError> {
+            Ok(true)
         }
         async fn take(&self, _k: &str) -> Result<Option<Vec<u8>>, toolbox_cluster::KeyValueError> {
             Ok(None)

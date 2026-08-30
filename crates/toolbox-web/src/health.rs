@@ -46,7 +46,9 @@ pub struct Check {
 /// The state `health_router` needs.
 #[derive(Clone)]
 pub struct HealthState {
+    /// Whether the process is accepting traffic.
     readiness: ReadinessHandle,
+    /// Extra checks `/ready` must also pass.
     checks: Arc<Vec<Box<dyn ReadinessCheck>>>,
 }
 

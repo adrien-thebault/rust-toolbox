@@ -15,6 +15,7 @@ use crate::schema::toolbox_kv;
 /// A key-value store every replica shares.
 #[derive(Clone)]
 pub struct PostgresKeyValue {
+    /// The shared pool the migrations were applied to.
     db: Db<PgConnection>,
 }
 
@@ -60,6 +61,7 @@ impl KeyValueStore for PostgresKeyValue {
     fn capabilities(&self) -> KeyValueCapabilities {
         KeyValueCapabilities {
             atomic_take: true,
+            atomic_add: true,
             ttl: true,
             durable: true,
             shared: true,
@@ -118,6 +120,44 @@ impl KeyValueStore for PostgresKeyValue {
             })
             .await
             .map(|_| ())
+            .map_err(|e| KeyValueError::Backend(e.to_string()))
+    }
+
+    async fn add(
+        &self,
+        key: &str,
+        value: Vec<u8>,
+        ttl: Option<Duration>,
+    ) -> Result<bool, KeyValueError> {
+        use diesel::sql_types::{Binary, Nullable, Text, Timestamptz};
+
+        let key = key.to_owned();
+        let expires_at = ttl.map(|d| {
+            chrono::Utc::now()
+                + chrono::Duration::from_std(d).unwrap_or_else(|_| chrono::Duration::days(365))
+        });
+
+        self.db
+            .query(move |c: &mut PgConnection| {
+                // One statement: insert when the key is free, overwrite it when
+                // the existing row has expired, change nothing when a live row
+                // holds it. The affected-row count is 1 only in the first two
+                // cases. A typed builder cannot express a `WHERE` on the
+                // conflict action without shadowing `QueryDsl::filter`.
+                diesel::sql_query(
+                    "INSERT INTO toolbox_kv (key, value, expires_at) VALUES ($1, $2, $3) \
+                     ON CONFLICT (key) DO UPDATE \
+                       SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at \
+                       WHERE toolbox_kv.expires_at IS NOT NULL \
+                         AND toolbox_kv.expires_at <= now()",
+                )
+                .bind::<Text, _>(key)
+                .bind::<Binary, _>(value)
+                .bind::<Nullable<Timestamptz>, _>(expires_at)
+                .execute(c)
+            })
+            .await
+            .map(|n| n == 1)
             .map_err(|e| KeyValueError::Backend(e.to_string()))
     }
 
