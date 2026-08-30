@@ -2,22 +2,23 @@
 
 The multi-replica seam.
 
-Everything here holds state across requests, so each one is a trait with a
-local adapter, a shared adapter, and capabilities declared rather than assumed.
-Each is a module holding the contract, with one file per adapter beneath it, so
-`ls bus/` answers "what can I plug in here?".
+`event`, `kv` and `lock` each hold state across requests, so each is a trait
+with a local adapter, at least one shared adapter, and capabilities declared
+rather than assumed. Each is a module holding the contract, with one file per
+adapter beneath it, so `ls event/` answers "what can I plug in here?". The
+CloudEvents envelope rides along in `event` because `toolbox-core` takes no
+dependencies and it has nowhere smaller to live.
 
 | Module | The contract | Adapters |
 |---|---|---|
-| `bus` | `EventBus`, the capability set | `in_process`, `null` |
-| `key_value` | `KeyValueStore`, including an **atomic** `take` | `in_memory` |
+| `event` | `CloudEvent` + constructors; `EventBus` and its capability set | `in_process` |
+| `kv` | `KvStore`, including an **atomic** `take` | `in_memory` |
 | `lock` | `LockManager`, `LockGuard` | `in_process` |
-| `clock` | `Clock` | `system`, `manual` |
-| `event` | CloudEvents 1.0, from the official SDK | - |
 | `deployment` | `Deployment`, `Scope`, the startup guard | - |
 
 The shared adapters live in `toolbox-cluster-postgres`, so nothing here pulls
-in diesel.
+in diesel. The clock lives in `toolbox-schedule`, its only consumer: it is a
+determinism seam, not a replication one.
 
 ## The guard
 
@@ -28,6 +29,6 @@ Per-process rate limiting under three replicas means three times the allowance,
 so it warns. Refusing to boot for the second kind is how a guard becomes
 something people switch off.
 
-`KeyValueStore::take` is atomic because refresh-token rotation is built on it,
-and a get-then-delete race silently permits exactly the replay rotation exists
-to catch.
+`KvStore::take` is atomic because refresh-token rotation is built on it, and a
+get-then-delete race silently permits exactly the replay rotation exists to
+catch.

@@ -10,10 +10,11 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use toolbox_cluster::{Clock, LockManager, SystemClock};
+use toolbox_cluster::LockManager;
 use tracing::{debug, error, info, warn};
 
 use crate::{
+    clock::{Clock, SystemClock},
     error::ScheduleError,
     job::{JobFuture, JobOutcome, Overlap, RunMode, ScheduledJob},
     trigger::Trigger,

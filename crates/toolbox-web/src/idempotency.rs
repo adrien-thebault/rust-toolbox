@@ -14,7 +14,7 @@
 use std::{sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
-use toolbox_cluster::KeyValueStore;
+use toolbox_cluster::KvStore;
 use tracing::warn;
 
 use crate::{error::ApiError, extract::IdempotencyKey};
@@ -54,7 +54,7 @@ const IN_FLIGHT: &[u8] = b"\x00in-flight";
 /// Claims keys and stores responses against them.
 pub struct Idempotency {
     /// Where in-flight markers and stored responses live.
-    kv: Arc<dyn KeyValueStore>,
+    kv: Arc<dyn KvStore>,
     /// How long a stored response is replayable.
     ttl: Duration,
 }
@@ -75,7 +75,7 @@ impl Idempotency {
     /// * `kv` - The store. It must promise an atomic take, or two concurrent
     ///   retries could both claim the same key.
     #[must_use]
-    pub fn new(kv: Arc<dyn KeyValueStore>) -> Self {
+    pub fn new(kv: Arc<dyn KvStore>) -> Self {
         Self {
             kv,
             ttl: DEFAULT_TTL,
@@ -202,7 +202,7 @@ fn storage_key(route: &str, key: &IdempotencyKey) -> String {
 /// # Arguments
 ///
 /// * `e` - The failure the key-value adapter reported.
-fn store_error(e: toolbox_cluster::KeyValueError) -> ApiError {
+fn store_error(e: toolbox_cluster::KvStoreError) -> ApiError {
     ApiError::of_kind(toolbox_core::ErrorKind::Unavailable, "Service Unavailable")
         .with_code("IDEMPOTENCY_STORE_UNAVAILABLE")
         .with_source(e)

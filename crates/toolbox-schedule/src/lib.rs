@@ -21,9 +21,9 @@
 //!
 //! # One caveat about the injected clock
 //!
-//! [`Scheduler`] reads time from the [`toolbox_cluster::Clock`] port, but a
-//! lock manager's leases are measured against the wall clock. Under
-//! `ManualClock` the two disagree: advancing the manual clock past an
+//! [`Scheduler`] reads time from the [`clock::Clock`] port, but a lock
+//! manager's leases are measured against the wall clock. Under
+//! [`clock::ManualClock`] the two disagree: advancing the manual clock past an
 //! occurrence does not age a held lease. That is correct in production, where
 //! both are real, and it means a test using `ManualClock` should assert on
 //! outcomes rather than on a lease having expired.
@@ -36,11 +36,13 @@
 //! facade into every gateway in a mixed workspace, including ones that
 //! schedule nothing.
 
+pub mod clock;
 pub mod error;
 pub mod job;
 pub mod scheduler;
 pub mod trigger;
 
+pub use clock::{Clock, ManualClock, SystemClock};
 pub use error::ScheduleError;
 pub use job::{JobFuture, JobOutcome, JobResult, Overlap, RunMode, ScheduledJob};
 pub use scheduler::{JobSummary, Scheduler, SchedulerBuilder, lock_key};

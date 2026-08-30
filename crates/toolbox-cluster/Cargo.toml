@@ -1,6 +1,6 @@
 [package]
 name         = "toolbox-cluster"
-description  = "The multi-replica seam: event bus, key-value store, locks, clock, and a deployment guard."
+description  = "The multi-replica seam: event bus, key-value store, locks, and a deployment guard."
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
@@ -16,7 +16,7 @@ path = "tests/integration.rs"
 
 [dependencies]
 toolbox-core = { workspace = true }
-tokio        = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+tokio        = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 futures-core = { workspace = true }
 async-trait  = { workspace = true }

@@ -1,17 +1,19 @@
 //! The default bus: a tokio broadcast channel per topic.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, PoisonError},
+};
 
 use async_trait::async_trait;
+use tokio::sync::broadcast;
 use tokio_stream::StreamExt as _;
 
 use super::{
-    BusCapabilities, BusError, BusOrdering, Delivery, EventBus, EventStream, StartPosition, Topic,
+    BusOrdering, CloudEvent, Delivery, EventBus, EventBusCapabilities, EventBusError, EventStream,
+    StartPosition, Topic,
 };
-use crate::{
-    deployment::{Adapter, Scope},
-    event::CloudEvent,
-};
+use crate::deployment::{Adapter, Scope};
 
 /// The default bus: a tokio broadcast channel per topic.
 ///
@@ -19,28 +21,28 @@ use crate::{
 /// subscriber on another, so under `DEPLOYMENT=clustered` a subscriber misses
 /// most of the stream. That is why it declares [`Scope::Local`] and the
 /// startup guard refuses to run it clustered.
-pub struct InProcessBus {
+pub struct InProcessEventBus {
     /// One broadcast sender per topic, created on first use.
-    topics: Mutex<HashMap<Topic, tokio::sync::broadcast::Sender<CloudEvent>>>,
+    topics: Mutex<HashMap<Topic, broadcast::Sender<CloudEvent>>>,
     /// Per-topic channel capacity; a slow subscriber past this lags.
     buffer: usize,
 }
 
-impl std::fmt::Debug for InProcessBus {
+impl std::fmt::Debug for InProcessEventBus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InProcessBus")
+        f.debug_struct("InProcessEventBus")
             .field("buffer", &self.buffer)
             .finish_non_exhaustive()
     }
 }
 
-impl Default for InProcessBus {
+impl Default for InProcessEventBus {
     fn default() -> Self {
         Self::new(1024)
     }
 }
 
-impl InProcessBus {
+impl InProcessEventBus {
     /// A bus buffering `buffer` events per topic for slow subscribers.
     ///
     /// # Arguments
@@ -62,22 +64,19 @@ impl InProcessBus {
     /// # Arguments
     ///
     /// * `topic` - The topic whose channel is wanted.
-    fn sender(&self, topic: &Topic) -> tokio::sync::broadcast::Sender<CloudEvent> {
-        let mut topics = self
-            .topics
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    fn sender(&self, topic: &Topic) -> broadcast::Sender<CloudEvent> {
+        let mut topics = self.topics.lock().unwrap_or_else(PoisonError::into_inner);
         topics
             .entry(topic.clone())
-            .or_insert_with(|| tokio::sync::broadcast::channel(self.buffer).0)
+            .or_insert_with(|| broadcast::channel(self.buffer).0)
             .clone()
     }
 }
 
 #[async_trait]
-impl EventBus for InProcessBus {
-    fn capabilities(&self) -> BusCapabilities {
-        BusCapabilities {
+impl EventBus for InProcessEventBus {
+    fn capabilities(&self) -> EventBusCapabilities {
+        EventBusCapabilities {
             delivery: Delivery::AtMostOnce,
             replay: None,
             ordering: BusOrdering::PerTopic,
@@ -86,13 +85,17 @@ impl EventBus for InProcessBus {
         }
     }
 
-    async fn publish(&self, topic: &Topic, event: CloudEvent) -> Result<(), BusError> {
+    async fn publish(&self, topic: &Topic, event: CloudEvent) -> Result<(), EventBusError> {
         // An error here means nobody is subscribed, which is not a failure.
         let _ = self.sender(topic).send(event);
         Ok(())
     }
 
-    async fn subscribe(&self, topic: &Topic, from: StartPosition) -> Result<EventStream, BusError> {
+    async fn subscribe(
+        &self,
+        topic: &Topic,
+        from: StartPosition,
+    ) -> Result<EventStream, EventBusError> {
         // No replay: only `Now` is honest here. `Earliest` used to be accepted
         // and then silently behave like `Now`, since a fresh receiver holds no
         // history.
@@ -104,9 +107,9 @@ impl EventBus for InProcessBus {
     }
 }
 
-impl Adapter for InProcessBus {
+impl Adapter for InProcessEventBus {
     fn name(&self) -> &'static str {
-        "InProcessBus"
+        "InProcessEventBus"
     }
 
     fn scope(&self) -> Scope {

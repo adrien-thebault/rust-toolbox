@@ -9,8 +9,8 @@ abstracts.
 | Module | What it holds |
 |---|---|
 | `outbox` | `OutboxBus`, the transactional outbox |
-| `key_value` | `PostgresKeyValue`, with `DELETE .. RETURNING` for an atomic take |
-| `lock` | `PostgresLocks`, held as leases |
+| `kv` | `PostgresKvStore`, with `DELETE .. RETURNING` for an atomic take |
+| `lock` | `PostgresLockManager`, held as leases |
 
 PostgreSQL and nothing else, deliberately: if you run more than one replica you
 already have it, so this is the zero-new-infrastructure option. Redis, NATS and

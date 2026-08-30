@@ -7,7 +7,12 @@ Scheduled tasks that run once per cluster.
 | `scheduler` | `Scheduler`, its builder, and `tick_once` |
 | `trigger` | `Trigger`, and the only place `croner` is named |
 | `job` | `RunMode`, `Overlap`, `Outcome` |
+| `clock` | `Clock`, with `system` and `manual` adapters |
 | `error` | `ScheduleError` |
+
+`clock` is here rather than in `toolbox-cluster` because the scheduler is its
+only consumer: it is a determinism seam - a test drives time instead of
+sleeping - not a replication one, so it has no `Scope` and no capabilities.
 
 Three defaults that are otherwise chosen by accident: `Exclusive` rather than
 every-replica, `Overlap::Skip` on an overrun, and a **mandatory** timeout.

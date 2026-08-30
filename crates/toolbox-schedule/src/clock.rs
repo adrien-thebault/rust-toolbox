@@ -1,10 +1,11 @@
 //! The clock, as a trait.
 //!
-//! `toolbox-schedule` decides when to run a job by asking something for the
-//! time, and a scheduler that asks `SystemTime` directly can only be tested by
-//! sleeping - which is how a test suite ends up taking four minutes to assert
-//! one cron expression. Two implementations ship here, so this is a trait
-//! rather than a function.
+//! [`Scheduler`](crate::Scheduler) decides when to run a job by asking something
+//! for the time, and a scheduler that asks `SystemTime` directly can only be
+//! tested by sleeping - which is how a test suite ends up taking four minutes to
+//! assert one cron expression. Two implementations ship here, so this is a trait
+//! rather than a function. It is a determinism seam, not a replication one: no
+//! `Scope`, no capabilities, it just lets a test drive time.
 
 mod manual;
 mod system;

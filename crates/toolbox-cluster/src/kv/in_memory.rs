@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use moka::{Expiry, future::Cache};
 
-use super::{KeyValueCapabilities, KeyValueError, KeyValueStore};
+use super::{KvStore, KvStoreCapabilities, KvStoreError};
 use crate::deployment::{Adapter, Scope};
 
 /// An entry, carrying its own expiry so the cache can honour per-key TTLs.
@@ -64,26 +64,26 @@ impl Expiry<String, CacheEntry> for PerEntryTtl {
 /// one replica are invisible to the others, so a session or a ticket works only
 /// where it was made. Bounded, so a key space an attacker controls cannot grow
 /// without limit.
-pub struct InMemoryKeyValue {
+pub struct InMemoryKvStore {
     /// The bounded moka cache backing every operation.
     cache: Cache<String, CacheEntry>,
 }
 
-impl std::fmt::Debug for InMemoryKeyValue {
+impl std::fmt::Debug for InMemoryKvStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InMemoryKeyValue")
+        f.debug_struct("InMemoryKvStore")
             .field("entries", &self.cache.entry_count())
             .finish()
     }
 }
 
-impl Default for InMemoryKeyValue {
+impl Default for InMemoryKvStore {
     fn default() -> Self {
         Self::new(100_000)
     }
 }
 
-impl InMemoryKeyValue {
+impl InMemoryKvStore {
     /// A store holding at most `capacity` entries.
     ///
     /// # Arguments
@@ -103,9 +103,9 @@ impl InMemoryKeyValue {
 }
 
 #[async_trait]
-impl KeyValueStore for InMemoryKeyValue {
-    fn capabilities(&self) -> KeyValueCapabilities {
-        KeyValueCapabilities {
+impl KvStore for InMemoryKvStore {
+    fn capabilities(&self) -> KvStoreCapabilities {
+        KvStoreCapabilities {
             atomic_take: true,
             atomic_add: true,
             ttl: true,
@@ -114,7 +114,7 @@ impl KeyValueStore for InMemoryKeyValue {
         }
     }
 
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KeyValueError> {
+    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
         Ok(self
             .cache
             .get(key)
@@ -128,7 +128,7 @@ impl KeyValueStore for InMemoryKeyValue {
         key: &str,
         value: Vec<u8>,
         ttl: Option<Duration>,
-    ) -> Result<(), KeyValueError> {
+    ) -> Result<(), KvStoreError> {
         self.cache
             .insert(
                 key.to_owned(),
@@ -147,7 +147,7 @@ impl KeyValueStore for InMemoryKeyValue {
         key: &str,
         value: Vec<u8>,
         ttl: Option<Duration>,
-    ) -> Result<bool, KeyValueError> {
+    ) -> Result<bool, KvStoreError> {
         // An expired-but-not-evicted entry must not block a new claim, so it is
         // removed first; `remove` does not consult the expiry policy.
         if self.cache.get(key).await.is_some_and(|e| e.is_expired()) {
@@ -169,7 +169,7 @@ impl KeyValueStore for InMemoryKeyValue {
         Ok(entry.is_fresh())
     }
 
-    async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KeyValueError> {
+    async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
         // moka's `remove` returns the previous value under the entry's lock,
         // so two concurrent takes cannot both see it - but it does *not*
         // filter an entry that has expired and not yet been evicted, so the
@@ -182,15 +182,15 @@ impl KeyValueStore for InMemoryKeyValue {
             .map(|e| e.bytes))
     }
 
-    async fn delete(&self, key: &str) -> Result<(), KeyValueError> {
+    async fn delete(&self, key: &str) -> Result<(), KvStoreError> {
         self.cache.invalidate(key).await;
         Ok(())
     }
 }
 
-impl Adapter for InMemoryKeyValue {
+impl Adapter for InMemoryKvStore {
     fn name(&self) -> &'static str {
-        "InMemoryKeyValue"
+        "InMemoryKvStore"
     }
 
     fn scope(&self) -> Scope {

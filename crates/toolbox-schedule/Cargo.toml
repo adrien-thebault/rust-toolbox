@@ -1,6 +1,6 @@
 [package]
 name         = "toolbox-schedule"
-description  = "Cluster-safe scheduled tasks: cron with a DST policy, exclusive runs and a mandatory timeout."
+description  = "Cluster-safe scheduled tasks: cron with a DST policy, exclusive runs, a mandatory timeout, and the Clock port."
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

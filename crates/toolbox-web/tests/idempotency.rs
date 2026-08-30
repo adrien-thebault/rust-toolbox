@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use toolbox_cluster::InMemoryKeyValue;
+use toolbox_cluster::InMemoryKvStore;
 use toolbox_web::{
     extract::IdempotencyKey,
     idempotency::{Claim, Idempotency, StoredResponse, in_flight_error},
@@ -23,7 +23,7 @@ fn key(s: &str) -> IdempotencyKey {
 }
 
 fn store() -> Idempotency {
-    Idempotency::new(Arc::new(InMemoryKeyValue::default()))
+    Idempotency::new(Arc::new(InMemoryKvStore::default()))
 }
 
 fn response() -> StoredResponse {

@@ -1,10 +1,8 @@
 use std::time::Duration;
 
 use cloudevents::AttributesReader as _;
-use toolbox_cluster::{
-    EventBus, KeyValueStore, LockManager, Scope, Topic, deployment::Adapter, signal,
-};
-use toolbox_cluster_postgres::{MIGRATIONS, OutboxBus, PostgresKeyValue, PostgresLocks};
+use toolbox_cluster::{EventBus, KvStore, LockManager, Scope, Topic, deployment::Adapter, signal};
+use toolbox_cluster_postgres::{MIGRATIONS, OutboxBus, PostgresKvStore, PostgresLockManager};
 
 use crate::require_postgres;
 
@@ -13,16 +11,16 @@ use crate::require_postgres;
 #[tokio::test]
 async fn every_adapter_declares_itself_shared() {
     let db = require_postgres!();
-    assert_eq!(PostgresKeyValue::new(db.clone()).scope(), Scope::Shared);
-    assert_eq!(PostgresLocks::new(db.clone()).scope(), Scope::Shared);
+    assert_eq!(PostgresKvStore::new(db.clone()).scope(), Scope::Shared);
+    assert_eq!(PostgresLockManager::new(db.clone()).scope(), Scope::Shared);
     assert_eq!(OutboxBus::new(db).scope(), Scope::Shared);
 }
 
 #[tokio::test]
-async fn the_key_value_store_round_trips() {
+async fn the_kv_store_round_trips() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let kv = PostgresKeyValue::new(db);
+    let kv = PostgresKvStore::new(db);
 
     let key = format!("test:{}", uuid::Uuid::now_v7());
     kv.set(&key, b"value".to_vec(), None).await.unwrap();
@@ -45,7 +43,7 @@ async fn the_key_value_store_round_trips() {
 async fn take_returns_the_value_exactly_once_across_concurrent_callers() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let kv = std::sync::Arc::new(PostgresKeyValue::new(db));
+    let kv = std::sync::Arc::new(PostgresKvStore::new(db));
 
     let key = format!("test:{}", uuid::Uuid::now_v7());
     kv.set(&key, b"single-use".to_vec(), None).await.unwrap();
@@ -70,7 +68,7 @@ async fn take_returns_the_value_exactly_once_across_concurrent_callers() {
 async fn an_expired_key_is_not_returned_even_before_it_is_purged() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let kv = PostgresKeyValue::new(db);
+    let kv = PostgresKvStore::new(db);
 
     let key = format!("test:{}", uuid::Uuid::now_v7());
     kv.set(&key, b"gone".to_vec(), Some(Duration::from_millis(1)))
@@ -91,7 +89,7 @@ async fn an_expired_key_is_not_returned_even_before_it_is_purged() {
 async fn a_lock_is_held_against_a_second_taker() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let locks = PostgresLocks::new(db);
+    let locks = PostgresLockManager::new(db);
     let key = format!("test:{}", uuid::Uuid::now_v7());
 
     let held = locks.try_lock(&key, Duration::from_secs(30)).await.unwrap();
@@ -105,7 +103,7 @@ async fn a_lock_is_held_against_a_second_taker() {
 async fn different_lock_keys_do_not_contend() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let locks = PostgresLocks::new(db);
+    let locks = PostgresLockManager::new(db);
     let a = locks
         .try_lock(
             &format!("a:{}", uuid::Uuid::now_v7()),
@@ -228,7 +226,7 @@ async fn subscribing_directly_is_refused_because_the_relay_owns_the_queue() {
 async fn an_expired_lease_is_taken_over() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let locks = PostgresLocks::new(db);
+    let locks = PostgresLockManager::new(db);
     let key = format!("test:{}", uuid::Uuid::now_v7());
 
     let held = locks
@@ -253,7 +251,7 @@ async fn an_expired_lease_is_taken_over() {
 async fn dropping_the_guard_releases_the_lock() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let locks = PostgresLocks::new(db);
+    let locks = PostgresLockManager::new(db);
     let key = format!("test:{}", uuid::Uuid::now_v7());
 
     let held = locks
@@ -284,7 +282,7 @@ async fn dropping_the_guard_releases_the_lock() {
 async fn a_lease_is_renewable_only_by_whoever_holds_it() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let locks = PostgresLocks::new(db);
+    let locks = PostgresLockManager::new(db);
     let key = format!("test:{}", uuid::Uuid::now_v7());
 
     let _held = locks
@@ -307,7 +305,7 @@ async fn a_second_taker_loses_even_when_it_gets_the_same_pooled_connection() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
     // A pool of one guarantees both callers share a connection.
-    let locks = PostgresLocks::new(db);
+    let locks = PostgresLockManager::new(db);
     let key = format!("test:{}", uuid::Uuid::now_v7());
 
     let _first = locks
@@ -331,7 +329,7 @@ async fn a_second_taker_loses_even_when_it_gets_the_same_pooled_connection() {
 async fn expired_leases_can_be_purged() {
     let db = require_postgres!();
     db.migrate(MIGRATIONS).await.unwrap();
-    let locks = PostgresLocks::new(db);
+    let locks = PostgresLockManager::new(db);
 
     let held = locks
         .try_lock(

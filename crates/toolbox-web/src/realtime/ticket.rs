@@ -14,7 +14,7 @@ use std::{sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use toolbox_auth::Principal;
-use toolbox_cluster::KeyValueStore;
+use toolbox_cluster::KvStore;
 
 use crate::error::ApiError;
 
@@ -39,7 +39,7 @@ pub struct TicketClaims {
 /// Issues and redeems stream tickets.
 pub struct Tickets {
     /// Where single-use tickets are stored.
-    kv: Arc<dyn KeyValueStore>,
+    kv: Arc<dyn KvStore>,
     /// How long an unredeemed ticket lives.
     ttl: Duration,
 }
@@ -64,7 +64,7 @@ impl Tickets {
     /// [`ApiError`] when the adapter cannot promise an atomic take - without
     /// it a ticket is not single-use, and two connections could redeem the
     /// same one.
-    pub fn new(kv: Arc<dyn KeyValueStore>) -> Result<Self, ApiError> {
+    pub fn new(kv: Arc<dyn KvStore>) -> Result<Self, ApiError> {
         if !kv.capabilities().atomic_take {
             return Err(ApiError::internal(std::io::Error::other(
                 "realtime tickets need a key-value store with an atomic take",

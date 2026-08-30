@@ -5,7 +5,7 @@
 //!
 //! This reads and validates the key. Replaying a stored response for a
 //! repeated key needs somewhere to store it, which arrives with the
-//! `KeyValueStore` adapters in stage 5.
+//! `KvStore` adapters in stage 5.
 
 use axum::extract::FromRequestParts;
 use http::{HeaderName, request::Parts};

@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use diesel::{pg::PgConnection, prelude::*};
 use toolbox_cluster::{
-    KeyValueCapabilities, KeyValueError, KeyValueStore,
+    KvStore, KvStoreCapabilities, KvStoreError,
     deployment::{Adapter, Scope},
 };
 use toolbox_db::Db;
@@ -14,18 +14,18 @@ use crate::schema::toolbox_kv;
 
 /// A key-value store every replica shares.
 #[derive(Clone)]
-pub struct PostgresKeyValue {
+pub struct PostgresKvStore {
     /// The shared pool the migrations were applied to.
     db: Db<PgConnection>,
 }
 
-impl std::fmt::Debug for PostgresKeyValue {
+impl std::fmt::Debug for PostgresKvStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PostgresKeyValue")
+        f.write_str("PostgresKvStore")
     }
 }
 
-impl PostgresKeyValue {
+impl PostgresKvStore {
     /// Build over a pool.
     ///
     /// # Arguments
@@ -44,22 +44,22 @@ impl PostgresKeyValue {
     /// will ask for again.
     ///
     /// # Errors
-    /// [`KeyValueError::Backend`] when the statement fails.
-    pub async fn purge_expired(&self) -> Result<usize, KeyValueError> {
+    /// [`KvStoreError::Backend`] when the statement fails.
+    pub async fn purge_expired(&self) -> Result<usize, KvStoreError> {
         let now = chrono::Utc::now();
         self.db
             .query(move |c: &mut PgConnection| {
                 diesel::delete(toolbox_kv::table.filter(toolbox_kv::expires_at.lt(now))).execute(c)
             })
             .await
-            .map_err(|e| KeyValueError::Backend(e.to_string()))
+            .map_err(|e| KvStoreError::Backend(e.to_string()))
     }
 }
 
 #[async_trait]
-impl KeyValueStore for PostgresKeyValue {
-    fn capabilities(&self) -> KeyValueCapabilities {
-        KeyValueCapabilities {
+impl KvStore for PostgresKvStore {
+    fn capabilities(&self) -> KvStoreCapabilities {
+        KvStoreCapabilities {
             atomic_take: true,
             atomic_add: true,
             ttl: true,
@@ -68,7 +68,7 @@ impl KeyValueStore for PostgresKeyValue {
         }
     }
 
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KeyValueError> {
+    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
         let key = key.to_owned();
         let now = chrono::Utc::now();
         self.db
@@ -87,7 +87,7 @@ impl KeyValueStore for PostgresKeyValue {
                     .optional()
             })
             .await
-            .map_err(|e| KeyValueError::Backend(e.to_string()))
+            .map_err(|e| KvStoreError::Backend(e.to_string()))
     }
 
     async fn set(
@@ -95,7 +95,7 @@ impl KeyValueStore for PostgresKeyValue {
         key: &str,
         value: Vec<u8>,
         ttl: Option<Duration>,
-    ) -> Result<(), KeyValueError> {
+    ) -> Result<(), KvStoreError> {
         let key = key.to_owned();
         let expires_at = ttl.map(|d| {
             chrono::Utc::now()
@@ -120,7 +120,7 @@ impl KeyValueStore for PostgresKeyValue {
             })
             .await
             .map(|_| ())
-            .map_err(|e| KeyValueError::Backend(e.to_string()))
+            .map_err(|e| KvStoreError::Backend(e.to_string()))
     }
 
     async fn add(
@@ -128,7 +128,7 @@ impl KeyValueStore for PostgresKeyValue {
         key: &str,
         value: Vec<u8>,
         ttl: Option<Duration>,
-    ) -> Result<bool, KeyValueError> {
+    ) -> Result<bool, KvStoreError> {
         use diesel::sql_types::{Binary, Nullable, Text, Timestamptz};
 
         let key = key.to_owned();
@@ -158,10 +158,10 @@ impl KeyValueStore for PostgresKeyValue {
             })
             .await
             .map(|n| n == 1)
-            .map_err(|e| KeyValueError::Backend(e.to_string()))
+            .map_err(|e| KvStoreError::Backend(e.to_string()))
     }
 
-    async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KeyValueError> {
+    async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
         let key = key.to_owned();
         let now = chrono::Utc::now();
         self.db
@@ -181,10 +181,10 @@ impl KeyValueStore for PostgresKeyValue {
                 .optional()
             })
             .await
-            .map_err(|e| KeyValueError::Backend(e.to_string()))
+            .map_err(|e| KvStoreError::Backend(e.to_string()))
     }
 
-    async fn delete(&self, key: &str) -> Result<(), KeyValueError> {
+    async fn delete(&self, key: &str) -> Result<(), KvStoreError> {
         let key = key.to_owned();
         self.db
             .query(move |c: &mut PgConnection| {
@@ -192,13 +192,13 @@ impl KeyValueStore for PostgresKeyValue {
             })
             .await
             .map(|_| ())
-            .map_err(|e| KeyValueError::Backend(e.to_string()))
+            .map_err(|e| KvStoreError::Backend(e.to_string()))
     }
 }
 
-impl Adapter for PostgresKeyValue {
+impl Adapter for PostgresKvStore {
     fn name(&self) -> &'static str {
-        "PostgresKeyValue"
+        "PostgresKvStore"
     }
 
     fn scope(&self) -> Scope {

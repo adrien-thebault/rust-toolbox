@@ -9,7 +9,7 @@ mod in_memory;
 use std::time::Duration;
 
 use async_trait::async_trait;
-pub use in_memory::InMemoryKeyValue;
+pub use in_memory::InMemoryKvStore;
 
 /// What a key-value adapter can do.
 ///
@@ -18,7 +18,7 @@ pub use in_memory::InMemoryKeyValue;
 /// actually needs.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct KeyValueCapabilities {
+pub struct KvStoreCapabilities {
     /// Whether `take` is genuinely atomic. A caller that needs it must check,
     /// because an adapter without it turns rotation into a race.
     pub atomic_take: bool,
@@ -37,7 +37,7 @@ pub struct KeyValueCapabilities {
 /// Why a key-value operation failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum KeyValueError {
+pub enum KvStoreError {
     /// The adapter cannot do what was asked.
     #[error("the `{adapter}` key-value store does not support {needed}")]
     Unsupported {
@@ -53,9 +53,9 @@ pub enum KeyValueError {
 
 /// A key-value store with expiry.
 #[async_trait]
-pub trait KeyValueStore: Send + Sync {
+pub trait KvStore: Send + Sync {
     /// What this adapter can do.
-    fn capabilities(&self) -> KeyValueCapabilities;
+    fn capabilities(&self) -> KvStoreCapabilities;
 
     /// Read a key.
     ///
@@ -64,8 +64,8 @@ pub trait KeyValueStore: Send + Sync {
     /// * `key` - The key to read. A missing key is `Ok(None)`, not an error.
     ///
     /// # Errors
-    /// [`KeyValueError::Backend`] when the store fails.
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KeyValueError>;
+    /// [`KvStoreError::Backend`] when the store fails.
+    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError>;
 
     /// Write a key, optionally expiring it.
     ///
@@ -78,18 +78,18 @@ pub trait KeyValueStore: Send + Sync {
     /// * `ttl` - How long it lives, or `None` to keep it until deleted.
     ///
     /// # Errors
-    /// [`KeyValueError::Backend`] when the store fails.
+    /// [`KvStoreError::Backend`] when the store fails.
     async fn set(
         &self,
         key: &str,
         value: Vec<u8>,
         ttl: Option<Duration>,
-    ) -> Result<(), KeyValueError>;
+    ) -> Result<(), KvStoreError>;
 
     /// Create a key only if it is not already present.
     ///
     /// **Atomic**, or the adapter must not claim
-    /// [`KeyValueCapabilities::atomic_add`]. Returns `true` when this call
+    /// [`KvStoreCapabilities::atomic_add`]. Returns `true` when this call
     /// created the entry and `false` when a live entry was already there. An
     /// expired entry counts as absent and is overwritten. This is what makes an
     /// idempotency claim safe: two racing requests cannot both create the key.
@@ -102,19 +102,19 @@ pub trait KeyValueStore: Send + Sync {
     ///   deleted.
     ///
     /// # Errors
-    /// [`KeyValueError::Unsupported`] on an adapter without an atomic add, or
-    /// [`KeyValueError::Backend`] when the store fails.
+    /// [`KvStoreError::Unsupported`] on an adapter without an atomic add, or
+    /// [`KvStoreError::Backend`] when the store fails.
     async fn add(
         &self,
         key: &str,
         value: Vec<u8>,
         ttl: Option<Duration>,
-    ) -> Result<bool, KeyValueError>;
+    ) -> Result<bool, KvStoreError>;
 
     /// Read and delete a key in one operation.
     ///
     /// **Atomic**, or the adapter must not claim
-    /// [`KeyValueCapabilities::atomic_take`]. A caller uses this to make sure a value
+    /// [`KvStoreCapabilities::atomic_take`]. A caller uses this to make sure a value
     /// is consumed exactly once - a single-use token, a one-shot ticket - and a
     /// get-then-delete implementation lets two callers both succeed.
     ///
@@ -124,9 +124,9 @@ pub trait KeyValueStore: Send + Sync {
     ///   refresh-token rotation single-use.
     ///
     /// # Errors
-    /// [`KeyValueError::Unsupported`] on an adapter without atomic take, or
-    /// [`KeyValueError::Backend`] when the store fails.
-    async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KeyValueError>;
+    /// [`KvStoreError::Unsupported`] on an adapter without atomic take, or
+    /// [`KvStoreError::Backend`] when the store fails.
+    async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError>;
 
     /// Delete a key, whether or not it was there.
     ///
@@ -136,6 +136,6 @@ pub trait KeyValueStore: Send + Sync {
     ///   succeeds.
     ///
     /// # Errors
-    /// [`KeyValueError::Backend`] when the store fails.
-    async fn delete(&self, key: &str) -> Result<(), KeyValueError>;
+    /// [`KvStoreError::Backend`] when the store fails.
+    async fn delete(&self, key: &str) -> Result<(), KvStoreError>;
 }

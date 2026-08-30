@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use toolbox_cluster::{InProcessLocks, LockManager};
+use toolbox_cluster::{InProcessLockManager, LockManager};
 
 #[tokio::test]
 async fn a_lock_can_be_taken_and_is_then_held() {
-    let locks = InProcessLocks::new();
+    let locks = InProcessLockManager::new();
     let guard = locks
         .try_lock("job", Duration::from_secs(60))
         .await
@@ -20,7 +20,7 @@ async fn a_lock_can_be_taken_and_is_then_held() {
 
 #[tokio::test]
 async fn dropping_the_guard_releases_the_lock() {
-    let locks = InProcessLocks::new();
+    let locks = InProcessLockManager::new();
     let guard = locks
         .try_lock("job", Duration::from_secs(60))
         .await
@@ -40,7 +40,7 @@ async fn dropping_the_guard_releases_the_lock() {
 
 #[tokio::test]
 async fn different_keys_do_not_contend() {
-    let locks = InProcessLocks::new();
+    let locks = InProcessLockManager::new();
     let _a = locks
         .try_lock("a", Duration::from_secs(60))
         .await
@@ -59,7 +59,7 @@ async fn different_keys_do_not_contend() {
 /// is how a scheduled job silently never runs again.
 #[tokio::test]
 async fn an_expired_lease_can_be_taken_by_someone_else() {
-    let locks = InProcessLocks::new();
+    let locks = InProcessLockManager::new();
     let guard = locks
         .try_lock("job", Duration::from_millis(20))
         .await
@@ -81,7 +81,7 @@ async fn an_expired_lease_can_be_taken_by_someone_else() {
 /// their lock, so the guard checks it still owns the key.
 #[tokio::test]
 async fn a_stale_guard_does_not_release_someone_elses_lock() {
-    let locks = InProcessLocks::new();
+    let locks = InProcessLockManager::new();
     let stale = locks
         .try_lock("job", Duration::from_millis(20))
         .await
@@ -108,7 +108,7 @@ async fn a_stale_guard_does_not_release_someone_elses_lock() {
 
 #[tokio::test]
 async fn the_adapter_declares_what_it_actually_does() {
-    let caps = InProcessLocks::new().capabilities();
+    let caps = InProcessLockManager::new().capabilities();
     assert!(!caps.shared, "two replicas would each take the same lock");
     assert!(caps.leased);
 }

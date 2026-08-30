@@ -8,7 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 
-use super::{LockCapabilities, LockError, LockGuard, LockManager, LockRelease};
+use super::{LockGuard, LockManager, LockManagerCapabilities, LockManagerError, LockRelease};
 use crate::deployment::{Adapter, Scope};
 
 /// Who holds a lock, and until when.
@@ -25,12 +25,12 @@ struct Lease {
 /// **Single replica only.** Two replicas each take the "same" lock and both run
 /// the work, so it declares [`Scope::Local`].
 #[derive(Debug, Default)]
-pub struct InProcessLocks {
+pub struct InProcessLockManager {
     /// Every currently held lock, by key.
     held: Arc<Mutex<HashMap<String, Lease>>>,
 }
 
-impl InProcessLocks {
+impl InProcessLockManager {
     /// A fresh lock table.
     #[must_use]
     pub fn new() -> Self {
@@ -40,7 +40,7 @@ impl InProcessLocks {
 
 /// The drop-time release hook a [`LockGuard`] calls, sharing the lock table.
 struct InProcessRelease {
-    /// The same table [`InProcessLocks`] holds.
+    /// The same table [`InProcessLockManager`] holds.
     held: Arc<Mutex<HashMap<String, Lease>>>,
 }
 
@@ -59,15 +59,19 @@ impl LockRelease for InProcessRelease {
 }
 
 #[async_trait]
-impl LockManager for InProcessLocks {
-    fn capabilities(&self) -> LockCapabilities {
-        LockCapabilities {
+impl LockManager for InProcessLockManager {
+    fn capabilities(&self) -> LockManagerCapabilities {
+        LockManagerCapabilities {
             shared: false,
             leased: true,
         }
     }
 
-    async fn try_lock(&self, key: &str, lease: Duration) -> Result<Option<LockGuard>, LockError> {
+    async fn try_lock(
+        &self,
+        key: &str,
+        lease: Duration,
+    ) -> Result<Option<LockGuard>, LockManagerError> {
         let owner = uuid::Uuid::now_v7().to_string();
         let now = Instant::now();
         let mut held = self
@@ -97,9 +101,9 @@ impl LockManager for InProcessLocks {
     }
 }
 
-impl Adapter for InProcessLocks {
+impl Adapter for InProcessLockManager {
     fn name(&self) -> &'static str {
-        "InProcessLocks"
+        "InProcessLockManager"
     }
 
     fn scope(&self) -> Scope {

@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use diesel::{pg::PgConnection, prelude::*};
 use toolbox_cluster::{
     deployment::{Adapter, Scope},
-    lock::{LockCapabilities, LockError, LockGuard, LockManager, LockRelease},
+    lock::{LockGuard, LockManager, LockManagerCapabilities, LockManagerError, LockRelease},
 };
 use toolbox_db::Db;
 use tracing::warn;
@@ -37,18 +37,18 @@ use crate::schema::toolbox_locks;
 
 /// Locks every replica shares, held as leases.
 #[derive(Clone)]
-pub struct PostgresLocks {
+pub struct PostgresLockManager {
     /// The shared pool the lock table lives in.
     db: Db<PgConnection>,
 }
 
-impl std::fmt::Debug for PostgresLocks {
+impl std::fmt::Debug for PostgresLockManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PostgresLocks")
+        f.write_str("PostgresLockManager")
     }
 }
 
-impl PostgresLocks {
+impl PostgresLockManager {
     /// Build over a pool.
     ///
     /// # Arguments
@@ -73,8 +73,13 @@ impl PostgresLocks {
     ///   added to the old expiry.
     ///
     /// # Errors
-    /// [`LockError::Backend`] when the statement fails.
-    pub async fn renew(&self, key: &str, owner: &str, lease: Duration) -> Result<bool, LockError> {
+    /// [`LockManagerError::Backend`] when the statement fails.
+    pub async fn renew(
+        &self,
+        key: &str,
+        owner: &str,
+        lease: Duration,
+    ) -> Result<bool, LockManagerError> {
         let (key, owner) = (key.to_owned(), owner.to_owned());
         let until = chrono::Utc::now() + to_chrono(lease);
 
@@ -90,7 +95,7 @@ impl PostgresLocks {
                 .execute(c)
             })
             .await
-            .map_err(|e| LockError::Backend(e.to_string()))?;
+            .map_err(|e| LockManagerError::Backend(e.to_string()))?;
         Ok(changed > 0)
     }
 
@@ -100,8 +105,8 @@ impl PostgresLocks {
     /// the table from accumulating rows for keys nobody uses any more.
     ///
     /// # Errors
-    /// [`LockError::Backend`] when the statement fails.
-    pub async fn purge_expired(&self) -> Result<usize, LockError> {
+    /// [`LockManagerError::Backend`] when the statement fails.
+    pub async fn purge_expired(&self) -> Result<usize, LockManagerError> {
         let now = chrono::Utc::now();
         self.db
             .query(move |c: &mut PgConnection| {
@@ -109,7 +114,7 @@ impl PostgresLocks {
                     .execute(c)
             })
             .await
-            .map_err(|e| LockError::Backend(e.to_string()))
+            .map_err(|e| LockManagerError::Backend(e.to_string()))
     }
 }
 
@@ -160,15 +165,19 @@ impl LockRelease for Release {
 }
 
 #[async_trait]
-impl LockManager for PostgresLocks {
-    fn capabilities(&self) -> LockCapabilities {
-        LockCapabilities {
+impl LockManager for PostgresLockManager {
+    fn capabilities(&self) -> LockManagerCapabilities {
+        LockManagerCapabilities {
             shared: true,
             leased: true,
         }
     }
 
-    async fn try_lock(&self, key: &str, lease: Duration) -> Result<Option<LockGuard>, LockError> {
+    async fn try_lock(
+        &self,
+        key: &str,
+        lease: Duration,
+    ) -> Result<Option<LockGuard>, LockManagerError> {
         let owner = uuid::Uuid::now_v7().to_string();
         let name = key.to_owned();
         let key_owned = key.to_owned();
@@ -202,7 +211,7 @@ impl LockManager for PostgresLocks {
                 .optional()
             })
             .await
-            .map_err(|e| LockError::Backend(e.to_string()))?;
+            .map_err(|e| LockManagerError::Backend(e.to_string()))?;
 
         // No row came back means the key existed and the WHERE rejected the
         // update: somebody else holds an unexpired lease.
@@ -228,9 +237,9 @@ struct Holder {
     owner: String,
 }
 
-impl Adapter for PostgresLocks {
+impl Adapter for PostgresLockManager {
     fn name(&self) -> &'static str {
-        "PostgresLocks"
+        "PostgresLockManager"
     }
 
     fn scope(&self) -> Scope {

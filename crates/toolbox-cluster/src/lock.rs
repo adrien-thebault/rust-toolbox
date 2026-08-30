@@ -9,11 +9,11 @@ mod in_process;
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-pub use in_process::InProcessLocks;
+pub use in_process::InProcessLockManager;
 
 /// What a lock adapter can do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LockCapabilities {
+pub struct LockManagerCapabilities {
     /// Whether the lock is visible to other replicas.
     pub shared: bool,
     /// Whether a lease expires on its own if the holder dies.
@@ -23,13 +23,18 @@ pub struct LockCapabilities {
 /// Why a lock operation failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum LockError {
+pub enum LockManagerError {
     /// The backing store failed.
     #[error("lock manager: {0}")]
     Backend(String),
 }
 
-/// Releases a held lock. Implemented by the adapter, called from the guard.
+/// The one sync operation [`LockGuard`] needs at drop time.
+///
+/// `Drop` is not `async`, so the guard cannot call [`LockManager::try_lock`]'s
+/// sibling; and it must not be generic over the adapter, or every function
+/// holding a guard would be too. So the adapter hands the guard an
+/// `Arc<dyn LockRelease>` carrying just this.
 pub trait LockRelease: Send + Sync {
     /// Release `key` if this owner still holds it.
     ///
@@ -117,7 +122,7 @@ impl Drop for LockGuard {
 #[async_trait]
 pub trait LockManager: Send + Sync {
     /// What this adapter can do.
-    fn capabilities(&self) -> LockCapabilities;
+    fn capabilities(&self) -> LockManagerCapabilities;
 
     /// Try to take `key` for at most `lease`.
     ///
@@ -132,6 +137,10 @@ pub trait LockManager: Send + Sync {
     ///   duration.
     ///
     /// # Errors
-    /// [`LockError::Backend`] when the store fails.
-    async fn try_lock(&self, key: &str, lease: Duration) -> Result<Option<LockGuard>, LockError>;
+    /// [`LockManagerError::Backend`] when the store fails.
+    async fn try_lock(
+        &self,
+        key: &str,
+        lease: Duration,
+    ) -> Result<Option<LockGuard>, LockManagerError>;
 }

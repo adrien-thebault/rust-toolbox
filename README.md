@@ -32,7 +32,7 @@ Each has its own README explaining what its modules do.
 | [`toolbox-db`](crates/toolbox-db/README.md) | `Db<C>`, pagination, locks, migrations, pragmas |
 | [`toolbox-cluster`](crates/toolbox-cluster/README.md) | the cluster traits, their local adapters, the deployment guard |
 | [`toolbox-cluster-postgres`](crates/toolbox-cluster-postgres/README.md) | the shared adapters: outbox, key-value, leases |
-| [`toolbox-schedule`](crates/toolbox-schedule/README.md) | scheduled tasks that run once per cluster |
+| [`toolbox-schedule`](crates/toolbox-schedule/README.md) | scheduled tasks that run once per cluster, plus the `Clock` port |
 | [`toolbox-server`](crates/toolbox-server/README.md) | trace context, layer stacks, deadlines, graceful drain |
 | [`toolbox-auth`](crates/toolbox-auth/README.md) | principals, roles, identity providers, `PrincipalMapping`, JWT sessions with stateless refresh |
 | [`toolbox-web`](crates/toolbox-web/README.md) | errors, extractors, health, rate limiting, OpenAPI, SSE |

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use toolbox_auth::Principal;
-use toolbox_cluster::InMemoryKeyValue;
+use toolbox_cluster::InMemoryKvStore;
 use toolbox_web::realtime::{
     Tickets,
     hub::{Hub, HubConfig, SlowConsumer},
@@ -9,7 +9,7 @@ use toolbox_web::realtime::{
 };
 
 fn tickets() -> Tickets {
-    Tickets::new(Arc::new(InMemoryKeyValue::default())).unwrap()
+    Tickets::new(Arc::new(InMemoryKvStore::default())).unwrap()
 }
 
 fn principal() -> Principal {
@@ -82,9 +82,9 @@ async fn tickets_refuse_a_store_that_cannot_take_atomically() {
     struct NoTake;
 
     #[async_trait::async_trait]
-    impl toolbox_cluster::KeyValueStore for NoTake {
-        fn capabilities(&self) -> toolbox_cluster::KeyValueCapabilities {
-            toolbox_cluster::KeyValueCapabilities {
+    impl toolbox_cluster::KvStore for NoTake {
+        fn capabilities(&self) -> toolbox_cluster::KvStoreCapabilities {
+            toolbox_cluster::KvStoreCapabilities {
                 atomic_take: false,
                 atomic_add: false,
                 ttl: true,
@@ -92,7 +92,7 @@ async fn tickets_refuse_a_store_that_cannot_take_atomically() {
                 shared: false,
             }
         }
-        async fn get(&self, _k: &str) -> Result<Option<Vec<u8>>, toolbox_cluster::KeyValueError> {
+        async fn get(&self, _k: &str) -> Result<Option<Vec<u8>>, toolbox_cluster::KvStoreError> {
             Ok(None)
         }
         async fn set(
@@ -100,7 +100,7 @@ async fn tickets_refuse_a_store_that_cannot_take_atomically() {
             _k: &str,
             _v: Vec<u8>,
             _t: Option<Duration>,
-        ) -> Result<(), toolbox_cluster::KeyValueError> {
+        ) -> Result<(), toolbox_cluster::KvStoreError> {
             Ok(())
         }
         async fn add(
@@ -108,13 +108,13 @@ async fn tickets_refuse_a_store_that_cannot_take_atomically() {
             _k: &str,
             _v: Vec<u8>,
             _t: Option<Duration>,
-        ) -> Result<bool, toolbox_cluster::KeyValueError> {
+        ) -> Result<bool, toolbox_cluster::KvStoreError> {
             Ok(true)
         }
-        async fn take(&self, _k: &str) -> Result<Option<Vec<u8>>, toolbox_cluster::KeyValueError> {
+        async fn take(&self, _k: &str) -> Result<Option<Vec<u8>>, toolbox_cluster::KvStoreError> {
             Ok(None)
         }
-        async fn delete(&self, _k: &str) -> Result<(), toolbox_cluster::KeyValueError> {
+        async fn delete(&self, _k: &str) -> Result<(), toolbox_cluster::KvStoreError> {
             Ok(())
         }
     }

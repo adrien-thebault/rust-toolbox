@@ -1,5 +1,5 @@
 use toolbox_cluster::{
-    Adapter, Deployment, InMemoryKeyValue, InProcessBus, NullBus, Scope, check_deployment,
+    Adapter, Deployment, InMemoryKvStore, InProcessEventBus, Scope, check_deployment,
 };
 
 struct Shared;
@@ -20,7 +20,7 @@ fn clustered() -> Deployment {
 
 #[test]
 fn a_single_replica_accepts_every_adapter() {
-    let bus = InProcessBus::default();
+    let bus = InProcessEventBus::default();
     let adapters: Vec<&dyn Adapter> = vec![&bus, &Shared];
     assert!(check_deployment(&Deployment::Single, &adapters).is_ok());
 }
@@ -29,21 +29,21 @@ fn a_single_replica_accepts_every_adapter() {
 /// never sees two thirds of the events, so the process must not start.
 #[test]
 fn a_local_adapter_under_clustering_refuses_to_start() {
-    let bus = InProcessBus::default();
+    let bus = InProcessEventBus::default();
     let adapters: Vec<&dyn Adapter> = vec![&bus];
     let err = check_deployment(&clustered(), &adapters).unwrap_err();
-    assert_eq!(err.adapters, ["InProcessBus"]);
+    assert_eq!(err.adapters, ["InProcessEventBus"]);
     assert_eq!(err.count, 1);
 }
 
 /// The error has to name the variable to change, not just the problem.
 #[test]
 fn the_error_names_the_remedy() {
-    let bus = InProcessBus::default();
+    let bus = InProcessEventBus::default();
     let adapters: Vec<&dyn Adapter> = vec![&bus];
     let err = check_deployment(&clustered(), &adapters).unwrap_err();
     let text = err.to_string();
-    assert!(text.contains("InProcessBus"), "{text}");
+    assert!(text.contains("InProcessEventBus"), "{text}");
     assert!(
         text.contains("EVENT_BUS"),
         "the message says what to change: {text}"
@@ -55,7 +55,7 @@ fn the_error_names_the_remedy() {
 /// is right.
 #[test]
 fn a_degraded_adapter_under_clustering_warns_but_starts() {
-    let kv = InMemoryKeyValue::default();
+    let kv = InMemoryKvStore::default();
     assert!(matches!(kv.scope(), Scope::LocalDegraded { .. }));
     let adapters: Vec<&dyn Adapter> = vec![&kv];
     assert!(check_deployment(&clustered(), &adapters).is_ok());
@@ -63,23 +63,22 @@ fn a_degraded_adapter_under_clustering_warns_but_starts() {
 
 #[test]
 fn shared_adapters_pass_under_clustering() {
-    let bus = NullBus;
-    let adapters: Vec<&dyn Adapter> = vec![&bus, &Shared];
+    let adapters: Vec<&dyn Adapter> = vec![&Shared];
     assert!(check_deployment(&clustered(), &adapters).is_ok());
 }
 
 #[test]
 fn every_failing_adapter_is_reported_at_once() {
-    let bus = InProcessBus::default();
-    let locks = toolbox_cluster::InProcessLocks::new();
+    let bus = InProcessEventBus::default();
+    let locks = toolbox_cluster::InProcessLockManager::new();
     let adapters: Vec<&dyn Adapter> = vec![&bus, &locks, &Shared];
     let err = check_deployment(&clustered(), &adapters).unwrap_err();
     assert_eq!(
         err.count, 2,
         "one restart per problem is not a debugging loop anyone wants"
     );
-    assert!(err.adapters.contains(&"InProcessBus"));
-    assert!(err.adapters.contains(&"InProcessLocks"));
+    assert!(err.adapters.contains(&"InProcessEventBus"));
+    assert!(err.adapters.contains(&"InProcessLockManager"));
 }
 
 #[test]

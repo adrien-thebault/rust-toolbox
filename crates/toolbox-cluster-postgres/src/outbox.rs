@@ -15,11 +15,11 @@ use async_trait::async_trait;
 use diesel::{pg::PgConnection, prelude::*};
 use toolbox_cluster::{
     CloudEvent,
-    bus::{
-        BusCapabilities, BusError, BusOrdering, Delivery, EventBus, EventStream, MissingCapability,
-        StartPosition, Topic,
-    },
     deployment::{Adapter, Scope},
+    event::{
+        BusOrdering, Delivery, EventBus, EventBusCapabilities, EventBusError, EventStream,
+        MissingCapability, StartPosition, Topic,
+    },
 };
 use toolbox_db::Db;
 
@@ -115,8 +115,8 @@ impl OutboxBus {
     /// them contending on the same head of the queue.
     ///
     /// # Errors
-    /// [`BusError::Transport`] when the statement fails.
-    pub async fn drain_batch(&self) -> Result<Vec<(Topic, CloudEvent)>, BusError> {
+    /// [`EventBusError::Transport`] when the statement fails.
+    pub async fn drain_batch(&self) -> Result<Vec<(Topic, CloudEvent)>, EventBusError> {
         let rows = self
             .db
             .query(|c: &mut PgConnection| {
@@ -145,7 +145,7 @@ impl OutboxBus {
                 })
             })
             .await
-            .map_err(|e| BusError::Transport(e.to_string()))?;
+            .map_err(|e| EventBusError::Transport(e.to_string()))?;
 
         Ok(rows
             .into_iter()
@@ -170,8 +170,8 @@ impl OutboxBus {
     ///   everything.
     ///
     /// # Errors
-    /// [`BusError::Transport`] when the statement fails.
-    pub async fn purge_published(&self, keep: Duration) -> Result<usize, BusError> {
+    /// [`EventBusError::Transport`] when the statement fails.
+    pub async fn purge_published(&self, keep: Duration) -> Result<usize, EventBusError> {
         let cutoff = chrono::Utc::now()
             - chrono::Duration::from_std(keep).unwrap_or_else(|_| chrono::Duration::days(7));
         self.db
@@ -184,7 +184,7 @@ impl OutboxBus {
                 .execute(c)
             })
             .await
-            .map_err(|e| BusError::Transport(e.to_string()))
+            .map_err(|e| EventBusError::Transport(e.to_string()))
     }
 
     /// How many events are waiting.
@@ -193,8 +193,8 @@ impl OutboxBus {
     /// not running.
     ///
     /// # Errors
-    /// [`BusError::Transport`] when the statement fails.
-    pub async fn backlog(&self) -> Result<i64, BusError> {
+    /// [`EventBusError::Transport`] when the statement fails.
+    pub async fn backlog(&self) -> Result<i64, EventBusError> {
         self.db
             .query(|c: &mut PgConnection| {
                 toolbox_outbox::table
@@ -203,14 +203,14 @@ impl OutboxBus {
                     .get_result(c)
             })
             .await
-            .map_err(|e| BusError::Transport(e.to_string()))
+            .map_err(|e| EventBusError::Transport(e.to_string()))
     }
 }
 
 #[async_trait]
 impl EventBus for OutboxBus {
-    fn capabilities(&self) -> BusCapabilities {
-        BusCapabilities {
+    fn capabilities(&self) -> EventBusCapabilities {
+        EventBusCapabilities {
             // At-least-once: a relay that publishes and then fails to mark the
             // row redelivers it. Handlers must be idempotent, and saying so
             // here is what stops somebody assuming otherwise.
@@ -225,23 +225,23 @@ impl EventBus for OutboxBus {
         }
     }
 
-    async fn publish(&self, topic: &Topic, event: CloudEvent) -> Result<(), BusError> {
+    async fn publish(&self, topic: &Topic, event: CloudEvent) -> Result<(), EventBusError> {
         let topic = topic.clone();
         self.db
             .query(move |c: &mut PgConnection| Self::enqueue(c, &topic, &event))
             .await
-            .map_err(|e| BusError::Transport(e.to_string()))
+            .map_err(|e| EventBusError::Transport(e.to_string()))
     }
 
     async fn subscribe(
         &self,
         _topic: &Topic,
         from: StartPosition,
-    ) -> Result<EventStream, BusError> {
+    ) -> Result<EventStream, EventBusError> {
         // Subscribing is the relay's job, not a caller's: the outbox is a
         // queue drained by whoever runs `drain_batch`, and handing out a
         // second consumer here would race with it.
-        Err(BusError::Unsupported {
+        Err(EventBusError::Unsupported {
             needed: match from {
                 StartPosition::Cursor(_) => MissingCapability::Replay,
                 _ => MissingCapability::AtLeastOnce,

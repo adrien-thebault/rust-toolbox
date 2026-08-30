@@ -22,13 +22,13 @@
 //! Forcing that on a sibling that never asked for it is what makes this a
 //! crate rather than a feature.
 
-pub mod key_value;
+pub mod kv;
 pub mod lock;
 pub mod outbox;
 pub mod schema;
 
-pub use key_value::PostgresKeyValue;
-pub use lock::PostgresLocks;
+pub use kv::PostgresKvStore;
+pub use lock::PostgresLockManager;
 pub use outbox::OutboxBus;
 
 /// This crate's migrations. **You** call `db.migrate(MIGRATIONS)`.

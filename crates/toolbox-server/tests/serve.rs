@@ -1,4 +1,4 @@
-use toolbox_cluster::{Adapter, Deployment, InProcessBus, Scope};
+use toolbox_cluster::{Adapter, Deployment, InProcessEventBus, Scope};
 use toolbox_server::{
     args::DeploymentArgs,
     serve::{ServeConfig, ServeError, bind},
@@ -52,7 +52,7 @@ fn an_unknown_deployment_is_rejected_rather_than_defaulted() {
 
 #[tokio::test]
 async fn binding_checks_the_deployment_before_it_binds() {
-    let bus = InProcessBus::default();
+    let bus = InProcessEventBus::default();
     let adapters: Vec<&dyn Adapter> = vec![&bus];
     let deployment = Deployment::Clustered {
         instance_id: "a".to_owned(),

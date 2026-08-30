@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use toolbox_cluster::{Clock, ManualClock, SystemClock};
+use toolbox_schedule::{Clock, ManualClock, SystemClock};
 
 #[test]
 fn the_system_clock_reports_the_real_time() {
