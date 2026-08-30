@@ -4,7 +4,7 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-use super::PageError;
+use crate::page::PageError;
 
 /// Which way a sort term orders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

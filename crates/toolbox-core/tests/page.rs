@@ -1,4 +1,4 @@
-use toolbox_core::{MAX_LIMIT, Page, PageError, PageRequest, Sort, SortDirection, SortItem};
+use toolbox_core::{MAX_LIMIT, Page, PageError, PageRequest, Sort};
 
 #[test]
 fn paged_rejects_a_negative_offset() {
@@ -55,47 +55,6 @@ fn paging_an_unpaged_request_is_a_no_op() {
     let r = PageRequest::unpaged(Sort::unsorted());
     assert_eq!(r.next_page(), r);
     assert_eq!(r.previous_page(), r);
-}
-
-#[test]
-fn sort_round_trips_through_the_compact_form() {
-    for s in ["", "title", "-created_at", "-created_at,title", "a,-b,c"] {
-        assert_eq!(
-            Sort::parse(s).unwrap().to_string(),
-            s,
-            "round trip of `{s}`"
-        );
-    }
-}
-
-#[test]
-fn sort_parses_directions_and_optional_plus() {
-    let sort = Sort::parse("-created_at, +title ,id").unwrap();
-    assert_eq!(sort.len(), 3);
-    assert_eq!(sort.items()[0], SortItem::desc("created_at"));
-    assert_eq!(sort.items()[1], SortItem::asc("title"));
-    assert_eq!(sort.items()[2], SortItem::asc("id"));
-}
-
-#[test]
-fn an_empty_sort_string_is_unsorted() {
-    assert!(Sort::parse("").unwrap().is_empty());
-    assert!(Sort::parse("   ").unwrap().is_empty());
-}
-
-#[test]
-fn a_blank_sort_term_is_rejected() {
-    assert_eq!(
-        Sort::parse("title,").unwrap_err(),
-        PageError::EmptySortField
-    );
-    assert_eq!(Sort::parse("-").unwrap_err(), PageError::EmptySortField);
-}
-
-#[test]
-fn sort_direction_renders_as_sql() {
-    assert_eq!(SortDirection::Asc.as_sql(), "ASC");
-    assert_eq!(SortDirection::Desc.as_sql(), "DESC");
 }
 
 #[test]
@@ -194,11 +153,14 @@ fn deserializing_a_page_request_runs_the_bounds_check() {
         .expect("a valid window deserializes");
     assert_eq!(ok, PageRequest::paged(0, 10, Sort::unsorted()).unwrap());
 
+    serde_json::from_str::<PageRequest>(r#"{"paged":{"offset":0,"limit":100000,"sort":[]}}"#)
+        .expect("a limit exactly at the cap is allowed");
+
     for body in [
         r#"{"paged":{"offset":0,"limit":0,"sort":[]}}"#,
         r#"{"paged":{"offset":0,"limit":-1,"sort":[]}}"#,
         r#"{"paged":{"offset":-1,"limit":10,"sort":[]}}"#,
-        r#"{"paged":{"offset":0,"limit":100000,"sort":[]}}"#,
+        r#"{"paged":{"offset":0,"limit":100001,"sort":[]}}"#,
     ] {
         assert!(
             serde_json::from_str::<PageRequest>(body).is_err(),

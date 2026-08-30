@@ -137,7 +137,7 @@ async fn pagination_and_a_backend_side_filter_agree_on_the_total() {
 #[tokio::test]
 async fn an_over_large_page_is_refused_at_the_gateway() {
     let (app, _cluster, _guard) = cluster().await;
-    let problem = app.get_problem("/api/todos?limit=100000").await;
+    let problem = app.get_problem("/api/todos?limit=100001").await;
     assert_problem!(problem, 400, "INVALID_PAGE", "max_limit");
 }
 

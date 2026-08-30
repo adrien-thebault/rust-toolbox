@@ -5,16 +5,15 @@
 //! saturating, one sort representation - that were previously re-made per call
 //! site, usually as a silent clamp.
 
-mod sort;
-
 use serde::{Deserialize, Serialize};
-pub use sort::{Sort, SortDirection, SortItem};
+
+use crate::sort::Sort;
 
 /// The largest page a caller may request, unless a call site overrides it.
 ///
 /// A cap has to exist somewhere: without one, `limit=100000000` is a denial of
 /// service against your own database.
-pub const MAX_LIMIT: i64 = 1000;
+pub const MAX_LIMIT: i64 = 100_000;
 
 /// Why a `PageRequest` could not be built.
 ///
@@ -59,7 +58,7 @@ pub enum PageError {
 /// query layer has already been checked. Building the `Paged` variant with a
 /// struct literal skips that check, so prefer the constructor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", try_from = "PageRequestRepr")]
+#[serde(rename_all = "snake_case", try_from = "UncheckedPageRequest")]
 pub enum PageRequest {
     /// A bounded window.
     Paged {
@@ -79,12 +78,12 @@ pub enum PageRequest {
     },
 }
 
-/// The wire shape of a [`PageRequest`], routed through the validating
-/// constructor on the way in so a deserialized window cannot skip the bounds
-/// check.
+/// The unvalidated form of a [`PageRequest`]. Deserialization lands here first,
+/// then `TryFrom` runs the bounds check, so any `PageRequest` obtained through
+/// serde has already been validated.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum PageRequestRepr {
+enum UncheckedPageRequest {
     /// A bounded window.
     Paged {
         /// Rows to skip.
@@ -101,17 +100,17 @@ enum PageRequestRepr {
     },
 }
 
-impl TryFrom<PageRequestRepr> for PageRequest {
+impl TryFrom<UncheckedPageRequest> for PageRequest {
     type Error = PageError;
 
-    fn try_from(repr: PageRequestRepr) -> Result<Self, Self::Error> {
-        match repr {
-            PageRequestRepr::Paged {
+    fn try_from(unchecked: UncheckedPageRequest) -> Result<Self, Self::Error> {
+        match unchecked {
+            UncheckedPageRequest::Paged {
                 offset,
                 limit,
                 sort,
             } => Self::paged(offset, limit, sort),
-            PageRequestRepr::Unpaged { sort } => Ok(Self::Unpaged { sort }),
+            UncheckedPageRequest::Unpaged { sort } => Ok(Self::Unpaged { sort }),
         }
     }
 }

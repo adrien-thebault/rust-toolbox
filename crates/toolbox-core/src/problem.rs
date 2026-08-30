@@ -105,11 +105,11 @@ impl Problem {
     ///
     /// # Arguments
     ///
-    /// * `type_` - A URI that documents this problem type. Defaults to
+    /// * `uri` - A URI that documents this problem type. Defaults to
     ///   `about:blank` when there is nothing to dereference.
     #[must_use]
-    pub fn with_type(mut self, type_: impl Into<String>) -> Self {
-        self.type_ = type_.into();
+    pub fn with_type(mut self, uri: impl Into<String>) -> Self {
+        self.type_ = uri.into();
         self
     }
 

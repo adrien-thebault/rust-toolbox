@@ -3,3 +3,4 @@
 mod error;
 mod page;
 mod problem;
+mod sort;

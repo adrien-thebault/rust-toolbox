@@ -12,7 +12,9 @@
 pub mod error;
 pub mod page;
 pub mod problem;
+pub mod sort;
 
 pub use error::{ErrorInfo, ErrorKind, ServiceError};
-pub use page::{MAX_LIMIT, Page, PageError, PageRequest, Sort, SortDirection, SortItem};
-pub use problem::{PROBLEM_JSON, Problem};
+pub use page::{MAX_LIMIT, Page, PageError, PageRequest};
+pub use problem::{ABOUT_BLANK, PROBLEM_JSON, Problem};
+pub use sort::{Sort, SortDirection, SortItem};
