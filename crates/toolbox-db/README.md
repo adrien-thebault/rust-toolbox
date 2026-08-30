@@ -10,10 +10,8 @@ is visible in review.
 |---|---|
 | `db` | `Db<C>` and `DbBuilder<C>`: `run`, `query`, `transaction`, and their `_named` spans |
 | `entity` | the `Entity` and `Now` traits the derive implements and relies on |
-| `pagination` | `Paginate`, which composes onto **any** diesel query |
-| `sort` | turning a validated sort into this crate's error type |
-| `lock` | a lock held across replicas, using whatever the backend offers |
-| `migrate` | migrations, serialised by that lock |
+| `pagination` | `Paginate`, which composes onto **any** diesel query, and the sort-field allowlist check that guards `ORDER BY` |
+| `migrate` | migrations, serialised across replicas by the backend's own session lock |
 | `sqlite` | connection pragmas |
 | `args` | the clap arguments, next to the type they configure |
 

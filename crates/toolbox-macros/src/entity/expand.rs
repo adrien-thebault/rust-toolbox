@@ -181,7 +181,7 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
                 use ::diesel::prelude::*;
                 use ::toolbox_db::Paginate as _;
 
-                ::toolbox_db::sort::validate(request.sort(), Self::sortable_fields())?;
+                ::toolbox_db::pagination::validate(request.sort(), Self::sortable_fields())?;
                 let mut __q = Self::query();
                 for __item in request.sort().items() {
                     __q = match (__item.field.as_str(), __item.direction) {

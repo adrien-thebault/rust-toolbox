@@ -24,19 +24,16 @@ pub mod args;
 pub mod db;
 pub mod entity;
 pub mod error;
-pub mod lock;
 pub mod migrate;
 pub mod pagination;
-pub mod sort;
 pub mod sqlite;
 
-pub use db::{Db, DbBuilder, Pool, PooledConn};
+pub use db::{Db, DbBuilder, DbPool, DbPooledConn};
 /// Re-exported so `#[derive(Entity)]` can name it without the consumer
 /// declaring `diesel_migrations` itself.
 pub use diesel_migrations::{EmbeddedMigrations, embed_migrations};
 pub use entity::{Entity, Now};
 pub use error::{DbError, DbResult};
-pub use lock::{advisory_key, with_lock};
 pub use pagination::{Paginate, Paginated};
 pub use sqlite::SqlitePragmas;
 /// The derive. Shares its name with the [`Entity`] trait it implements, the

@@ -23,17 +23,17 @@ use crate::{
 };
 
 /// The connection pool backing a [`Db`].
-pub type Pool<C> = diesel::r2d2::Pool<ConnectionManager<C>>;
+pub type DbPool<C> = diesel::r2d2::Pool<ConnectionManager<C>>;
 
 /// A connection checked out of the pool.
-pub type PooledConn<C> = diesel::r2d2::PooledConnection<ConnectionManager<C>>;
+pub type DbPooledConn<C> = diesel::r2d2::PooledConnection<ConnectionManager<C>>;
 
 /// A database handle.
 ///
 /// Clone it freely: clones share one pool.
 pub struct Db<C: R2D2Connection + 'static> {
     /// The shared r2d2 pool.
-    pool: Pool<C>,
+    pool: DbPool<C>,
     /// The connection URL, kept for diagnostics. Carries credentials.
     url: Arc<str>,
 }
@@ -253,12 +253,12 @@ impl<C: R2D2Connection + 'static> Db<C> {
     ///
     /// # Errors
     /// [`DbError::Pool`] when the pool cannot hand out a connection in time.
-    pub fn blocking_conn(&self) -> DbResult<PooledConn<C>> {
+    pub fn blocking_conn(&self) -> DbResult<DbPooledConn<C>> {
         Ok(self.pool.get()?)
     }
 
     /// The underlying pool, for code that needs r2d2 directly.
-    pub fn pool(&self) -> &Pool<C> {
+    pub fn pool(&self) -> &DbPool<C> {
         &self.pool
     }
 

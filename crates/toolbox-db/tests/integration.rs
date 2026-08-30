@@ -8,4 +8,3 @@ mod db;
 mod derive;
 mod generic_backend;
 mod pagination;
-mod sort;

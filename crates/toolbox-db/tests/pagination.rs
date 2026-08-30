@@ -1,6 +1,6 @@
 use diesel::{prelude::*, sqlite::SqliteConnection};
 use toolbox_core::{PageRequest, Sort};
-use toolbox_db::Paginate;
+use toolbox_db::{DbError, Paginate, pagination::validate};
 
 use crate::fixtures::{TestEntity, seed, temp_db, test_entity};
 
@@ -143,4 +143,45 @@ async fn an_offset_past_the_end_has_no_window_count_to_ride_back() {
     // one-statement primitive and reports zero here; `Entity::page` reconciles
     // it against `Entity::count` (see the derive tests).
     assert_eq!(page.total(), 0);
+}
+
+const ALLOWED: &[&str] = &["id", "title", "created_at"];
+
+#[test]
+fn a_declared_sort_field_is_accepted() {
+    assert!(validate(&Sort::parse("-created_at,title").unwrap(), ALLOWED).is_ok());
+}
+
+#[test]
+fn an_empty_sort_is_accepted() {
+    assert!(validate(&Sort::unsorted(), ALLOWED).is_ok());
+}
+
+/// An undeclared field must be rejected, never interpolated: this is the only
+/// thing standing between a query parameter and SQL injection.
+#[test]
+fn an_undeclared_sort_field_is_rejected_and_names_the_allowlist() {
+    let err = validate(&Sort::parse("password").unwrap(), ALLOWED).unwrap_err();
+    match err {
+        DbError::InvalidSortField { field, allowed } => {
+            assert_eq!(field, "password");
+            assert_eq!(allowed, "id, title, created_at");
+        }
+        other => panic!("expected InvalidSortField, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_sort_injection_attempt_is_rejected_like_any_other_unknown_field() {
+    let sort = Sort::parse("id; DROP TABLE users").unwrap();
+    assert!(validate(&sort, ALLOWED).is_err());
+}
+
+#[test]
+fn a_bad_sort_field_maps_to_a_client_mistake_not_a_server_fault() {
+    use toolbox_core::{ErrorKind, ServiceError};
+    let err = validate(&Sort::parse("nope").unwrap(), ALLOWED).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidArgument);
+    assert_eq!(err.code(), "INVALID_SORT_FIELD");
+    assert_eq!(err.metadata()["field"], "nope");
 }

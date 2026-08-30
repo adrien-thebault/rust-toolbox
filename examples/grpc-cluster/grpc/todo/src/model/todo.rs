@@ -88,7 +88,7 @@ impl Todo {
     {
         use toolbox_db::Paginate as _;
 
-        toolbox_db::sort::validate(request.sort(), Self::sortable_fields())?;
+        toolbox_db::pagination::validate(request.sort(), Self::sortable_fields())?;
         Self::query()
             .filter(todos::title.like(format!("%{needle}%")))
             .select(Self::as_select())

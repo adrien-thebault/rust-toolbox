@@ -91,7 +91,7 @@ macro_rules! generated_for {
             where
                 C: diesel::connection::LoadConnection<Backend = $backend>,
             {
-                toolbox_db::sort::validate(request.sort(), &["id", "title", "rank"])?;
+                toolbox_db::pagination::validate(request.sort(), &["id", "title", "rank"])?;
                 let mut query = test_entity::table
                     .filter(test_entity::deleted_at.is_null())
                     .select(TestEntity::as_select())

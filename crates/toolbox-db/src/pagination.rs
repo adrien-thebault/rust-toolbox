@@ -1,6 +1,7 @@
-//! Window-function pagination: one statement, one consistent count.
+//! Window-function pagination, and the sort-field allowlist check that guards
+//! its `ORDER BY`.
 //!
-//! The obvious implementation runs a `COUNT(*)` and then a `SELECT`, which can
+//! The obvious pagination runs a `COUNT(*)` and then a `SELECT`, which can
 //! disagree under a concurrent write and only works on queries the toolbox
 //! generated. This composes onto *any* diesel query, so adding a `WHERE` clause
 //! no longer costs you pagination.
@@ -11,9 +12,9 @@ use diesel::{
     query_builder::{AstPass, Query, QueryFragment, QueryId},
     sql_types::BigInt,
 };
-use toolbox_core::{Page, PageRequest};
+use toolbox_core::{Page, PageError, PageRequest, Sort};
 
-use crate::error::DbResult;
+use crate::error::{DbError, DbResult};
 
 /// The alias the window count is loaded under.
 const TOTAL: &str = "__toolbox_total";
@@ -133,4 +134,29 @@ impl<Q> Paginated<Q> {
             total,
         ))
     }
+}
+
+/// Reject any sort term the entity did not declare sortable.
+///
+/// [`Sort::validate`] does the checking; this turns its error into a
+/// [`DbError`] so a generated query method returns one error type.
+///
+/// # Arguments
+///
+/// * `sort` - The terms the caller asked for, straight from the query string.
+/// * `allowed` - The field names the entity declared sortable. Anything outside
+///   it is an error, never interpolated SQL.
+///
+/// # Errors
+/// [`DbError::InvalidSortField`] naming the offending field and the allowlist.
+pub fn validate(sort: &Sort, allowed: &[&str]) -> DbResult<()> {
+    sort.validate(allowed).map_err(|e| match e {
+        PageError::UnknownSortField { field, allowed } => {
+            DbError::InvalidSortField { field, allowed }
+        }
+        other => DbError::InvalidSortField {
+            field: other.to_string(),
+            allowed: allowed.join(", "),
+        },
+    })
 }
