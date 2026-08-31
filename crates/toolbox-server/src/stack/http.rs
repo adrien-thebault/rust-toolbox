@@ -10,14 +10,13 @@ use tower_http::{
 use super::StackConfig;
 use crate::{
     deadline::{DeadlineLayer, DeadlineService},
-    span::MakeRequestSpan,
-    trace_context::{TraceContextLayer, TraceContextService},
+    trace_context::{MakeTracedSpan, TraceContextLayer, TraceContextService},
 };
 
 /// The service an HTTP stack wraps a router in.
 pub type HttpStacked<S> = CatchPanic<
     TraceContextService<
-        Trace<DeadlineService<S>, SharedClassifier<ServerErrorsAsFailures>, MakeRequestSpan>,
+        Trace<DeadlineService<S>, SharedClassifier<ServerErrorsAsFailures>, MakeTracedSpan>,
     >,
     DefaultResponseForPanic,
 >;
@@ -45,7 +44,7 @@ impl<S> Layer<S> for HttpStack {
             .layer(TraceContextLayer::new())
             .layer(
                 TraceLayer::new_for_http()
-                    .make_span_with(MakeRequestSpan::new(self.cfg.trace_level)),
+                    .make_span_with(MakeTracedSpan::new(self.cfg.trace_level)),
             )
             .layer(DeadlineLayer::new(self.cfg.timeout))
             .service(inner)

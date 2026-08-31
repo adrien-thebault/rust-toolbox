@@ -8,14 +8,11 @@ use tower_http::{
 };
 use tracing::Level;
 
-use crate::{
-    span::MakeRequestSpan,
-    trace_context::{TraceContextLayer, TraceContextService},
-};
+use crate::trace_context::{MakeTracedSpan, TraceContextLayer, TraceContextService};
 
 /// The service a realtime stack wraps a router in: no deadline, no body limit.
 pub type RealtimeStacked<S> = CatchPanic<
-    TraceContextService<Trace<S, SharedClassifier<ServerErrorsAsFailures>, MakeRequestSpan>>,
+    TraceContextService<Trace<S, SharedClassifier<ServerErrorsAsFailures>, MakeTracedSpan>>,
     DefaultResponseForPanic,
 >;
 
@@ -38,9 +35,7 @@ impl<S> Layer<S> for RealtimeStack {
         ServiceBuilder::new()
             .layer(CatchPanicLayer::new())
             .layer(TraceContextLayer::new())
-            .layer(
-                TraceLayer::new_for_http().make_span_with(MakeRequestSpan::new(self.trace_level)),
-            )
+            .layer(TraceLayer::new_for_http().make_span_with(MakeTracedSpan::new(self.trace_level)))
             .service(inner)
     }
 }

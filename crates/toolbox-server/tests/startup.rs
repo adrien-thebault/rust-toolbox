@@ -1,7 +1,7 @@
 use toolbox_cluster::{Adapter, Deployment, InProcessEventBus, Scope};
 use toolbox_server::{
     args::DeploymentArgs,
-    serve::{ServeConfig, ServeError, bind},
+    startup::{StartupConfig, StartupError, bind},
 };
 
 fn deployment_args(value: &str) -> DeploymentArgs {
@@ -57,16 +57,16 @@ async fn binding_checks_the_deployment_before_it_binds() {
     let deployment = Deployment::Clustered {
         instance_id: "a".to_owned(),
     };
-    let cfg = ServeConfig::new("127.0.0.1:0".parse().unwrap(), &deployment).adapters(&adapters);
+    let cfg = StartupConfig::new("127.0.0.1:0".parse().unwrap(), &deployment).adapters(&adapters);
 
     let err = bind(&cfg).await.unwrap_err();
-    assert!(matches!(err, ServeError::Deployment(_)), "{err:?}");
+    assert!(matches!(err, StartupError::Deployment(_)), "{err:?}");
 }
 
 #[tokio::test]
 async fn binding_succeeds_with_an_acceptable_deployment() {
     let deployment = Deployment::Single;
-    let cfg = ServeConfig::new("127.0.0.1:0".parse().unwrap(), &deployment);
+    let cfg = StartupConfig::new("127.0.0.1:0".parse().unwrap(), &deployment);
     let listener = bind(&cfg).await.unwrap();
     assert!(listener.local_addr().unwrap().port() > 0);
 }
@@ -88,6 +88,6 @@ async fn a_shared_adapter_binds_under_clustering() {
     let deployment = Deployment::Clustered {
         instance_id: "a".to_owned(),
     };
-    let cfg = ServeConfig::new("127.0.0.1:0".parse().unwrap(), &deployment).adapters(&adapters);
+    let cfg = StartupConfig::new("127.0.0.1:0".parse().unwrap(), &deployment).adapters(&adapters);
     assert!(bind(&cfg).await.is_ok());
 }

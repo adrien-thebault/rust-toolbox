@@ -10,14 +10,13 @@ use tower_http::{
 use super::StackConfig;
 use crate::{
     deadline::{DeadlineLayer, DeadlineService},
-    span::MakeRequestSpan,
-    trace_context::{TraceContextLayer, TraceContextService},
+    trace_context::{MakeTracedSpan, TraceContextLayer, TraceContextService},
 };
 
 /// The service a gRPC stack wraps a server in.
 pub type GrpcStacked<S> = CatchPanic<
     TraceContextService<
-        Trace<DeadlineService<S>, SharedClassifier<GrpcErrorsAsFailures>, MakeRequestSpan>,
+        Trace<DeadlineService<S>, SharedClassifier<GrpcErrorsAsFailures>, MakeTracedSpan>,
     >,
     DefaultResponseForPanic,
 >;
@@ -42,7 +41,7 @@ impl<S> Layer<S> for GrpcStack {
             .layer(TraceContextLayer::new())
             .layer(
                 TraceLayer::new_for_grpc()
-                    .make_span_with(MakeRequestSpan::new(self.cfg.trace_level)),
+                    .make_span_with(MakeTracedSpan::new(self.cfg.trace_level)),
             )
             .layer(DeadlineLayer::new(self.cfg.timeout).grpc())
             .service(inner)

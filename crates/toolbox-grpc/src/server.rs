@@ -5,8 +5,8 @@ pub mod shared_secret;
 
 use tonic::{service::RoutesBuilder, transport::Server};
 use toolbox_server::{
-    serve::{ServeConfig, ServeError, bind},
     shutdown::shutdown_signal,
+    startup::{StartupConfig, StartupError, bind},
 };
 use tracing::warn;
 
@@ -75,7 +75,7 @@ impl ServerConfig {
 /// * `server` - What the server does beyond routing: health, reflection and
 ///   limits.
 #[must_use]
-pub fn serve(cfg: ServeConfig<'_>, server: ServerConfig) -> ServerBuilder<'_> {
+pub fn serve(cfg: StartupConfig<'_>, server: ServerConfig) -> ServerBuilder<'_> {
     ServerBuilder {
         cfg,
         server,
@@ -86,7 +86,7 @@ pub fn serve(cfg: ServeConfig<'_>, server: ServerConfig) -> ServerBuilder<'_> {
 /// Collects services, then serves them with the standard drain sequence.
 pub struct ServerBuilder<'a> {
     /// Listen address, deployment and shutdown handle.
-    cfg: ServeConfig<'a>,
+    cfg: StartupConfig<'a>,
     /// gRPC-specific stack and limit settings.
     server: ServerConfig,
     /// The services collected so far.
@@ -129,9 +129,9 @@ impl ServerBuilder<'_> {
     /// Bind and serve until `SIGTERM`, then drain.
     ///
     /// # Errors
-    /// [`ServeError::Deployment`] when a single-replica adapter is running
-    /// clustered, or [`ServeError::Io`] when the address cannot be bound.
-    pub async fn run(mut self) -> Result<(), ServeError> {
+    /// [`StartupError::Deployment`] when a single-replica adapter is running
+    /// clustered, or [`StartupError::Io`] when the address cannot be bound.
+    pub async fn run(mut self) -> Result<(), StartupError> {
         if self.server.health {
             let (reporter, health) = tonic_health::server::health_reporter();
             // The empty service name is the gRPC convention for "the server as
@@ -169,7 +169,7 @@ impl ServerBuilder<'_> {
                 },
             )
             .await
-            .map_err(|e| ServeError::Io(std::io::Error::other(e.to_string())))?;
+            .map_err(|e| StartupError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(())
     }

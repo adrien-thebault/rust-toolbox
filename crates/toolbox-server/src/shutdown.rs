@@ -12,6 +12,8 @@ use std::{
     time::Duration,
 };
 
+#[cfg(unix)]
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use tracing::{error, info};
 
@@ -49,13 +51,15 @@ pub async fn shutdown_signal() {
 
     #[cfg(unix)]
     let terminate = async {
-        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        match signal(SignalKind::terminate()) {
             Ok(mut sig) => {
                 sig.recv().await;
             }
             Err(e) => error!(error = %e, "cannot listen for SIGTERM"),
         }
     };
+    // No SIGTERM off Unix: pending() leaves Ctrl-C as the only trigger and keeps
+    // the select! below well-typed.
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 

@@ -8,8 +8,8 @@ use std::net::SocketAddr;
 
 use axum::Router;
 use toolbox_server::{
-    serve::{ServeConfig, ServeError, bind},
     shutdown::shutdown_signal,
+    startup::{StartupConfig, StartupError, bind},
 };
 use tracing::info;
 
@@ -34,9 +34,9 @@ use tracing::info;
 ///   different stack on those.
 ///
 /// # Errors
-/// [`ServeError::Deployment`] when a single-replica adapter is running
-/// clustered, or [`ServeError::Io`] when the address cannot be bound.
-pub async fn serve_http(cfg: ServeConfig<'_>, app: Router) -> Result<(), ServeError> {
+/// [`StartupError::Deployment`] when a single-replica adapter is running
+/// clustered, or [`StartupError::Io`] when the address cannot be bound.
+pub async fn serve_http(cfg: StartupConfig<'_>, app: Router) -> Result<(), StartupError> {
     let listener = bind(&cfg).await?;
     let shutdown = cfg.shutdown_handle.clone();
     let drain = cfg.shutdown;

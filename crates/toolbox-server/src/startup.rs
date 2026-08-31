@@ -1,8 +1,10 @@
-//! Bind, check the deployment, serve, and drain.
+//! Check the deployment, bind, and carry the drain settings the serve loop
+//! needs.
 //!
-//! Binding a listener, refusing to start on a deployment mismatch, and running
-//! the five-step drain is the same twenty lines in every binary, and the drain
-//! step everyone omits is the one that drops requests on every rolling deploy.
+//! Refusing to start on a deployment mismatch and binding a listener is the
+//! same twenty lines in every binary; carrying the drain timings and handle in
+//! the same config keeps the serve loop from re-deriving the step everyone
+//! omits, the one that drops requests on every rolling deploy.
 
 use std::net::SocketAddr;
 
@@ -12,7 +14,7 @@ use tracing::info;
 use crate::shutdown::{Shutdown, ShutdownConfig};
 
 /// Everything `serve_*` needs that is not the application itself.
-pub struct ServeConfig<'a> {
+pub struct StartupConfig<'a> {
     /// Where to bind.
     pub listen_addr: SocketAddr,
     /// How many replicas are running.
@@ -30,7 +32,7 @@ pub struct ServeConfig<'a> {
     pub shutdown_handle: Shutdown,
 }
 
-impl<'a> ServeConfig<'a> {
+impl<'a> StartupConfig<'a> {
     /// A config with the default drain timings and a fresh shutdown handle.
     ///
     /// # Arguments
@@ -89,10 +91,10 @@ impl<'a> ServeConfig<'a> {
     }
 }
 
-/// Why a server stopped.
+/// Why a server failed to start or stopped.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum ServeError {
+pub enum StartupError {
     /// A local adapter was running under `DEPLOYMENT=clustered`.
     #[error(transparent)]
     Deployment(#[from] DeploymentError),
@@ -113,9 +115,9 @@ pub enum ServeError {
 ///   first.
 ///
 /// # Errors
-/// [`ServeError::Deployment`] when a `Local` adapter is running clustered, or
-/// [`ServeError::Io`] when the address cannot be bound.
-pub async fn bind(cfg: &ServeConfig<'_>) -> Result<tokio::net::TcpListener, ServeError> {
+/// [`StartupError::Deployment`] when a `Local` adapter is running clustered, or
+/// [`StartupError::Io`] when the address cannot be bound.
+pub async fn bind(cfg: &StartupConfig<'_>) -> Result<tokio::net::TcpListener, StartupError> {
     check_deployment(cfg.deployment, cfg.adapters)?;
     let listener = tokio::net::TcpListener::bind(cfg.listen_addr).await?;
     info!(

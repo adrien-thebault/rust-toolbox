@@ -2,9 +2,9 @@
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 mod deadline;
-mod serve;
 mod shutdown;
 mod stack;
+mod startup;
 mod telemetry;
 mod trace_context;
 

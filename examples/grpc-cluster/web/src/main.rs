@@ -12,8 +12,8 @@ use toolbox_cluster::Adapter;
 use toolbox_grpc::{ClientConfig, client};
 use toolbox_server::{
     args::{DeploymentArgs, ServerArgs},
-    serve::ServeConfig,
     stack::{StackConfig, http_stack},
+    startup::StartupConfig,
     telemetry::TelemetryArgs,
 };
 use toolbox_web::{
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // single-replica one under DEPLOYMENT=clustered.
     let adapters: Vec<&dyn Adapter> = vec![&limiter];
 
-    let cfg = ServeConfig::new(args.server.listen_addr, &deployment).adapters(&adapters);
+    let cfg = StartupConfig::new(args.server.listen_addr, &deployment).adapters(&adapters);
     let health = HealthState::new(cfg.shutdown_handle.readiness());
 
     // The stack is applied here, not by serve_http: a router with realtime

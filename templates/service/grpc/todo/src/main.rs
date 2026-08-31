@@ -6,7 +6,7 @@ use toolbox_db::args::DatabaseArgs;
 use toolbox_grpc::{ServerConfig, serve};
 use toolbox_server::{
     args::{DeploymentArgs, ServerArgs},
-    serve::ServeConfig,
+    startup::StartupConfig,
     telemetry::TelemetryArgs,
 };
 
@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     db.migrate(MIGRATIONS).await?;
 
     let deployment = args.deployment.resolve()?;
-    let cfg = ServeConfig::new(args.server.listen_addr, &deployment);
+    let cfg = StartupConfig::new(args.server.listen_addr, &deployment);
 
     // Graceful shutdown, health, reflection and the deployment check all come
     // from serve; none of it is written here. A second domain is one more

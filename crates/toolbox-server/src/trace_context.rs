@@ -5,12 +5,17 @@
 //! `x-request-id` chain it used to. `x-request-id` survives only as a
 //! human-quotable alias for the trace id.
 
-mod layer;
+use std::{
+    fmt,
+    task::{Context, Poll},
+};
 
-use std::fmt;
-
-use http::HeaderName;
-pub use layer::{TraceContextLayer, TraceContextService};
+use http::{HeaderName, HeaderValue, Request, Response};
+use pin_project_lite::pin_project;
+use tokio::task::futures::TaskLocalFuture;
+use tower::{Layer, Service};
+use tower_http::trace::MakeSpan;
+use tracing::{Level, Span};
 
 /// The W3C Trace Context header.
 pub const TRACEPARENT: HeaderName = HeaderName::from_static("traceparent");
@@ -180,4 +185,161 @@ pub fn current_request_id() -> Option<String> {
 #[must_use]
 pub fn current_trace_context() -> Option<TraceContext> {
     CURRENT_TRACE.try_with(Clone::clone).ok()
+}
+
+/// Extracts a `traceparent`, or mints one, and scopes it for the whole
+/// request.
+///
+/// Always scoping - rather than only when a header was present - is what keeps
+/// this to one future type and stops an `S::Future: Send + 'static` bound
+/// leaking out to every caller.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TraceContextLayer;
+
+impl TraceContextLayer {
+    /// Build the layer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl<S> Layer<S> for TraceContextLayer {
+    type Service = TraceContextService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        TraceContextService { inner }
+    }
+}
+
+/// The service [`TraceContextLayer`] produces.
+#[derive(Debug, Clone, Copy)]
+pub struct TraceContextService<S> {
+    /// The wrapped service.
+    inner: S,
+}
+
+impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for TraceContextService<S>
+where
+    S: Service<Request<ReqBody>, Response = Response<ResBody>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = TraceContextFuture<S::Future>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
+        let ctx = req
+            .headers()
+            .get(TRACEPARENT)
+            .and_then(|v| v.to_str().ok())
+            .and_then(TraceContext::parse)
+            .map_or_else(TraceContext::new_root, |parent| parent.child());
+
+        let traceparent = HeaderValue::from_str(&ctx.to_string()).ok();
+        let request_id = HeaderValue::from_str(ctx.request_id()).ok();
+        req.extensions_mut().insert(ctx.clone());
+
+        TraceContextFuture {
+            inner: CURRENT_TRACE.scope(ctx, self.inner.call(req)),
+            traceparent,
+            request_id,
+        }
+    }
+}
+
+pin_project! {
+    /// The future of [`TraceContextService`].
+    ///
+    /// Named rather than boxed: one `Box::pin` per request is an allocation on
+    /// the hot path for no benefit.
+    pub struct TraceContextFuture<F> {
+        #[pin]
+        inner: TaskLocalFuture<TraceContext, F>,
+        traceparent: Option<HeaderValue>,
+        request_id: Option<HeaderValue>,
+    }
+}
+
+impl<F, ResBody, E> Future for TraceContextFuture<F>
+where
+    F: Future<Output = Result<Response<ResBody>, E>>,
+{
+    type Output = Result<Response<ResBody>, E>;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let mut res = std::task::ready!(this.inner.poll(cx))?;
+        if let Some(v) = this.traceparent.take() {
+            res.headers_mut().insert(TRACEPARENT, v);
+        }
+        if let Some(v) = this.request_id.take() {
+            res.headers_mut().insert(X_REQUEST_ID, v);
+        }
+        Poll::Ready(Ok(res))
+    }
+}
+
+/// Builds one span per request carrying method, path and the W3C trace id.
+///
+/// It bridges `tower-http`'s tracing layer and this crate's trace context,
+/// which do not know about each other. The trace id is the same string the
+/// response's `x-request-id` carries, so a user quoting it from an error page
+/// lands on exactly these log lines.
+#[derive(Debug, Clone, Copy)]
+pub struct MakeTracedSpan {
+    /// The level the request span is recorded at.
+    level: Level,
+}
+
+impl MakeTracedSpan {
+    /// A span maker recording at `level`.
+    ///
+    /// # Arguments
+    ///
+    /// * `level` - What level to record request spans at. DEBUG for a chatty
+    ///   internal service, INFO at an edge.
+    #[must_use]
+    pub fn new(level: Level) -> Self {
+        Self { level }
+    }
+}
+
+impl Default for MakeTracedSpan {
+    fn default() -> Self {
+        Self { level: Level::INFO }
+    }
+}
+
+impl<B> MakeSpan<B> for MakeTracedSpan {
+    fn make_span(&mut self, request: &Request<B>) -> Span {
+        let trace_id = request
+            .extensions()
+            .get::<TraceContext>()
+            .map_or_else(String::new, |c| c.trace_id().to_owned());
+
+        macro_rules! span {
+            ($level:expr) => {
+                tracing::span!(
+                    $level,
+                    "request",
+                    method = %request.method(),
+                    path = %request.uri().path(),
+                    trace_id = %trace_id,
+                    status = tracing::field::Empty,
+                )
+            };
+        }
+
+        match self.level {
+            Level::TRACE => span!(Level::TRACE),
+            Level::DEBUG => span!(Level::DEBUG),
+            Level::WARN => span!(Level::WARN),
+            Level::ERROR => span!(Level::ERROR),
+            Level::INFO => span!(Level::INFO),
+        }
+    }
 }
