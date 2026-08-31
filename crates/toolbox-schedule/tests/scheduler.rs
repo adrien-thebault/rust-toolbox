@@ -11,6 +11,8 @@ use toolbox_schedule::{
     JobOutcome, ManualClock, Overlap, RunMode, ScheduleError, Scheduler, Trigger, lock_key,
 };
 
+mod builder;
+
 /// A job that counts how many times it ran.
 fn counting(counter: Arc<AtomicUsize>) -> impl Fn() -> toolbox_schedule::JobFuture + Send + Sync {
     move || {
@@ -233,36 +235,12 @@ async fn an_overrunning_job_does_not_start_a_second_run_by_default() {
     assert_eq!(started.load(Ordering::SeqCst), 2);
 }
 
-/// Two jobs sharing a name would share a lock key and silently exclude each
-/// other, which is the worst kind of bug: everything looks scheduled.
-#[tokio::test]
-async fn two_jobs_cannot_share_a_name() {
-    let builder = Scheduler::builder(Arc::new(InProcessLockManager::new()))
-        .job(
-            "dup",
-            Trigger::fixed_rate(Duration::from_secs(60)),
-            Duration::from_secs(5),
-            || Box::pin(async { Ok(()) }),
-        )
-        .unwrap();
-
-    let err = builder
-        .job(
-            "dup",
-            Trigger::fixed_rate(Duration::from_secs(60)),
-            Duration::from_secs(5),
-            || Box::pin(async { Ok(()) }),
-        )
-        .unwrap_err();
-    assert!(matches!(err, ScheduleError::DuplicateName(_)));
-}
-
 /// Pays for itself the first time you need to re-run last night's failed job
 /// without a deploy.
 #[tokio::test]
 async fn a_job_can_be_run_on_demand_even_when_not_due() {
     let counter = Arc::new(AtomicUsize::new(0));
-    let mut scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
         .clock(Arc::new(ManualClock::new()))
         .job(
             "nightly",
@@ -283,7 +261,7 @@ async fn a_job_can_be_run_on_demand_even_when_not_due() {
 
 #[tokio::test]
 async fn running_an_unknown_job_names_it() {
-    let mut scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
         .clock(Arc::new(ManualClock::new()))
         .build()
         .unwrap();

@@ -12,13 +12,6 @@
 //! `LockManager` and this, and a `FOR UPDATE SKIP LOCKED` worker over the
 //! outbox table shares all three.
 //!
-//! # What Spring actually gave you
-//!
-//! `@Scheduled` fires on **every** instance. If your experience of it felt
-//! cluster-safe, that was ShedLock. So the translation here is not "find the
-//! `@Scheduled` equivalent" - it is "build the thing Spring needed a second
-//! library for", which is [`toolbox_cluster::LockManager`], already there.
-//!
 //! # One caveat about the injected clock
 //!
 //! [`Scheduler`] reads time from the [`clock::Clock`] port, but a lock
@@ -44,6 +37,6 @@ pub mod trigger;
 
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use error::ScheduleError;
-pub use job::{JobFuture, JobOutcome, JobResult, Overlap, RunMode, ScheduledJob};
-pub use scheduler::{JobSummary, Scheduler, SchedulerBuilder, lock_key};
+pub use job::{Job, JobFuture, JobOutcome, JobResult, JobSummary, Overlap, RunMode};
+pub use scheduler::{Scheduler, SchedulerBuilder, lock_key};
 pub use trigger::{Trigger, parse_cron};

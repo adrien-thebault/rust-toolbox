@@ -12,8 +12,7 @@ fn a_five_field_unix_expression_parses() {
     assert!(Trigger::cron("0 3 * * *").is_ok());
 }
 
-/// A project migrating from Spring writes six fields; one writing Unix cron
-/// writes five. Both should work without a flag.
+/// Six fields carry seconds, five do not; both parse without a flag.
 #[test]
 fn a_six_field_quartz_expression_parses_too() {
     assert!(Trigger::cron("30 0 3 * * *").is_ok());

@@ -138,8 +138,8 @@ impl Trigger {
 /// Parse a cron expression, accepting five-field Unix and six-field Quartz.
 ///
 /// Seconds are optional and detected, which is why croner is the crate here: a
-/// project migrating from Spring writes six fields, one writing Unix cron
-/// writes five, and both have to work.
+/// six-field expression with seconds and a five-field one without both have to
+/// parse, with no flag to say which.
 ///
 /// # Arguments
 ///

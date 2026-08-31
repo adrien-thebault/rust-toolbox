@@ -2,6 +2,8 @@
 
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
+use chrono::{DateTime, Utc};
+
 use crate::trigger::Trigger;
 
 /// What a job's body returns.
@@ -15,9 +17,8 @@ pub type JobFuture = Pin<Box<dyn Future<Output = JobResult> + Send>>;
 pub enum RunMode {
     /// Exactly one replica runs each occurrence, decided by the lock manager.
     ///
-    /// The default, and the thing Spring's `@Scheduled` does **not** do -
-    /// `@Scheduled` fires on every instance, and anyone whose experience of it
-    /// felt cluster-safe was using ShedLock.
+    /// The default. The naive alternative, [`Local`](Self::Local), fires on
+    /// every replica and is wrong for anything that writes.
     #[default]
     Exclusive,
     /// Every replica runs it. Correct for a cache refresh that is per-process
@@ -39,7 +40,7 @@ pub enum Overlap {
 }
 
 /// A registered job.
-pub struct ScheduledJob {
+pub struct Job {
     /// The name, unique within a scheduler, used for the lock key and metrics.
     pub name: &'static str,
     /// When it fires.
@@ -59,9 +60,9 @@ pub struct ScheduledJob {
     pub body: Arc<dyn Fn() -> JobFuture + Send + Sync>,
 }
 
-impl std::fmt::Debug for ScheduledJob {
+impl std::fmt::Debug for Job {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ScheduledJob")
+        f.debug_struct("Job")
             .field("name", &self.name)
             .field("trigger", &self.trigger.describe())
             .field("mode", &self.mode)
@@ -104,4 +105,21 @@ impl JobOutcome {
     pub fn ran(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::TimedOut)
     }
+}
+
+/// One job's schedule state, for an admin endpoint or a startup log.
+#[derive(Debug, Clone)]
+pub struct JobSummary {
+    /// The job's name.
+    pub name: &'static str,
+    /// A one-line description of its trigger.
+    pub trigger: String,
+    /// Where it may run.
+    pub mode: RunMode,
+    /// What it does about an overrun.
+    pub overlap: Overlap,
+    /// When it next fires, as this replica sees it.
+    pub next_run_at: Option<DateTime<Utc>>,
+    /// When it last succeeded here.
+    pub last_success_at: Option<DateTime<Utc>>,
 }
