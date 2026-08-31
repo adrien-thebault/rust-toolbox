@@ -8,7 +8,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use super::parse::{Dialect, EntityConfig};
+use super::parse::{EntityConfig, KeyReadback};
 
 // A `quote!` block is one expression however long the code it emits is, so the
 // line-count lint measures the wrong thing here.
@@ -479,10 +479,10 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
             .ok_or(::toolbox_db::DbError::NotFound)
     };
 
-    if cfg.autoincrement {
+    if let Some(readback) = cfg.autoincrement {
         // The id is assigned by the database, so an insert has to read it back.
-        let fetch_inserted = match cfg.dialect {
-            Dialect::Returning => quote! {
+        let fetch_inserted = match readback {
+            KeyReadback::Returning => quote! {
                 #touch_created
                 #touch_updated
                 ::core::result::Result::Ok(
@@ -492,7 +492,7 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
                         .get_result::<Self>(conn)?,
                 )
             },
-            Dialect::Mysql => quote! {
+            KeyReadback::LastInsertId => quote! {
                 #touch_created
                 #touch_updated
                 // Two statements in one transaction: LAST_INSERT_ID() is scoped
@@ -631,7 +631,7 @@ fn delete_many_body(cfg: &EntityConfig) -> TokenStream {
 ///   resolved against the struct.
 fn id_accessor(cfg: &EntityConfig) -> TokenStream {
     let id_field = &cfg.id_field;
-    if cfg.autoincrement {
+    if cfg.autoincrement.is_some() {
         let id_type = &cfg.id_type;
         // Fully qualified: a bare `Default::default()` is ambiguous in any
         // crate where another `PartialEq` impl for the id type is in scope -

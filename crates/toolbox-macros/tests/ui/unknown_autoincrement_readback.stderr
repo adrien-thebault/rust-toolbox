@@ -1,0 +1,5 @@
+error: unknown `autoincrement` readback; expected `returning` (PostgreSQL, SQLite 3.35+) or `last_insert_id` (MySQL)
+  --> tests/ui/unknown_autoincrement_readback.rs:18:54
+   |
+18 | #[entity(backend = Backend, id = id, autoincrement = oracle)]
+   |                                                      ^^^^^^

@@ -15,7 +15,7 @@ diesel::table! {
 
 #[derive(Clone, Queryable, Selectable, Insertable, AsChangeset, Entity)]
 #[diesel(table_name = items)]
-#[entity(backend = Backend, id = id, dialect = oracle)]
+#[entity(backend = Backend, id = id, autoincrement = oracle)]
 pub struct Item {
     pub id: i32,
     pub title: String,

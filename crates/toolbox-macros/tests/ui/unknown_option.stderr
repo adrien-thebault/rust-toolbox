@@ -1,4 +1,4 @@
-error: unknown `entity` option `magic`; expected one of: backend, dialect, id, autoincrement, timestamps, soft_delete, version, sortable
+error: unknown `entity` option `magic`; expected one of: backend, id, autoincrement, timestamps, soft_delete, version, sortable
   --> tests/ui/unknown_option.rs:18:38
    |
 18 | #[entity(backend = Backend, id = id, magic = yes)]

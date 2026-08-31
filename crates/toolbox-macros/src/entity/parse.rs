@@ -10,15 +10,16 @@ use syn::{
     spanned::Spanned,
 };
 
-/// Which SQL to use where the backends genuinely differ.
+/// How a database-assigned key is read back after an insert, where the
+/// backends genuinely differ.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dialect {
+pub enum KeyReadback {
     /// `INSERT .. RETURNING`, one statement. PostgreSQL and SQLite 3.35+.
     Returning,
     /// `INSERT` then `SELECT .. WHERE id = LAST_INSERT_ID()`, in a
     /// transaction because the two statements must see the same connection
-    /// state.
-    Mysql,
+    /// state. MySQL.
+    LastInsertId,
 }
 
 /// Everything `#[entity(..)]` declared, resolved against the struct.
@@ -29,14 +30,13 @@ pub struct EntityConfig {
     pub table: Path,
     /// The backend type the queries are generic over.
     pub backend: Path,
-    /// Which SQL dialect to emit for inserts.
-    pub dialect: Dialect,
     /// The primary-key column.
     pub id_field: Ident,
     /// The primary-key column's type.
     pub id_type: Type,
-    /// Whether the database assigns the id.
-    pub autoincrement: bool,
+    /// How a database-assigned key is read back, or `None` when the caller
+    /// supplies the id.
+    pub autoincrement: Option<KeyReadback>,
     /// The created/updated columns, if `timestamps` was set.
     pub timestamps: Option<Timestamps>,
     /// The nullable timestamp column that marks a row deleted, if any.
@@ -61,12 +61,10 @@ pub struct Timestamps {
 enum Item {
     /// `backend = <path>`.
     Backend(Path),
-    /// `dialect = <ident>`.
-    Dialect(Ident),
     /// `id = <ident>`.
     Id(Ident),
-    /// bare `autoincrement`.
-    Autoincrement,
+    /// `autoincrement` or `autoincrement = <ident>`.
+    Autoincrement(Option<Ident>),
     /// bare `timestamps`.
     Timestamps,
     /// `soft_delete = <ident>`.
@@ -103,9 +101,8 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
         })?;
 
     let mut backend = None;
-    let mut dialect_ident: Option<Ident> = None;
     let mut id = None;
-    let mut autoincrement = false;
+    let mut autoincrement: Option<Option<Ident>> = None;
     let mut timestamps = false;
     let mut soft_delete = None;
     let mut version = None;
@@ -114,9 +111,8 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
     for item in parse_items(entity_attr)? {
         match item {
             Item::Backend(p) => backend = Some(p),
-            Item::Dialect(i) => dialect_ident = Some(i),
             Item::Id(i) => id = Some(i),
-            Item::Autoincrement => autoincrement = true,
+            Item::Autoincrement(v) => autoincrement = Some(v),
             Item::Timestamps => timestamps = true,
             Item::SoftDelete(i) => soft_delete = Some(i),
             Item::Version(i) => version = Some(i),
@@ -138,14 +134,16 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
         )
     })?;
 
-    let dialect = match dialect_ident {
-        None => Dialect::Returning,
-        Some(i) if i == "returning" => Dialect::Returning,
-        Some(i) if i == "mysql" => Dialect::Mysql,
-        Some(i) => {
+    let autoincrement = match autoincrement {
+        None => None,
+        Some(None) => Some(KeyReadback::Returning),
+        Some(Some(i)) if i == "returning" => Some(KeyReadback::Returning),
+        Some(Some(i)) if i == "last_insert_id" => Some(KeyReadback::LastInsertId),
+        Some(Some(i)) => {
             return Err(syn::Error::new(
                 i.span(),
-                "unknown dialect; expected `returning` (PostgreSQL, SQLite 3.35+) or `mysql`",
+                "unknown `autoincrement` readback; expected `returning` \
+                 (PostgreSQL, SQLite 3.35+) or `last_insert_id` (MySQL)",
             ));
         }
     };
@@ -155,7 +153,7 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
     // An autoincrement key is assigned by the database, so it must not be sent
     // in the INSERT. Diesel's own attribute is how that is expressed, and
     // silently inserting a zero instead is the failure this catches.
-    if autoincrement
+    if autoincrement.is_some()
         && !fields
             .iter()
             .any(|f| f.ident == id_field && f.skip_insertion)
@@ -222,7 +220,6 @@ pub fn parse(input: &DeriveInput) -> syn::Result<EntityConfig> {
         ident: input.ident.clone(),
         table,
         backend,
-        dialect,
         id_field,
         id_type,
         autoincrement,
@@ -251,9 +248,15 @@ fn parse_items(attr: &Attribute) -> syn::Result<Vec<Item>> {
 
         match key.to_string().as_str() {
             "backend" => items.push(Item::Backend(meta.value()?.parse::<Path>()?)),
-            "dialect" => items.push(Item::Dialect(meta.value()?.parse::<Ident>()?)),
             "id" => items.push(Item::Id(meta.value()?.parse::<Ident>()?)),
-            "autoincrement" => items.push(Item::Autoincrement),
+            "autoincrement" => {
+                let readback = if meta.input.peek(syn::Token![=]) {
+                    Some(meta.value()?.parse::<Ident>()?)
+                } else {
+                    None
+                };
+                items.push(Item::Autoincrement(readback));
+            }
             "timestamps" => items.push(Item::Timestamps),
             "soft_delete" => items.push(Item::SoftDelete(meta.value()?.parse::<Ident>()?)),
             "version" => items.push(Item::Version(meta.value()?.parse::<Ident>()?)),
@@ -265,7 +268,7 @@ fn parse_items(attr: &Attribute) -> syn::Result<Vec<Item>> {
             }
             other => {
                 return Err(meta.error(format!(
-                    "unknown `entity` option `{other}`; expected one of: backend, dialect, id, \
+                    "unknown `entity` option `{other}`; expected one of: backend, id, \
                      autoincrement, timestamps, soft_delete, version, sortable"
                 )));
             }

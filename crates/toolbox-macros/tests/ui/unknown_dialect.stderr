@@ -1,5 +1,0 @@
-error: unknown dialect; expected `returning` (PostgreSQL, SQLite 3.35+) or `mysql`
-  --> tests/ui/unknown_dialect.rs:18:48
-   |
-18 | #[entity(backend = Backend, id = id, dialect = oracle)]
-   |                                                ^^^^^^

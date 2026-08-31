@@ -1,9 +1,9 @@
 //! Derive macros for the toolbox.
 //!
-//! `#[derive(Entity)]` replaces four `macro_rules!` macros and seven traits
-//! with one derive, and - unlike `macro_rules!` - it can point a compile error
-//! at the offending token. The error messages are the product, so every misuse
-//! has a committed `trybuild` case.
+//! `#[derive(Entity)]` generates a diesel entity's inherent CRUD methods from
+//! one attribute and, unlike a `macro_rules!`, points a compile error at the
+//! offending token. The error messages are the product, so every misuse has a
+//! committed `trybuild` case.
 //!
 //! This file is the registry: one `#[proc_macro*]` entry point per macro,
 //! each delegating to a module of the same name. A second macro is a new
@@ -41,12 +41,12 @@ use syn::{DeriveInput, parse_macro_input};
 ///   feature. An alias like `crate::Backend` is the point: it is the one place
 ///   the backend is named, so swapping it is a one-line change.
 /// - `id = <field>` (required) - the primary key field.
-/// - `dialect = returning | mysql` - which SQL to use where the backends
-///   genuinely differ, which is only reading back an autoincrement key.
-///   Defaults to `returning` (PostgreSQL, SQLite 3.35+). A proc macro sees the
-///   token `crate::Backend`, not the type it resolves to, so this cannot be
+/// - `autoincrement` - the database assigns the id, so an insert reads it back:
+///   `INSERT .. RETURNING` by default (PostgreSQL, SQLite 3.35+), or
+///   `autoincrement = last_insert_id` for MySQL's
+///   `SELECT .. WHERE id = LAST_INSERT_ID()`. A proc macro sees the token
+///   `crate::Backend`, not the type it resolves to, so which one cannot be
 ///   inferred from `backend`.
-/// - `autoincrement` - the database assigns the id.
 /// - `timestamps` - maintain `created_at` and `updated_at` through
 ///   [`toolbox_db::Now`](../toolbox_db/trait.Now.html).
 /// - `soft_delete = <field>` - a nullable column; deletes become updates and

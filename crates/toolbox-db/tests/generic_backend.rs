@@ -160,11 +160,12 @@ fn two_pools_in_one_process() {
     let _mysql = toolbox_db::Db::<MysqlConnection>::builder("mysql://localhost/c");
 }
 
-// --- The `dialect = mysql` save arm compiles ---------------------------------
+// --- The `autoincrement = last_insert_id` save arm compiles -----------------
 //
 // `#[derive(Entity)]` only expands the MySQL `save()` body when an entity
-// declares `dialect = mysql`, and nothing else in the suite does, so this is
-// what type-checks the `WHERE id = LAST_INSERT_ID()` read-back.
+// declares `autoincrement = last_insert_id`, and nothing else in the suite
+// does, so this is what type-checks the `WHERE id = LAST_INSERT_ID()`
+// read-back.
 
 diesel::table! {
     mysql_widgets (id) {
@@ -176,7 +177,7 @@ diesel::table! {
 
 #[derive(Debug, Clone, Queryable, Selectable, Insertable, AsChangeset, toolbox_db::Entity)]
 #[diesel(table_name = mysql_widgets)]
-#[entity(backend = Mysql, dialect = mysql, id = id, autoincrement, version = version)]
+#[entity(backend = Mysql, id = id, autoincrement = last_insert_id, version = version)]
 struct MysqlWidget {
     #[diesel(skip_insertion)]
     id: i32,
