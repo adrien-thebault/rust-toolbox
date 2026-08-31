@@ -11,17 +11,22 @@
 //! misconfigured ingress - it can set the user header to anything and be that
 //! user.
 //!
-//! So the trusted-proxy list is **mandatory**: this refuses to construct
-//! without one. There is no default and no "trust everything in development"
-//! mode, because that mode is what reaches production.
+//! So a trust anchor is **mandatory**: this refuses to construct without one,
+//! either a trusted-peer list ([`ForwardedIdentityProvider::trusting_peers`])
+//! or a secret the proxy adds and no one else knows
+//! ([`ForwardedIdentityProvider::trusting_secret`], for when the peer address
+//! cannot be relied on). There is no default and no "trust everything in
+//! development" mode, because that mode is what reaches production. A leaked
+//! secret is the same bypass as a too-broad CIDR.
 
 use std::{collections::BTreeMap, net::IpAddr};
 
 use async_trait::async_trait;
 use ipnet::IpNet;
+use secrecy::{ExposeSecret, SecretString};
 use tracing::warn;
 
-use super::{Credential, IdentityProvider};
+use super::{Credential, IdentityProvider, constant_time_eq};
 use crate::principal::{AuthError, Principal};
 
 /// Which headers carry the forwarded identity.
@@ -101,6 +106,19 @@ pub struct ForwardedIdentity {
     pub email: Option<String>,
     /// The address the request actually arrived from.
     pub peer: Option<IpAddr>,
+    /// The proxy secret the request carried, when the provider trusts one
+    /// rather than a peer list.
+    pub secret: Option<SecretString>,
+}
+
+/// What makes a forwarded identity trustworthy.
+#[derive(Debug, Clone)]
+enum TrustAnchor {
+    /// The request's peer address is in this set.
+    Peers(Vec<IpNet>),
+    /// The request carries this secret, in the header the transport was told to
+    /// read into [`ForwardedIdentity::secret`].
+    Secret(SecretString),
 }
 
 /// Trusts an authenticating reverse proxy's headers.
@@ -112,13 +130,24 @@ pub struct ForwardedIdentityProvider {
     display_name: String,
     /// Which headers to read.
     headers: ForwardedHeaders,
-    /// The peers allowed to assert an identity.
-    trusted: Vec<IpNet>,
+    /// What lets this provider believe a forwarded identity.
+    anchor: TrustAnchor,
     /// Whether forwarded groups are uppercased into roles.
     uppercase_roles: bool,
 }
 
 impl ForwardedIdentityProvider {
+    /// Build one from a trust anchor, with the other fields defaulted.
+    fn with_anchor(anchor: TrustAnchor) -> Self {
+        Self {
+            id: "forwarded".to_owned(),
+            display_name: "forwarded".to_owned(),
+            headers: ForwardedHeaders::default(),
+            anchor,
+            uppercase_roles: true,
+        }
+    }
+
     /// Build one, trusting exactly these peers.
     ///
     /// # Arguments
@@ -132,25 +161,47 @@ impl ForwardedIdentityProvider {
     /// parse. An empty list is refused rather than treated as "trust nothing",
     /// because a provider that can never authenticate anyone is a
     /// misconfiguration, not a safe default.
-    pub fn new(trusted_proxies: &[&str]) -> Result<Self, AuthError> {
+    pub fn trusting_peers(trusted_proxies: &[&str]) -> Result<Self, AuthError> {
         if trusted_proxies.is_empty() {
             return Err(AuthError::Malformed(
                 "ForwardedIdentityProvider needs at least one trusted proxy; a spoofable header is total authentication bypass"
                     .to_owned(),
             ));
         }
-        let trusted = trusted_proxies
+        let nets = trusted_proxies
             .iter()
             .map(|t| parse_network(t))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Self {
-            id: "forwarded".to_owned(),
-            display_name: "forwarded".to_owned(),
-            headers: ForwardedHeaders::default(),
-            trusted,
-            uppercase_roles: true,
-        })
+        Ok(Self::with_anchor(TrustAnchor::Peers(nets)))
+    }
+
+    /// Build one, trusting any request that carries `secret` in the configured
+    /// header.
+    ///
+    /// For deployments where the peer address cannot be relied on - the proxy
+    /// and the service share a load balancer that rewrites the source, or the
+    /// pod network is flat. The transport reads a header into
+    /// [`ForwardedIdentity::secret`]; this compares it in constant time.
+    ///
+    /// # Arguments
+    ///
+    /// * `secret` - The shared secret the proxy adds. An empty one is refused,
+    ///   because it would trust every caller.
+    ///
+    /// # Errors
+    /// [`AuthError::Malformed`] when `secret` is empty.
+    pub fn trusting_secret(secret: impl Into<String>) -> Result<Self, AuthError> {
+        let secret = secret.into();
+        if secret.is_empty() {
+            return Err(AuthError::Malformed(
+                "ForwardedIdentityProvider needs a non-empty secret; an empty one trusts every caller"
+                    .to_owned(),
+            ));
+        }
+        Ok(Self::with_anchor(TrustAnchor::Secret(SecretString::from(
+            secret,
+        ))))
     }
 
     /// Override the id.
@@ -213,38 +264,62 @@ impl ForwardedIdentityProvider {
 
     /// Whether this peer is allowed to assert an identity.
     ///
+    /// Always `false` for a secret-anchored provider, which does not consult
+    /// the peer at all.
+    ///
     /// # Arguments
     ///
     /// * `peer` - The TCP peer address, not anything the request claimed. That
     ///   is the whole distinction this type exists to keep.
     #[must_use]
     pub fn trusts(&self, peer: IpAddr) -> bool {
-        self.trusted.iter().any(|net| net.contains(&peer))
+        match &self.anchor {
+            TrustAnchor::Peers(nets) => nets.iter().any(|net| net.contains(&peer)),
+            TrustAnchor::Secret(_) => false,
+        }
     }
 
-    /// Turn forwarded headers into a principal, if the peer may assert them.
+    /// Turn forwarded headers into a principal, if the trust anchor is
+    /// satisfied.
     ///
     /// # Arguments
     ///
-    /// * `forwarded` - The headers, plus the peer that sent them. The peer is
-    ///   checked before a single header is read.
+    /// * `forwarded` - The headers, plus whatever the anchor checks: the peer
+    ///   for a peer list, [`ForwardedIdentity::secret`] for a secret. That is
+    ///   checked before a single identity header is read.
     ///
     /// # Errors
-    /// [`AuthError::Unauthenticated`] when the peer is not trusted, is
-    /// unknown, or asserted no user.
+    /// [`AuthError::Unauthenticated`] when the anchor is not satisfied, or the
+    /// request asserted no user.
     pub fn principal(&self, forwarded: &ForwardedIdentity) -> Result<Principal, AuthError> {
-        let peer = forwarded.peer.ok_or_else(|| {
-            // No peer means no way to know whether the headers are the proxy's.
-            warn!("a forwarded identity arrived with no peer address; refusing it");
-            AuthError::Unauthenticated
-        })?;
-
-        if !self.trusts(peer) {
-            warn!(
-                %peer,
-                "a request from an untrusted peer carried forwarded-identity headers"
-            );
-            return Err(AuthError::Unauthenticated);
+        match &self.anchor {
+            TrustAnchor::Peers(nets) => {
+                let peer = forwarded.peer.ok_or_else(|| {
+                    // No peer means no way to know whether the headers are the
+                    // proxy's.
+                    warn!("a forwarded identity arrived with no peer address; refusing it");
+                    AuthError::Unauthenticated
+                })?;
+                if !nets.iter().any(|net| net.contains(&peer)) {
+                    warn!(
+                        %peer,
+                        "a request from an untrusted peer carried forwarded-identity headers"
+                    );
+                    return Err(AuthError::Unauthenticated);
+                }
+            }
+            TrustAnchor::Secret(expected) => {
+                let presented = forwarded.secret.as_ref().map(ExposeSecret::expose_secret);
+                if !constant_time_eq(
+                    presented.unwrap_or_default().as_bytes(),
+                    expected.expose_secret().as_bytes(),
+                ) {
+                    warn!(
+                        "a forwarded identity carried a missing or invalid proxy secret; refusing it"
+                    );
+                    return Err(AuthError::Unauthenticated);
+                }
+            }
         }
 
         let user = forwarded

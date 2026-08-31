@@ -332,7 +332,7 @@ fn forwarded_app(peer: [u8; 4]) -> Router {
         providers: Arc::new(
             ProviderRegistry::new()
                 .with_arc(issuer.clone())
-                .with(ForwardedIdentityProvider::new(&["127.0.0.1"]).unwrap()),
+                .with(ForwardedIdentityProvider::trusting_peers(&["127.0.0.1"]).unwrap()),
         ),
         issuer,
         epoch: Arc::new(Mutex::new(None)),

@@ -16,7 +16,8 @@ pub use provider::password::{
     PasswordIdentityProvider, StoredUser, UserStore, auth_epoch, hash_password, verify_password,
 };
 pub use provider::{
-    Credential, IdentityProvider, ProviderRegistry,
+    Credential, IdentityProvider, ProviderRegistry, constant_time_eq,
+    forwarded_principal::{ForwardedPrincipal, ForwardedPrincipalProvider},
     jwt::{Claims, JwtIdentityProvider, RefreshInfo, Refreshed, TokenUse},
     proxy_header::{ForwardedHeaders, ForwardedIdentity, ForwardedIdentityProvider, parse_network},
 };

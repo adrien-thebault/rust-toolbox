@@ -1,15 +1,16 @@
 //! Identity providers.
 //!
-//! [`IdentityProvider`] has three implementations - password, forwarded-header,
-//! JWT - and is used as `dyn`, which is the whole point: a deployment picks its
-//! providers at runtime and [`ProviderRegistry`] is the single place a
-//! credential becomes a [`Principal`], whether it arrives at `/auth/login` or
-//! on every request as a bearer token.
+//! [`IdentityProvider`] has several implementations - password, forwarded
+//! header, forwarded principal, JWT - and is used as `dyn`, which is the whole
+//! point: a deployment picks its providers at runtime and [`ProviderRegistry`]
+//! is the single place a credential becomes a [`Principal`], whether it arrives
+//! at `/auth/login` or on every request as a bearer token.
 //!
 //! A naive `AuthBackend` could not do this: it was synchronous, there was
 //! exactly one per application, and `Credential` was a closed toolbox-owned
 //! enum. All three are fixed here.
 
+pub mod forwarded_principal;
 pub mod jwt;
 #[cfg(feature = "password")]
 pub mod password;
@@ -18,6 +19,7 @@ pub mod proxy_header;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+pub use forwarded_principal::{ForwardedPrincipal, ForwardedPrincipalProvider};
 pub use jwt::{Claims, JwtIdentityProvider, RefreshInfo, Refreshed, TokenUse};
 #[cfg(feature = "password")]
 pub use password::{
@@ -171,4 +173,28 @@ impl ProviderRegistry {
     pub fn is_empty(&self) -> bool {
         self.providers.is_empty()
     }
+}
+
+/// Compare two secrets without leaking their length relationship through
+/// timing.
+///
+/// A short-circuiting `==` tells a caller how many leading bytes a guess got
+/// right, which turns guessing a secret from infeasible into linear. A length
+/// mismatch returns `false` at once - the length is not the secret - and equal
+/// lengths are compared in full, with no early return.
+///
+/// # Arguments
+///
+/// * `a` - One secret, typically the expected value.
+/// * `b` - The other, typically what a caller presented.
+#[must_use]
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }

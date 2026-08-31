@@ -1,6 +1,7 @@
 use std::net::IpAddr;
 
 use ipnet::IpNet;
+use secrecy::SecretString;
 use toolbox_auth::{
     AuthError, ForwardedHeaders, ForwardedIdentity, ForwardedIdentityProvider, parse_network,
 };
@@ -10,7 +11,7 @@ fn ip(s: &str) -> IpAddr {
 }
 
 fn provider() -> ForwardedIdentityProvider {
-    ForwardedIdentityProvider::new(&["10.0.0.0/8", "192.168.1.5"]).unwrap()
+    ForwardedIdentityProvider::trusting_peers(&["10.0.0.0/8", "192.168.1.5"]).unwrap()
 }
 
 fn forwarded(peer: &str) -> ForwardedIdentity {
@@ -19,6 +20,7 @@ fn forwarded(peer: &str) -> ForwardedIdentity {
         groups: Some("admins, staff".to_owned()),
         email: Some("ada@example.test".to_owned()),
         peer: Some(ip(peer)),
+        secret: None,
     }
 }
 
@@ -41,7 +43,7 @@ fn the_header_set_is_configurable() {
 
 #[test]
 fn it_refuses_to_construct_without_a_trusted_proxy_list() {
-    let err = ForwardedIdentityProvider::new(&[]).unwrap_err();
+    let err = ForwardedIdentityProvider::trusting_peers(&[]).unwrap_err();
     assert!(matches!(err, AuthError::Malformed(_)));
     assert!(
         err.to_string().contains("bypass"),
@@ -51,8 +53,65 @@ fn it_refuses_to_construct_without_a_trusted_proxy_list() {
 
 #[test]
 fn a_malformed_cidr_is_refused_at_construction() {
-    assert!(ForwardedIdentityProvider::new(&["not-an-ip"]).is_err());
-    assert!(ForwardedIdentityProvider::new(&["10.0.0.0/99"]).is_err());
+    assert!(ForwardedIdentityProvider::trusting_peers(&["not-an-ip"]).is_err());
+    assert!(ForwardedIdentityProvider::trusting_peers(&["10.0.0.0/99"]).is_err());
+}
+
+fn secret_provider() -> ForwardedIdentityProvider {
+    ForwardedIdentityProvider::trusting_secret("s3cr3t").unwrap()
+}
+
+fn forwarded_with_secret(secret: Option<&str>) -> ForwardedIdentity {
+    ForwardedIdentity {
+        user: Some("ada".to_owned()),
+        groups: Some("admins".to_owned()),
+        email: None,
+        peer: None,
+        secret: secret.map(|s| SecretString::from(s.to_owned())),
+    }
+}
+
+#[test]
+fn trusting_secret_refuses_an_empty_secret() {
+    assert!(ForwardedIdentityProvider::trusting_secret("").is_err());
+}
+
+#[test]
+fn a_matching_proxy_secret_lets_the_identity_through() {
+    let principal = secret_provider()
+        .principal(&forwarded_with_secret(Some("s3cr3t")))
+        .unwrap();
+    assert_eq!(principal.subject, "ada");
+    assert!(principal.has_role("ADMINS"));
+}
+
+/// The property the secret anchor rests on.
+#[test]
+fn a_wrong_or_missing_proxy_secret_is_refused() {
+    assert_eq!(
+        secret_provider()
+            .principal(&forwarded_with_secret(Some("nope")))
+            .unwrap_err(),
+        AuthError::Unauthenticated
+    );
+    assert_eq!(
+        secret_provider()
+            .principal(&forwarded_with_secret(None))
+            .unwrap_err(),
+        AuthError::Unauthenticated
+    );
+}
+
+#[test]
+fn the_peer_is_not_consulted_in_secret_mode() {
+    // No peer, no CIDR list - a good secret is enough, and `trusts` is false
+    // for anything.
+    assert!(
+        secret_provider()
+            .principal(&forwarded_with_secret(Some("s3cr3t")))
+            .is_ok()
+    );
+    assert!(!secret_provider().trusts(ip("10.0.0.1")));
 }
 
 #[test]
@@ -100,7 +159,7 @@ fn a_trusted_peer_asserting_no_user_is_refused() {
 
 #[test]
 fn an_exact_address_is_a_host_route_not_a_network() {
-    let provider = ForwardedIdentityProvider::new(&["192.168.1.5"]).unwrap();
+    let provider = ForwardedIdentityProvider::trusting_peers(&["192.168.1.5"]).unwrap();
     assert!(provider.trusts(ip("192.168.1.5")));
     assert!(!provider.trusts(ip("192.168.1.6")));
 }

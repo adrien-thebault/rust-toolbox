@@ -344,6 +344,12 @@ pub struct ForwardedConfig {
     /// How many proxy hops to trust when resolving the peer address, matching
     /// what the rest of the process uses.
     pub hops: TrustedHops,
+    /// The header carrying the proxy's shared secret, when the registry's
+    /// [`toolbox_auth::ForwardedIdentityProvider`] trusts a secret rather than
+    /// a peer list. Its value is read into
+    /// [`toolbox_auth::ForwardedIdentity::secret`]; unset means the header is
+    /// not read.
+    pub secret_header: Option<String>,
 }
 
 /// Populate the caller's `Principal` from an authenticating proxy's headers.
@@ -404,5 +410,10 @@ fn forwarded_identity(
         groups: read(&config.headers.groups),
         email: read(&config.headers.email),
         peer: client_ip_of(headers, extensions, config.hops),
+        secret: config
+            .secret_header
+            .as_deref()
+            .and_then(read)
+            .map(SecretString::from),
     }
 }
