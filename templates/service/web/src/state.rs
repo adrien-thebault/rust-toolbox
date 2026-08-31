@@ -6,7 +6,7 @@ use secrecy::{ExposeSecret, SecretString};
 use toolbox_auth::{
     AuthError, JwtIdentityProvider, Principal, ProviderRegistry, RefreshInfo, UserStore, auth_epoch,
 };
-use toolbox_grpc::BackendChannel;
+use toolbox_grpc::ClientChannel;
 use toolbox_web::auth::AuthState;
 
 use crate::auth::SeededAdmin;
@@ -15,7 +15,7 @@ use crate::auth::SeededAdmin;
 #[derive(Clone)]
 pub struct AppState {
     /// A channel to the backend.
-    pub todos: BackendChannel,
+    pub todos: ClientChannel,
     /// Everything a caller may present, including the bearer verifier.
     pub providers: Arc<ProviderRegistry>,
     /// The codec that mints this gateway's sessions.

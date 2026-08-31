@@ -3,7 +3,7 @@
 use clap::Parser;
 use {{crate_name}}_todo::{Connection, MIGRATIONS, TodoService, proto};
 use toolbox_db::args::DatabaseArgs;
-use toolbox_grpc::{GrpcConfig, serve_grpc};
+use toolbox_grpc::{ServerConfig, serve};
 use toolbox_server::{
     args::{DeploymentArgs, ServerArgs},
     serve::ServeConfig,
@@ -41,9 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = ServeConfig::new(args.server.listen_addr, &deployment);
 
     // Graceful shutdown, health, reflection and the deployment check all come
-    // from serve_grpc; none of it is written here. A second domain is one more
+    // from serve; none of it is written here. A second domain is one more
     // `.add_service(...)` if it shares this process, or its own binary if not.
-    serve_grpc(cfg, GrpcConfig::default().reflection(proto::DESCRIPTOR))
+    serve(cfg, ServerConfig::default().reflection(proto::DESCRIPTOR))
         .add_service(TodoService::new(db).into_server())
         .run()
         .await?;

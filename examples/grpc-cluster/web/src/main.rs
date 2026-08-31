@@ -9,7 +9,7 @@ use example_web::{
     routes::router,
 };
 use toolbox_cluster::Adapter;
-use toolbox_grpc::{BackendConfig, backend};
+use toolbox_grpc::{ClientConfig, client};
 use toolbox_server::{
     args::{DeploymentArgs, ServerArgs},
     serve::ServeConfig,
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let _telemetry = args.telemetry.init()?;
 
-    let todos = backend("todo", &BackendConfig::new(&args.todo_backend)?).await?;
+    let todos = client("todo", &ClientConfig::new(&args.todo_backend)?);
 
     // Everything identity needs, read once at startup so a missing variable is
     // a refusal to start rather than a 500 on the first login.

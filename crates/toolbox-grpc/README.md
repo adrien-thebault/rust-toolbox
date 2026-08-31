@@ -1,19 +1,20 @@
 # toolbox-grpc
 
-tonic building blocks.
+tonic building blocks, split by direction: `client` calls another service,
+`server` serves one.
 
 | Module | What it holds |
 |---|---|
+| `client` | `client()` and one channel type; `uri` points at your LB or `Service` |
+| `client::interceptor` | what every outgoing request carries: deadline, shared secret, forwarded principal |
+| `client::retry` | `RetryPolicy` and `with_retry` |
+| `client::error` | `ClientError` |
+| `server` | `serve()`, health and reflection |
+| `server::shared_secret` | `shared_secret_layer`: the "is this an allowed caller" gate |
+| `server::identity` | `identity_layer`, `require`/`optional`: who the end user is |
 | `status` | `to_status`, `from_status`, and the `ErrorKind` mapping |
-| `backend` | `backend()` and one channel type whatever the discovery |
-| `backend::interceptor` | what every outgoing request carries: deadline and credential |
-| `backend::dns` | the channel that re-resolves and rebalances |
-| `discovery` | static, DNS with re-resolution, or a proxy |
-| `retry` | `RetryPolicy` and `with_retry` |
-| `auth` | service-to-service credentials |
 | `pagination` | the shared pagination messages |
-| `file` | the file-transfer wire contract |
-| `serve` | `serve_grpc`, health and reflection |
+| `limits` | `MessageLimits`, the one value both ends read |
 
 `GrpcResult<T>` is a plain type alias. There is deliberately no blanket
 `impl<E: ServiceError> From<E> for tonic::Status` - `Status` is foreign and `E`
@@ -23,6 +24,21 @@ any consumer. Each consumer keeps its own one-line `From`, which is legal.
 `to_status` replaces the message on `Internal`: a gRPC message crosses to
 whoever called, and an internal failure's `Display` is dependency text.
 
-`Discovery::Dns` re-resolves. `connect_lazy` on a DNS name opens one connection
-to whichever address resolved first and never looks again, so a scale-out
-changes nothing - a failure that looks like a successful deploy.
+Client-side discovery is deliberately absent. `client()` connects lazily to one
+`uri` - point it at a load balancer, a mesh, or a Kubernetes `Service`.
+Re-resolving DNS in-process to spread load across a headless service is a
+workaround for a missing proxy, better solved by adding one.
+
+The `x-shared-secret` gate (`shared_secret_layer`) and identity resolution
+(`identity_layer`) are two layers, not one: the first answers "is this an
+allowed caller", the second "and who is the end user".
+
+`identity_layer` extracts nothing by itself - you compose its credential
+sources and it runs whatever they find through a `ProviderRegistry`:
+
+```rust
+identity_layer(registry)
+    .extracting(identity::forwarded_principal) // the gateway's x-fwd-principal
+    .extracting(identity::bearer)              // a direct Authorization: Bearer
+    .extracting(|headers| ...)                 // whatever else your registry knows
+```

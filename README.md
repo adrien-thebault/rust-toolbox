@@ -36,7 +36,7 @@ Each has its own README explaining what its modules do.
 | [`toolbox-server`](crates/toolbox-server/README.md) | trace context, layer stacks, deadlines, graceful drain |
 | [`toolbox-auth`](crates/toolbox-auth/README.md) | principals, roles, identity providers, `PrincipalMapping`, JWT sessions with stateless refresh |
 | [`toolbox-web`](crates/toolbox-web/README.md) | errors, extractors, health, rate limiting, OpenAPI, SSE |
-| [`toolbox-grpc`](crates/toolbox-grpc/README.md) | status conversion, backend clients, discovery, serving |
+| [`toolbox-grpc`](crates/toolbox-grpc/README.md) | status conversion, backend clients, forwarded identity, serving |
 | [`toolbox-test`](crates/toolbox-test/README.md) | throwaway databases, an in-process gateway, `assert_problem!` |
 
 Dependency order is `core -> db -> cluster -> server -> {web, grpc}`.
@@ -98,7 +98,7 @@ process can hold a PostgreSQL pool and a SQLite pool at once.
 ## Deployment modes
 
 Set `DEPLOYMENT=single` or `DEPLOYMENT=clustered`. Every stateful adapter
-declares whether its state is shared, and `serve_http`/`serve_grpc` check at
+declares whether its state is shared, and `serve_http`/`serve` check at
 startup: an adapter that would be **incorrect** on several replicas refuses to
 start and names the variable to change; one that would merely be **degraded**
 warns.

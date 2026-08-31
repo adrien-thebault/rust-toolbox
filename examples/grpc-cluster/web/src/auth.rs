@@ -167,7 +167,7 @@ pub fn session_issuer(config: &AuthConfig) -> Result<JwtIdentityProvider, Config
 /// # Errors
 /// [`ConfigError`] when the session codec refuses the secret.
 pub fn state(
-    todos: toolbox_grpc::BackendChannel,
+    todos: toolbox_grpc::ClientChannel,
     config: &AuthConfig,
 ) -> Result<AppState, ConfigError> {
     let issuer = Arc::new(session_issuer(config)?);

@@ -1,5 +1,8 @@
 //! Serving a tonic server.
 
+pub mod identity;
+pub mod shared_secret;
+
 use tonic::{service::RoutesBuilder, transport::Server};
 use toolbox_server::{
     serve::{ServeConfig, ServeError, bind},
@@ -7,11 +10,11 @@ use toolbox_server::{
 };
 use tracing::warn;
 
-use crate::backend::MessageLimits;
+use crate::limits::MessageLimits;
 
 /// What a gRPC server does beyond routing.
 #[derive(Debug, Clone)]
-pub struct GrpcConfig {
+pub struct ServerConfig {
     /// Message limits, as the single value both ends read.
     ///
     /// **Applied by you, on each service.** tonic puts
@@ -19,8 +22,8 @@ pub struct GrpcConfig {
     /// trait to reach it through, so this cannot be applied for you:
     ///
     /// ```ignore
-    /// let cfg = GrpcConfig::default();
-    /// serve_grpc(serve, cfg.clone())
+    /// let cfg = ServerConfig::default();
+    /// serve(serve_cfg, cfg.clone())
     ///     .add_service(
     ///         TodoServiceServer::new(svc)
     ///             .max_decoding_message_size(cfg.limits.max_decoding)
@@ -28,18 +31,18 @@ pub struct GrpcConfig {
     ///     )
     /// ```
     ///
-    /// Carrying it here is still worth it: the client half reads the same
-    /// value from `BackendChannel::limits()`, so the two ends drift only if
-    /// somebody passes different configs, rather than by forgetting one.
+    /// Carrying it here is still worth it: the client half reads the same value
+    /// from `ClientChannel::limits()`, so the two ends drift only if somebody
+    /// passes different configs, rather than by forgetting one.
     pub limits: MessageLimits,
     /// Whether to serve the standard health service.
     pub health: bool,
-    /// Whether to serve server reflection, so `grpcurl` works without the
-    /// protos to hand.
+    /// Whether to serve server reflection, so `grpcurl` works without the protos
+    /// to hand.
     pub reflection: Option<&'static [u8]>,
 }
 
-impl Default for GrpcConfig {
+impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             limits: MessageLimits::default(),
@@ -49,7 +52,7 @@ impl Default for GrpcConfig {
     }
 }
 
-impl GrpcConfig {
+impl ServerConfig {
     /// Serve reflection from a `tonic-build`-generated descriptor set.
     ///
     /// # Arguments
@@ -63,42 +66,42 @@ impl GrpcConfig {
     }
 }
 
-/// Collects services, then serves them with the standard drain sequence.
-pub struct GrpcServerBuilder<'a> {
-    /// Listen address, deployment and shutdown handle.
-    cfg: ServeConfig<'a>,
-    /// gRPC-specific stack and limit settings.
-    grpc: GrpcConfig,
-    /// The services collected so far.
-    routes: RoutesBuilder,
-}
-
-impl std::fmt::Debug for GrpcServerBuilder<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GrpcServerBuilder")
-            .field("grpc", &self.grpc)
-            .finish_non_exhaustive()
-    }
-}
-
 /// Start building a gRPC server.
 ///
 /// # Arguments
 ///
 /// * `cfg` - Where to listen, plus the adapters and deployment the guard checks
 ///   first.
-/// * `grpc` - What the server does beyond routing: health, reflection, limits
-///   and service auth.
+/// * `server` - What the server does beyond routing: health, reflection and
+///   limits.
 #[must_use]
-pub fn serve_grpc(cfg: ServeConfig<'_>, grpc: GrpcConfig) -> GrpcServerBuilder<'_> {
-    GrpcServerBuilder {
+pub fn serve(cfg: ServeConfig<'_>, server: ServerConfig) -> ServerBuilder<'_> {
+    ServerBuilder {
         cfg,
-        grpc,
+        server,
         routes: RoutesBuilder::default(),
     }
 }
 
-impl GrpcServerBuilder<'_> {
+/// Collects services, then serves them with the standard drain sequence.
+pub struct ServerBuilder<'a> {
+    /// Listen address, deployment and shutdown handle.
+    cfg: ServeConfig<'a>,
+    /// gRPC-specific stack and limit settings.
+    server: ServerConfig,
+    /// The services collected so far.
+    routes: RoutesBuilder,
+}
+
+impl std::fmt::Debug for ServerBuilder<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerBuilder")
+            .field("server", &self.server)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ServerBuilder<'_> {
     /// Mount a service.
     ///
     /// # Arguments
@@ -129,14 +132,18 @@ impl GrpcServerBuilder<'_> {
     /// [`ServeError::Deployment`] when a single-replica adapter is running
     /// clustered, or [`ServeError::Io`] when the address cannot be bound.
     pub async fn run(mut self) -> Result<(), ServeError> {
-        if self.grpc.health {
-            // Four lines that every gRPC service needs and neither template had.
+        if self.server.health {
             let (reporter, health) = tonic_health::server::health_reporter();
-            reporter.set_serving::<HealthMarker>().await;
+            // The empty service name is the gRPC convention for "the server as
+            // a whole", which is what a Kubernetes gRPC probe with no `service`
+            // checks.
+            reporter
+                .set_service_status("", tonic_health::ServingStatus::Serving)
+                .await;
             self.routes.add_service(health);
         }
 
-        if let Some(descriptor) = self.grpc.reflection {
+        if let Some(descriptor) = self.server.reflection {
             match tonic_reflection::server::Builder::configure()
                 .register_encoded_file_descriptor_set(descriptor)
                 .build_v1()
@@ -166,15 +173,4 @@ impl GrpcServerBuilder<'_> {
 
         Ok(())
     }
-}
-
-/// The service name the health reporter marks serving.
-///
-/// The empty name is the convention for "the server as a whole", which is what
-/// a Kubernetes gRPC probe checks.
-#[derive(Debug, Clone, Copy)]
-struct HealthMarker;
-
-impl tonic::server::NamedService for HealthMarker {
-    const NAME: &'static str = "";
 }

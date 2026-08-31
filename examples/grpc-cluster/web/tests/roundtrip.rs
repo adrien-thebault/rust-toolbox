@@ -4,7 +4,7 @@ use diesel::connection::SimpleConnection;
 use example_todo::{Connection, MIGRATIONS, TodoService};
 use example_web::{auth::AuthConfig, routes::router};
 use secrecy::SecretString;
-use toolbox_grpc::{BackendConfig, backend};
+use toolbox_grpc::{ClientConfig, client};
 use toolbox_test::{TestApp, TestCluster, assert_problem, temp_db};
 use toolbox_web::{TrustedHops, auth::LoginLimit};
 
@@ -41,12 +41,10 @@ async fn cluster_with(login: LoginLimit) -> (TestApp, TestCluster, toolbox_test:
         .await
         .expect("the todo backend came up");
 
-    let channel = backend(
+    let channel = client(
         "todo",
-        &BackendConfig::new(&cluster.backends().uri("todo")).expect("a valid uri"),
-    )
-    .await
-    .expect("a channel to the backend");
+        &ClientConfig::new(&cluster.backends().uri("todo")).expect("a valid uri"),
+    );
 
     let state = example_web::auth::state(channel, &config()).expect("the gateway configured");
 
@@ -423,12 +421,10 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
         .await
         .expect("the backend came up");
 
-    let channel = backend(
+    let channel = client(
         "todo",
-        &BackendConfig::new(&cluster.backends().uri("todo")).expect("a valid uri"),
-    )
-    .await
-    .expect("a channel");
+        &ClientConfig::new(&cluster.backends().uri("todo")).expect("a valid uri"),
+    );
 
     // Without a caller deadline in scope, nothing is sent - inventing one
     // would cap calls made outside a request, like a scheduled job's.
@@ -461,7 +457,7 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
     let sent = sent.expect("the caller's deadline reached the backend");
     let ms: u64 = sent.trim_end_matches('m').parse().expect("milliseconds");
     assert!(
-        (8_500..=9_100).contains(&ms),
-        "the backend gets 90% of the remaining budget, not all of it: {sent}"
+        (9_400..=9_900).contains(&ms),
+        "the backend gets the remaining budget less a fixed slack, not all of it: {sent}"
     );
 }

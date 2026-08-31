@@ -1,6 +1,6 @@
 [package]
 name         = "toolbox-grpc"
-description  = "tonic building blocks: status conversion, backend clients, discovery and pagination."
+description  = "tonic building blocks: status conversion, backend clients, forwarded identity and pagination."
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
@@ -19,6 +19,7 @@ path = "tests/integration.rs"
 toolbox-core    = { workspace = true }
 toolbox-server  = { workspace = true }
 toolbox-cluster = { workspace = true }
+toolbox-auth    = { workspace = true }
 tonic           = { workspace = true }
 tonic-types     = { workspace = true }
 tonic-health    = { workspace = true }
@@ -27,10 +28,9 @@ prost           = { workspace = true }
 tonic-prost     = { workspace = true }
 tower           = { workspace = true }
 http            = { workspace = true }
-tokio           = { workspace = true, features = ["rt", "net", "time", "sync"] }
+tokio           = { workspace = true, features = ["rt", "time"] }
 tokio-stream    = { workspace = true, features = ["net"] }
 pin-project-lite = { workspace = true }
-backon          = { workspace = true }
 secrecy         = { workspace = true }
 thiserror       = { workspace = true }
 getrandom       = { workspace = true }
@@ -41,6 +41,8 @@ tonic-prost-build = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tower = { workspace = true, features = ["util"] }
+toolbox-auth = { workspace = true }
 
 [lints]
 workspace = true

@@ -9,11 +9,8 @@ use std::time::Duration;
 
 use tracing::debug;
 
-/// How long to wait between attempts.
-///
-/// Wraps `backon`, not the `backoff` crate: `backoff`'s last release was
-/// 2021-12-14, and it still takes 14M downloads a month, which is how stale
-/// crates stay alive.
+/// Exponential backoff parameters: the first wait, the ceiling, the multiplier
+/// applied to each successive wait, and whether to jitter.
 #[derive(Debug, Clone, Copy)]
 pub struct Backoff {
     /// The first wait.
@@ -33,22 +30,6 @@ impl Default for Backoff {
             max_delay: Duration::from_secs(5),
             factor: 2.0,
             jitter: true,
-        }
-    }
-}
-
-impl Backoff {
-    /// The `backon` builder this describes.
-    #[must_use]
-    pub fn builder(&self) -> backon::ExponentialBuilder {
-        let builder = backon::ExponentialBuilder::default()
-            .with_min_delay(self.min_delay)
-            .with_max_delay(self.max_delay)
-            .with_factor(self.factor);
-        if self.jitter {
-            builder.with_jitter()
-        } else {
-            builder
         }
     }
 }
@@ -105,21 +86,16 @@ impl RetryPolicy {
 
 /// Run a call under a retry policy.
 ///
-/// Applied explicitly rather than hidden inside the channel, because tonic has
-/// no generic per-call retry hook: a unary call's request is consumed by the
-/// generated method, so retrying means rebuilding it, which only the caller can
-/// do. A `RetryPolicy` sitting in a config and silently doing nothing would be
-/// worse than no policy at all.
+/// Explicit rather than hidden in the channel: tonic has no per-call retry hook,
+/// and a unary call consumes its request, so only the caller can rebuild it for
+/// a retry. Only [`is_retryable`] codes are retried.
 ///
 /// ```ignore
-/// let todo = with_retry(backend.retry(), "GetTodo", || async {
+/// let todo = with_retry(channel.retry(), "GetTodo", || async {
 ///     client.clone().get_todo(GetTodoRequest { id }).await
 /// })
 /// .await?;
 /// ```
-///
-/// Only [`is_retryable`] codes are retried: a `NotFound` or an
-/// `InvalidArgument` will not become true by asking again.
 ///
 /// # Arguments
 ///

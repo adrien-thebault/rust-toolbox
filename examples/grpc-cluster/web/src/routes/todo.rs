@@ -86,7 +86,7 @@ pub fn router() -> Router<AppState> {
 ///
 /// * `state` - Read for the channel and its limits. Built per request because
 ///   a tonic client is a cheap wrapper around a cloned channel.
-fn client(state: &AppState) -> TodoServiceClient<toolbox_grpc::BackendService> {
+fn client(state: &AppState) -> TodoServiceClient<toolbox_grpc::ClientService> {
     TodoServiceClient::new(state.todos.channel())
         .max_decoding_message_size(state.todos.limits().max_decoding)
         .max_encoding_message_size(state.todos.limits().max_encoding)
