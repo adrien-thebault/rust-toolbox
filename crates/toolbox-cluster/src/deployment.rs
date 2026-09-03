@@ -91,7 +91,7 @@ pub struct DeploymentError {
 /// Refuse to start when a `Local` adapter is running under `Clustered`, and
 /// warn for every `LocalDegraded` one.
 ///
-/// Called by `serve_http` and `serve_grpc`, which is what makes it impossible
+/// Called by each transport's `serve`, which is what makes it impossible
 /// to forget.
 ///
 /// # Arguments

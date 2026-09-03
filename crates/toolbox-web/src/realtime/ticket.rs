@@ -6,9 +6,9 @@
 //! for hours.
 //!
 //! A ticket is single-use, short-lived, topic-scoped and principal-bound. If
-//! one leaks into a log it is already expired and already consumed. It also
-//! gives you what STOMP never had: **topic authorization that cannot be
-//! skipped**, because the ticket names the topic it was issued for.
+//! one leaks into a log it is already expired and already consumed. And because
+//! the ticket names the topic it was issued for, it is **topic authorization
+//! that cannot be skipped**: a ticket for one stream cannot open another.
 
 use std::{sync::Arc, time::Duration};
 
@@ -29,7 +29,7 @@ const PREFIX: &str = "toolbox:ticket:";
 
 /// What a redeemed ticket proves.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TicketClaims {
+pub struct Ticket {
     /// Who asked for it.
     pub principal: Principal,
     /// The topic it is good for, and no other.
@@ -37,22 +37,22 @@ pub struct TicketClaims {
 }
 
 /// Issues and redeems stream tickets.
-pub struct Tickets {
+pub struct TicketStore {
     /// Where single-use tickets are stored.
     kv: Arc<dyn KvStore>,
     /// How long an unredeemed ticket lives.
     ttl: Duration,
 }
 
-impl std::fmt::Debug for Tickets {
+impl std::fmt::Debug for TicketStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tickets")
+        f.debug_struct("TicketStore")
             .field("ttl", &self.ttl)
             .finish_non_exhaustive()
     }
 }
 
-impl Tickets {
+impl TicketStore {
     /// Build over a key-value store.
     ///
     /// # Arguments
@@ -99,25 +99,25 @@ impl Tickets {
     /// # Errors
     /// [`ApiError`] when the store fails.
     pub async fn issue(&self, principal: &Principal, topic: &str) -> Result<String, ApiError> {
-        let ticket = new_ticket();
-        let claims = TicketClaims {
+        let token = new_token();
+        let ticket = Ticket {
             principal: principal.clone(),
             topic: topic.to_owned(),
         };
-        let value = serde_json::to_vec(&claims).map_err(ApiError::internal)?;
+        let value = serde_json::to_vec(&ticket).map_err(ApiError::internal)?;
 
         self.kv
-            .set(&key(&ticket), value, Some(self.ttl))
+            .set(&key(&token), value, Some(self.ttl))
             .await
             .map_err(ApiError::internal)?;
-        Ok(ticket)
+        Ok(token)
     }
 
     /// Redeem a ticket for a topic, consuming it.
     ///
     /// # Arguments
     ///
-    /// * `ticket` - The opaque ticket from the query string. It is consumed, so
+    /// * `token` - The opaque ticket from the query string. It is consumed, so
     ///   a replay fails.
     /// * `topic` - The topic being opened, checked against the one the ticket
     ///   was issued for.
@@ -125,10 +125,10 @@ impl Tickets {
     /// # Errors
     /// [`ApiError`] 401 when the ticket is unknown, expired or already used;
     /// 403 when it was issued for a different topic.
-    pub async fn redeem(&self, ticket: &str, topic: &str) -> Result<Principal, ApiError> {
+    pub async fn redeem(&self, token: &str, topic: &str) -> Result<Principal, ApiError> {
         let raw = self
             .kv
-            .take(&key(ticket))
+            .take(&key(token))
             .await
             .map_err(ApiError::internal)?
             .ok_or_else(|| {
@@ -137,15 +137,15 @@ impl Tickets {
                     .with_detail("the ticket is unknown, expired or already used")
             })?;
 
-        let claims: TicketClaims = serde_json::from_slice(&raw).map_err(ApiError::internal)?;
+        let ticket: Ticket = serde_json::from_slice(&raw).map_err(ApiError::internal)?;
 
         // The ticket names its topic, so a ticket for one stream cannot open
         // another. This is the authorization that cannot be skipped.
-        if claims.topic != topic {
+        if ticket.topic != topic {
             return Err(ApiError::forbidden("this ticket is for a different topic")
                 .with_code("TICKET_TOPIC_MISMATCH"));
         }
-        Ok(claims.principal)
+        Ok(ticket.principal)
     }
 }
 
@@ -154,17 +154,17 @@ impl Tickets {
 ///
 /// # Arguments
 ///
-/// * `ticket` - The opaque ticket.
-fn key(ticket: &str) -> String {
-    format!("{PREFIX}{ticket}")
+/// * `token` - The opaque ticket.
+fn key(token: &str) -> String {
+    format!("{PREFIX}{token}")
 }
 
-/// A 256-bit opaque ticket, hex-encoded.
+/// A 256-bit opaque token, hex-encoded.
 ///
 /// Straight from the OS source, not from a UUID: a ticket is a secret looked
 /// up by exact key, so it wants entropy and nothing else. A v7 would spend a
 /// third of its bits on a timestamp the holder already knows.
-fn new_ticket() -> String {
+fn new_token() -> String {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).expect("the OS random source");
     bytes.iter().fold(String::with_capacity(64), |mut out, b| {

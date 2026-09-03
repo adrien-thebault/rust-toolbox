@@ -1,9 +1,9 @@
 //! The HTTP error type.
 //!
 //! It unifies every error that can reach a handler into one response shape, and
-//! it removes two traps the obvious type had - serving `application/json` while
-//! claiming RFC 7807, and putting raw database text in a 5xx body sent to
-//! anonymous callers.
+//! it removes two traps a `(StatusCode, Json)` return falls into - serving
+//! `application/json` while claiming RFC 7807, and putting raw database text in
+//! a 5xx body sent to anonymous callers.
 
 use axum::response::{IntoResponse, Response};
 use http::{HeaderValue, StatusCode, header};
@@ -107,12 +107,11 @@ impl ApiError {
     }
 
     /// How many seconds to wait before retrying. Becomes a `Retry-After`
-    /// header, which a naive limiter computed and then discarded.
+    /// header on the response.
     ///
     /// # Arguments
     ///
-    /// * `seconds` - How long to wait. It becomes a `Retry-After` header, which
-    ///   is the number a naive limiter computes and then discards.
+    /// * `seconds` - How long to wait. It becomes a `Retry-After` header.
     #[must_use]
     pub fn with_retry_after(mut self, seconds: u64) -> Self {
         self.retry_after = Some(seconds);
@@ -238,11 +237,11 @@ impl<E: ServiceError + Send + Sync + 'static> From<E> for ApiError {
     }
 }
 
-/// A gRPC error that crossed into HTTP.
+/// Building a response from an `ErrorInfo` produced elsewhere.
 ///
-/// This is the seam that lets `toolbox-web` stay free of tonic: `toolbox-grpc`
-/// turns a `Status` into an `ErrorInfo`, and this turns that into a response.
-/// Neither crate needs the other.
+/// In practice that is `toolbox-grpc` turning a `Status` into an `ErrorInfo`;
+/// this is the seam that lets `toolbox-web` stay free of tonic. Neither crate
+/// needs the other.
 impl ApiError {
     /// Build from an `ErrorInfo` and the kind the caller decoded alongside it.
     ///

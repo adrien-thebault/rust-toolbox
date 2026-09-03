@@ -48,7 +48,7 @@ impl From<example_todo::proto::Todo> for TodoDto {
 
 /// A new todo.
 #[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
-pub struct NewTodo {
+pub struct NewTodoRequest {
     /// What to do.
     #[garde(length(min = 1, max = 200))]
     pub title: String,
@@ -56,7 +56,7 @@ pub struct NewTodo {
 
 /// One page of todos.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct TodoPage {
+pub struct TodoPageResponse {
     /// The rows.
     pub items: Vec<TodoDto>,
     /// How many matched in total.
@@ -65,7 +65,7 @@ pub struct TodoPage {
 
 /// Which version the caller believes it is completing.
 #[derive(Debug, Deserialize)]
-pub struct Complete {
+pub struct CompleteRequest {
     /// The version last read. A stale one is a 409, not a silent overwrite.
     pub version: i32,
 }
@@ -101,12 +101,12 @@ fn client(state: &AppState) -> TodoServiceClient<toolbox_grpc::ClientService> {
 #[utoipa::path(
     get, path = "/api/todos",
     params(("offset" = Option<i64>, Query,), ("limit" = Option<i64>, Query,), ("sort" = Option<String>, Query,)),
-    responses((status = 200, body = TodoPage))
+    responses((status = 200, body = TodoPageResponse))
 )]
 pub(crate) async fn list(
     State(state): State<AppState>,
     PageQuery(page): PageQuery,
-) -> Result<Json<TodoPage>, ApiError> {
+) -> Result<Json<TodoPageResponse>, ApiError> {
     let response = client(&state)
         .list_todos(ListTodosRequest {
             page: Some(toolbox_grpc::PageRequestProto::from(&page)),
@@ -116,7 +116,7 @@ pub(crate) async fn list(
         .map_err(|s| from_backend(&s))?
         .into_inner();
 
-    Ok(Json(TodoPage {
+    Ok(Json(TodoPageResponse {
         items: response.items.into_iter().map(TodoDto::from).collect(),
         total: response.page.map_or(0, |p| p.total),
     }))
@@ -152,11 +152,11 @@ pub(crate) async fn fetch(
 ///
 /// * `state` - The gateway's state, for the backend channel.
 /// * `body` - The new todo, rejected here if invalid so no hop is made.
-#[utoipa::path(post, path = "/api/todos", request_body = NewTodo,
+#[utoipa::path(post, path = "/api/todos", request_body = NewTodoRequest,
     responses((status = 200, body = TodoDto)))]
 pub(crate) async fn create(
     State(state): State<AppState>,
-    ValidJson(body): ValidJson<NewTodo>,
+    ValidJson(body): ValidJson<NewTodoRequest>,
 ) -> Result<Json<TodoDto>, ApiError> {
     let todo = client(&state)
         .create_todo(CreateTodoRequest { title: body.title })
@@ -176,7 +176,7 @@ pub(crate) async fn create(
 pub(crate) async fn complete(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-    Json(body): Json<Complete>,
+    Json(body): Json<CompleteRequest>,
 ) -> Result<Json<TodoDto>, ApiError> {
     let todo = client(&state)
         .complete_todo(CompleteTodoRequest {

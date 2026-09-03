@@ -14,17 +14,16 @@
 //!
 //! # And no subscribe protocol
 //!
-//! STOMP multiplexed because HTTP/1.1 caps browsers at about six connections
-//! per origin. **Under HTTP/2 that limit is gone.** So: one stream per topic,
-//! no envelope, no `SUBSCRIBE` frame.
+//! One stream per topic, no envelope, no subscribe frame: HTTP/2 multiplexing
+//! removes the per-origin connection limit that a multiplexing protocol would
+//! otherwise be working around.
 //!
 //! # What a client must do
 //!
 //! Not packaged, since the client half is out of scope here. The short
-//! version: fetch a ticket,
-//! open the stream, resume from the last id seen, back off with jitter, and
-//! show a `live | reconnecting` state so the UI can admit it is stale rather
-//! than lying.
+//! version: fetch a ticket, open the stream, resume from the last id seen,
+//! back off with jitter, and show a `live | reconnecting` state so the UI can
+//! admit it is stale rather than lying.
 
 pub mod hub;
 pub mod ticket;
@@ -36,7 +35,7 @@ use cloudevents::AttributesReader as _;
 use futures_core::Stream;
 use futures_util::StreamExt as _;
 pub use hub::{Hub, HubConfig, SlowConsumer};
-pub use ticket::{TICKET_TTL, TicketClaims, Tickets};
+pub use ticket::{TICKET_TTL, Ticket, TicketStore};
 use toolbox_cluster::CloudEvent;
 
 /// How a stream behaves.

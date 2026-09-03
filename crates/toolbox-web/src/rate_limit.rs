@@ -71,13 +71,13 @@ impl KeyExtractor for ForwardedForKeyExtractor {
 /// Turn a limiter rejection into the same problem document as every other
 /// error, with `Retry-After` and the IETF `RateLimit` fields.
 ///
-/// A naive limiter computed the wait and then discarded it, so a client
-/// had no way to know when to try again except by guessing.
+/// The wait the limiter computes is carried through to the client so it knows
+/// when to try again rather than guessing.
 ///
 /// # Arguments
 ///
 /// * `err` - The rejection, which carries the wait the limiter computed. That
-///   number becomes `Retry-After` instead of being discarded.
+///   number becomes `Retry-After`.
 #[must_use]
 pub fn error_response_handler(err: GovernorError) -> Response {
     match err {

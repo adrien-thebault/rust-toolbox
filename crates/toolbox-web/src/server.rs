@@ -22,7 +22,7 @@ use tracing::info;
 /// ```ignore
 /// let app = rest.layer(http_stack(StackConfig::default()))
 ///     .merge(realtime.layer(realtime_stack()));
-/// serve_http(cfg, app).await
+/// serve(cfg, app).await
 /// ```
 ///
 /// # Arguments
@@ -36,7 +36,7 @@ use tracing::info;
 /// # Errors
 /// [`StartupError::Deployment`] when a single-replica adapter is running
 /// clustered, or [`StartupError::Io`] when the address cannot be bound.
-pub async fn serve_http(cfg: StartupConfig<'_>, app: Router) -> Result<(), StartupError> {
+pub async fn serve(cfg: StartupConfig<'_>, app: Router) -> Result<(), StartupError> {
     let listener = bind(&cfg).await?;
     let shutdown = cfg.shutdown_handle.clone();
     let drain = cfg.shutdown;

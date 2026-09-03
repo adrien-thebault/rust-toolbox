@@ -19,8 +19,54 @@ pub fn cors(origins: &[String]) -> CorsLayer {
         .filter_map(|o| HeaderValue::from_str(o).ok())
         .collect();
 
+    base().allow_origin(AllowOrigin::list(parsed))
+}
+
+/// As [`cors`], but also reflecting any `http(s)://localhost` or loopback
+/// origin, on any port.
+///
+/// Never in production: it lets any page served from the loopback interface
+/// make credentialed requests, which is fine on a laptop and a hole anywhere
+/// else. The `localhost` in the name is what makes it greppable before a
+/// release. A literal wildcard is not an option - credentials forbid it - so a
+/// dev frontend on an arbitrary Vite/CRA port is matched by host instead.
+///
+/// # Arguments
+///
+/// * `origins` - The production origins to allow, on top of the loopback ones
+///   this reflects.
+pub fn cors_localhost(origins: &[String]) -> CorsLayer {
+    let allowed: Vec<HeaderValue> = origins
+        .iter()
+        .filter_map(|o| HeaderValue::from_str(o).ok())
+        .collect();
+
+    base().allow_origin(AllowOrigin::predicate(move |origin, _parts| {
+        if allowed.contains(origin) {
+            return true;
+        }
+        // Any `http(s)://localhost` / loopback origin, on any port.
+        let Ok(text) = origin.to_str() else {
+            return false;
+        };
+        let authority = text
+            .strip_prefix("http://")
+            .or_else(|| text.strip_prefix("https://"))
+            .unwrap_or(text)
+            .split('/')
+            .next()
+            .unwrap_or(text);
+        let host = authority.strip_prefix('[').map_or_else(
+            || authority.split(':').next().unwrap_or(authority),
+            |v6| v6.split(']').next().unwrap_or(v6),
+        );
+        matches!(host, "localhost" | "127.0.0.1" | "::1")
+    }))
+}
+
+/// The parts of the layer both constructors share.
+fn base() -> CorsLayer {
     CorsLayer::new()
-        .allow_origin(AllowOrigin::list(parsed))
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -31,24 +77,4 @@ pub fn cors(origins: &[String]) -> CorsLayer {
         ])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
         .allow_credentials(true)
-}
-
-/// As [`cors`], plus the localhost origins a development frontend uses.
-///
-/// Never call this in production: it permits any page served from localhost to
-/// make credentialed requests, which is fine on a laptop and a hole anywhere
-/// else. The name says `dev` so it is greppable before a release.
-///
-/// # Arguments
-///
-/// * `origins` - The production origins to allow, on top of the localhost ones
-///   this adds.
-pub fn dev_and(origins: &[String]) -> CorsLayer {
-    let mut all = origins.to_vec();
-    all.extend([
-        "http://localhost:5173".to_owned(),
-        "http://localhost:3000".to_owned(),
-        "http://127.0.0.1:5173".to_owned(),
-    ]);
-    cors(&all)
 }

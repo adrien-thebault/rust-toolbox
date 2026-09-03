@@ -15,7 +15,7 @@ use toolbox_web::{
     auth::LoginLimit,
     health::{HealthState, health_router},
     rate_limit::RateLimitAdapter,
-    serve_http,
+    serve,
 };
 
 /// Command-line arguments.
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = StartupConfig::new(args.server.listen_addr, &deployment).adapters(&adapters);
     let health = HealthState::new(cfg.shutdown_handle.readiness());
 
-    // The stack is applied here rather than by serve_http, because a router
+    // The stack is applied here rather than by serve, because a router
     // with realtime routes needs realtime_stack on those and http_stack on
     // the rest. StackConfig's defaults give a 30s timeout and a 2 MiB body
     // limit; an upload route would be layered separately.
@@ -85,6 +85,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // every rolling deploy.
         .merge(health_router().with_state(health));
 
-    serve_http(cfg, app).await?;
+    serve(cfg, app).await?;
     Ok(())
 }

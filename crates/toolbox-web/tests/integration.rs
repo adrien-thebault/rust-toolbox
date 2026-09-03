@@ -9,13 +9,16 @@
 mod auth;
 mod captcha;
 mod client_ip;
+mod cors;
 mod error;
 mod extract;
 mod health;
 mod idempotency;
-mod links;
 mod openapi;
+mod pagination;
+mod rate_limit;
 mod realtime;
+mod server;
 
 use axum::{Router, body::Body};
 use http::{Request, Response};

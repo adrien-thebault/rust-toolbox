@@ -72,14 +72,22 @@ impl Idempotency {
     ///
     /// # Arguments
     ///
-    /// * `kv` - The store. It must promise an atomic take, or two concurrent
+    /// * `kv` - The store. It must promise an atomic add, or two concurrent
     ///   retries could both claim the same key.
-    #[must_use]
-    pub fn new(kv: Arc<dyn KvStore>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    /// [`ApiError`] when the adapter cannot promise an atomic add - without it
+    /// two racing first requests could both be told to run the handler.
+    pub fn new(kv: Arc<dyn KvStore>) -> Result<Self, ApiError> {
+        if !kv.capabilities().atomic_add {
+            return Err(ApiError::internal(std::io::Error::other(
+                "idempotency needs a key-value store with an atomic add",
+            )));
+        }
+        Ok(Self {
             kv,
             ttl: DEFAULT_TTL,
-        }
+        })
     }
 
     /// How long a response stays replayable.
@@ -107,19 +115,26 @@ impl Idempotency {
     /// # Errors
     /// [`ApiError`] when the store fails.
     pub async fn claim(&self, key: &IdempotencyKey, route: &str) -> Result<Claim, ApiError> {
-        let key = storage_key(route, key);
-
         // Scoped by route as well as key, because two endpoints given the same
         // client-chosen key are two different operations - and replaying one's
         // response for the other would be worse than not replaying at all.
+        let key = storage_key(route, key);
+
+        // Atomic create: two racing first requests cannot both win the claim,
+        // because exactly one `add` returns `true`.
+        if self
+            .kv
+            .add(&key, IN_FLIGHT.to_vec(), Some(self.ttl))
+            .await
+            .map_err(store_error)?
+        {
+            return Ok(Claim::Fresh);
+        }
+
         match self.kv.get(&key).await.map_err(store_error)? {
-            None => {
-                self.kv
-                    .set(&key, IN_FLIGHT.to_vec(), Some(self.ttl))
-                    .await
-                    .map_err(store_error)?;
-                Ok(Claim::Fresh)
-            }
+            // The entry expired between the `add` and the `get`; run the
+            // handler rather than failing the request.
+            None => Ok(Claim::Fresh),
             Some(raw) if raw == IN_FLIGHT => Ok(Claim::InFlight),
             Some(raw) => match serde_json::from_slice(&raw) {
                 Ok(stored) => Ok(Claim::Replay(Box::new(stored))),

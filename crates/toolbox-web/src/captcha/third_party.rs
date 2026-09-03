@@ -1,4 +1,4 @@
-//! Verification against one of the hosted providers.
+//! Verification against one of the third-party providers.
 
 use std::time::Duration;
 
@@ -15,19 +15,20 @@ use crate::error::ApiError;
 /// being slow.
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The siteverify response shared by the three providers.
 #[derive(Debug, Deserialize)]
-/// The siteverify response shared by the three hosted providers.
 struct SiteVerify {
     /// Whether the token passed.
     success: bool,
-    /// Provider error codes, when it did not.
+    /// Provider error codes, when it did not. `error-codes` is the vendors'
+    /// field name on the wire, not ours.
     #[serde(default, rename = "error-codes")]
     error_codes: Vec<String>,
 }
 
-/// Verifies against one of the three hosted providers.
-pub struct HostedCaptcha {
-    /// Which hosted provider to verify against.
+/// Verifies against one of the three third-party providers.
+pub struct ThirdPartyCaptcha {
+    /// Which provider to verify against.
     provider: CaptchaProvider,
     /// The provider secret key.
     secret: secrecy::SecretString,
@@ -35,20 +36,20 @@ pub struct HostedCaptcha {
     http: reqwest::Client,
 }
 
-impl std::fmt::Debug for HostedCaptcha {
+impl std::fmt::Debug for ThirdPartyCaptcha {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HostedCaptcha")
+        f.debug_struct("ThirdPartyCaptcha")
             .field("provider", &self.provider)
             .finish_non_exhaustive()
     }
 }
 
-impl HostedCaptcha {
+impl ThirdPartyCaptcha {
     /// Build a verifier.
     ///
     /// # Arguments
     ///
-    /// * `provider` - Which hosted service to verify against.
+    /// * `provider` - Which third-party service to verify against.
     /// * `secret` - The provider's server-side secret. It never reaches the
     ///   browser.
     ///
@@ -68,7 +69,7 @@ impl HostedCaptcha {
 }
 
 #[async_trait]
-impl CaptchaVerifier for HostedCaptcha {
+impl CaptchaVerifier for ThirdPartyCaptcha {
     async fn verify(&self, token: &str, remote_ip: Option<&str>) -> Result<bool, ApiError> {
         use secrecy::ExposeSecret as _;
 

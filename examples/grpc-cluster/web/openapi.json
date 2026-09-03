@@ -1,7 +1,7 @@
 {
   "components": {
     "schemas": {
-      "NewTodo": {
+      "NewTodoRequest": {
         "description": "A new todo.",
         "properties": {
           "title": {
@@ -44,7 +44,7 @@
         ],
         "type": "object"
       },
-      "TodoPage": {
+      "TodoPageResponse": {
         "description": "One page of todos.",
         "properties": {
           "items": {
@@ -126,7 +126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPage"
+                  "$ref": "#/components/schemas/TodoPageResponse"
                 }
               }
             },
@@ -187,7 +187,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewTodo"
+                "$ref": "#/components/schemas/NewTodoRequest"
               }
             }
           },

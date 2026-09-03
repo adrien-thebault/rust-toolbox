@@ -47,7 +47,7 @@ impl From<{{crate_name}}_todo::proto::Todo> for TodoDto {
 
 /// A new todo.
 #[derive(Debug, Deserialize, Validate)]
-pub struct NewTodo {
+pub struct NewTodoRequest {
     /// What to do.
     #[garde(length(min = 1, max = 200))]
     pub title: String,
@@ -126,7 +126,7 @@ async fn fetch(
 async fn create(
     _: Authenticated<Admin>,
     State(state): State<AppState>,
-    ValidJson(body): ValidJson<NewTodo>,
+    ValidJson(body): ValidJson<NewTodoRequest>,
 ) -> Result<Json<TodoDto>, ApiError> {
     let todo = client(&state)
         .create_todo(CreateTodoRequest { title: body.title })

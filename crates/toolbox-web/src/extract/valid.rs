@@ -1,12 +1,15 @@
 //! Validating extractors.
 //!
-//! It bridges `garde` and RFC 9457, which do not know about each other.
-//! `garde::Report` iterates as flat `(path, error)` pairs, which is
-//! `Problem.metadata` already for why that decided the crate.
+//! They bridge `garde` and RFC 9457, which do not know about each other:
+//! `garde::Report` iterates as flat `(path, error)` pairs, which is already the
+//! shape `Problem.metadata` wants - and that is why the crate uses `garde`.
 
-use axum::extract::{FromRequest, Request, rejection::JsonRejection};
+use axum::{
+    Json,
+    extract::{FromRequest, FromRequestParts, Query, Request, rejection::JsonRejection},
+};
 use garde::Validate;
-use http::StatusCode;
+use http::{StatusCode, request::Parts};
 
 use crate::error::ApiError;
 
@@ -25,7 +28,7 @@ where
     type Rejection = ApiError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let axum::Json(value) = axum::Json::<T>::from_request(req, state)
+        let Json(value) = Json::<T>::from_request(req, state)
             .await
             .map_err(|e| malformed(&e))?;
         validate(&value)?;
@@ -37,21 +40,17 @@ where
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ValidQuery<T>(pub T);
 
-impl<T, S> axum::extract::FromRequestParts<S> for ValidQuery<T>
+impl<T, S> FromRequestParts<S> for ValidQuery<T>
 where
     T: serde::de::DeserializeOwned + Validate<Context = ()> + 'static,
     S: Send + Sync,
 {
     type Rejection = ApiError;
 
-    async fn from_request_parts(
-        parts: &mut http::request::Parts,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let axum::extract::Query(value) =
-            axum::extract::Query::<T>::from_request_parts(parts, state)
-                .await
-                .map_err(|e| ApiError::bad_request(e.body_text()).with_code("MALFORMED_QUERY"))?;
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let Query(value) = Query::<T>::from_request_parts(parts, state)
+            .await
+            .map_err(|e| ApiError::bad_request(e.body_text()).with_code("MALFORMED_QUERY"))?;
         validate(&value)?;
         Ok(Self(value))
     }

@@ -1,16 +1,15 @@
 //! Captcha verification for login and signup forms.
 //!
 //! Three providers with three slightly different response shapes behind one
-//! trait, so swapping Turnstile for hCaptcha is a configuration change. The
-//! verification itself is one POST - which is exactly why a naive version was
-//! 44 lines and 100% generic.
+//! trait, so swapping Turnstile for hCaptcha is a configuration change rather
+//! than a code change.
 
 mod always_pass;
-mod hosted;
+mod third_party;
 
 pub use always_pass::AlwaysPass;
 use async_trait::async_trait;
-pub use hosted::HostedCaptcha;
+pub use third_party::ThirdPartyCaptcha;
 
 use crate::error::ApiError;
 

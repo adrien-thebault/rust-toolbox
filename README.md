@@ -98,7 +98,7 @@ process can hold a PostgreSQL pool and a SQLite pool at once.
 ## Deployment modes
 
 Set `DEPLOYMENT=single` or `DEPLOYMENT=clustered`. Every stateful adapter
-declares whether its state is shared, and `serve_http`/`serve` check at
+declares whether its state is shared, and each transport's `serve` checks at
 startup: an adapter that would be **incorrect** on several replicas refuses to
 start and names the variable to change; one that would merely be **degraded**
 warns.
