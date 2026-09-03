@@ -5,6 +5,7 @@
 pub mod fixtures;
 
 mod db;
-mod derive;
+mod entity;
+mod error;
 mod generic_backend;
 mod pagination;

@@ -2,6 +2,7 @@
 #![allow(missing_docs, clippy::missing_panics_doc)]
 
 mod client;
+mod limits;
 mod pagination;
 mod server;
 mod status;

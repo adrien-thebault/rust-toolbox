@@ -1,6 +1,7 @@
 //! One harness per crate; the module tree mirrors `src/`.
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
+mod args;
 mod deadline;
 mod shutdown;
 mod stack;
