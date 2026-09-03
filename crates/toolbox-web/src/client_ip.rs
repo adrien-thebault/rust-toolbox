@@ -5,79 +5,109 @@
 //! log, the audit trail and any analytics. Four subsystems disagreeing about
 //! who the caller was is its own class of bug.
 
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    num::NonZeroUsize,
+};
 
 use axum::extract::ConnectInfo;
 use http::{HeaderMap, HeaderName, request::Parts};
+pub use ipnet::IpNet;
 
 /// The de-facto forwarded-client header.
 pub const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 
-/// How many proxies append to `X-Forwarded-For` before the request arrives.
+/// How to find the client's address behind proxies.
 ///
-/// The trustworthy entry is at `len - trusted_hops`; "rightmost" is just the
-/// `trusted_hops = 1` case.
-///
-/// - `1` (the default): one reverse proxy appended one entry, so the last
-///   entry is the one it observed. Correct for a plain Caddy or nginx in front.
-/// - `0`: **ignore the header entirely** and use the TCP peer. Correct when
-///   nothing sits in front, where no entry is trustworthy at all.
-/// - `2` or more: a CDN in front of a load balancer. Note that the entry you
-///   then trust is the CDN's egress IP, so every user behind one point of
-///   presence shares a bucket.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TrustedHops(pub usize);
+/// There is **no `Default`**: guessing turns a per-caller rate limit into a
+/// global one, or lets a client forge its own bucket. Pick one deliberately,
+/// and use the same one everywhere.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClientIpTrust {
+    /// Nothing sits in front: use the TCP peer, ignore `X-Forwarded-For`.
+    Peer,
+    /// Exactly `n` proxies append one entry each, so the client is `n` entries
+    /// from the right. `Hops(1)` is a plain Caddy or nginx in front.
+    Hops(NonZeroUsize),
+    /// Walk `X-Forwarded-For` right to left, skipping entries in these networks
+    /// (and a peer in them); the first entry outside is the client. Robust when
+    /// the hop count varies - a CDN that is only sometimes in the path.
+    BehindProxies(Vec<IpNet>),
+}
 
-impl Default for TrustedHops {
-    fn default() -> Self {
-        Self(1)
+impl ClientIpTrust {
+    /// `n` proxy hops, or [`Peer`](Self::Peer) when `n` is zero.
+    ///
+    /// # Arguments
+    ///
+    /// * `n` - How many proxies append to `X-Forwarded-For`. Zero means nothing
+    ///   is in front and the header is not read at all.
+    #[must_use]
+    pub fn hops(n: usize) -> Self {
+        NonZeroUsize::new(n).map_or(Self::Peer, Self::Hops)
     }
 }
 
-/// The client IP, from the entry `trusted_hops` back, falling back to the TCP
-/// peer.
+/// The client IP for the configured trust model, falling back to the TCP peer.
 ///
 /// Three things this gets right that the obvious implementation does not:
 /// `get_all` rather than `get`, so a second `X-Forwarded-For:` line is not
-/// ignored; counting from the right, so a client that sends its own header
-/// cannot choose its own bucket; and falling back to the peer when the list is
-/// shorter than the configured hop count, rather than trusting whatever is
-/// there.
+/// ignored; never skipping past a malformed or unexpected entry, so a client
+/// that sends its own header cannot push the real one out of position; and
+/// falling back to the peer rather than trusting whatever is there when the
+/// header is shorter than expected.
 ///
 /// # Arguments
 ///
 /// * `headers` - The request headers, read for `X-Forwarded-For`.
 /// * `peer` - The TCP peer, used when there is no usable forwarded entry.
 ///   `None` when the router was not served with connect info.
-/// * `hops` - How many proxies append before the request arrives. The
-///   trustworthy entry is that far from the right.
+/// * `trust` - How to read the header. See [`ClientIpTrust`].
 #[must_use]
 pub fn resolve_client_ip(
     headers: &HeaderMap,
     peer: Option<SocketAddr>,
-    hops: TrustedHops,
+    trust: &ClientIpTrust,
 ) -> Option<IpAddr> {
-    if hops.0 == 0 {
-        return peer.map(|p| p.ip());
+    let peer_ip = peer.map(|p| p.ip());
+    if *trust == ClientIpTrust::Peer {
+        return peer_ip;
     }
 
     // Flatten every header line, since a proxy may add a second line rather
-    // than extending the first.
-    let entries: Vec<&str> = headers
+    // than extending the first. Parsed up front so a malformed entry is a
+    // `None` in place, not a hole the list closes over.
+    let entries: Vec<Option<IpAddr>> = headers
         .get_all(X_FORWARDED_FOR)
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(','))
         .map(str::trim)
         .filter(|s| !s.is_empty())
+        .map(parse_forwarded_entry)
         .collect();
 
-    entries
-        .len()
-        .checked_sub(hops.0)
-        .and_then(|i| entries.get(i))
-        .and_then(|s| parse_forwarded_entry(s))
-        .or_else(|| peer.map(|p| p.ip()))
+    match trust {
+        ClientIpTrust::Peer => peer_ip,
+        ClientIpTrust::Hops(n) => entries
+            .len()
+            .checked_sub(n.get())
+            .and_then(|i| entries.get(i).copied().flatten())
+            .or(peer_ip),
+        ClientIpTrust::BehindProxies(nets) => {
+            for entry in entries.iter().rev() {
+                match entry {
+                    // A trusted proxy: keep walking left.
+                    Some(ip) if nets.iter().any(|net| net.contains(ip)) => {}
+                    // The first address outside the trusted set is the client.
+                    Some(ip) => return Some(*ip),
+                    // A malformed entry: stop rather than skip past it.
+                    None => break,
+                }
+            }
+            peer_ip
+        }
+    }
 }
 
 /// Parse one `X-Forwarded-For` entry, which may carry a port or be bracketed.
@@ -108,10 +138,10 @@ fn parse_forwarded_entry(entry: &str) -> Option<IpAddr> {
 /// # Arguments
 ///
 /// * `parts` - The request parts being extracted from.
-/// * `hops` - How many proxies to trust.
+/// * `trust` - How to read the forwarded header. See [`ClientIpTrust`].
 #[must_use]
-pub fn client_ip(parts: &Parts, hops: TrustedHops) -> Option<IpAddr> {
-    client_ip_of(&parts.headers, &parts.extensions, hops)
+pub fn client_ip(parts: &Parts, trust: &ClientIpTrust) -> Option<IpAddr> {
+    client_ip_of(&parts.headers, &parts.extensions, trust)
 }
 
 /// As [`client_ip`], from the pieces rather than from `Parts`.
@@ -124,15 +154,15 @@ pub fn client_ip(parts: &Parts, hops: TrustedHops) -> Option<IpAddr> {
 /// * `headers` - The request headers.
 /// * `extensions` - The request extensions, which is where axum puts the
 ///   connect info the peer fallback needs.
-/// * `hops` - How many proxies to trust.
+/// * `trust` - How to read the forwarded header.
 #[must_use]
 pub fn client_ip_of(
     headers: &HeaderMap,
     extensions: &http::Extensions,
-    hops: TrustedHops,
+    trust: &ClientIpTrust,
 ) -> Option<IpAddr> {
     let peer = extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
-    resolve_client_ip(headers, peer, hops)
+    resolve_client_ip(headers, peer, trust)
 }
 
 /// Bucket an address so a single client cannot occupy unbounded state.

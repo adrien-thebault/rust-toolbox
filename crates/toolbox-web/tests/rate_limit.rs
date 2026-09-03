@@ -1,10 +1,15 @@
+use std::time::Duration;
+
+use axum::{Router, routing::get};
 use http::StatusCode;
 use toolbox_cluster::deployment::{Adapter, Scope};
 use toolbox_web::{
-    TrustedHops,
-    rate_limit::{ForwardedForKeyExtractor, RateLimitAdapter, error_response_handler},
+    ClientIpTrust,
+    rate_limit::{ForwardedForKeyExtractor, RateLimit, RateLimitAdapter, error_response_handler},
 };
 use tower_governor::{GovernorError, key_extractor::KeyExtractor};
+
+use crate::call;
 
 fn request(xff: &str, peer: [u8; 4]) -> http::Request<()> {
     let mut req = http::Request::builder().uri("/x");
@@ -23,7 +28,7 @@ fn request(xff: &str, peer: [u8; 4]) -> http::Request<()> {
 /// the right of `X-Forwarded-For` is what stops a client choosing its bucket.
 #[test]
 fn the_extractor_keys_on_the_trusted_hop_not_the_client_supplied_entry() {
-    let extractor = ForwardedForKeyExtractor::new(TrustedHops(1));
+    let extractor = ForwardedForKeyExtractor::new(ClientIpTrust::hops(1));
     let key = extractor
         .extract(&request("1.1.1.1, 2.2.2.2", [10, 0, 0, 1]))
         .unwrap();
@@ -32,7 +37,7 @@ fn the_extractor_keys_on_the_trusted_hop_not_the_client_supplied_entry() {
 
 #[test]
 fn the_extractor_falls_back_to_the_peer_when_the_header_is_short() {
-    let extractor = ForwardedForKeyExtractor::new(TrustedHops(2));
+    let extractor = ForwardedForKeyExtractor::new(ClientIpTrust::hops(2));
     let key = extractor
         .extract(&request("1.1.1.1", [10, 0, 0, 1]))
         .unwrap();
@@ -68,4 +73,33 @@ fn the_adapter_declares_itself_degraded_under_clustering() {
         Scope::LocalDegraded { .. }
     ));
     assert_eq!(RateLimitAdapter.name(), "tower_governor");
+}
+
+/// The layer `auth_router` and any other throttled route are built from: after
+/// the burst, the next request is a 429 rather than reaching the handler.
+#[tokio::test]
+async fn the_layer_throttles_once_the_burst_is_spent() {
+    let app = Router::new()
+        .route("/x", get(|| async { "ok" }))
+        .layer(RateLimit::new(1, Duration::from_secs(60), ClientIpTrust::Peer).layer());
+
+    let req = || {
+        let mut r = http::Request::builder()
+            .uri("/x")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        r.extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [127, 0, 0, 1],
+                5000,
+            ))));
+        r
+    };
+
+    let (first, _) = call(app.clone(), req()).await;
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let (second, body) = call(app, req()).await;
+    assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert!(body.contains("RATE_LIMITED"), "{body}");
 }

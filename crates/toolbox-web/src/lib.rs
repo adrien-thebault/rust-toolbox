@@ -32,8 +32,8 @@ pub mod realtime;
 pub mod server;
 
 #[cfg(feature = "auth-router")]
-pub use auth::{AuthState, LoginLimit, auth_router, session_layer};
-pub use client_ip::{TrustedHops, client_ip, resolve_client_ip};
+pub use auth::{AuthState, auth_router, session_layer};
+pub use client_ip::{ClientIpTrust, client_ip, resolve_client_ip};
 pub use cors::{cors, cors_localhost};
 pub use error::{ApiError, status_for};
 pub use extract::{Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson};
@@ -43,4 +43,6 @@ pub use idempotency::{Claim, Idempotency, StoredResponse, in_flight_error};
 #[cfg(feature = "openapi")]
 pub use openapi::{OpenApiConfig, dump_openapi, openapi_router, with_standard_errors};
 pub use pagination::{attach_page_headers, page_links};
+#[cfg(feature = "rate-limit")]
+pub use rate_limit::RateLimit;
 pub use server::serve;

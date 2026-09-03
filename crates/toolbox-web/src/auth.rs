@@ -16,13 +16,11 @@
 //!   ([`AuthState::refresh_epoch`]).
 
 mod forwarded;
-mod limiter;
 mod routes;
 mod session;
 mod state;
 
 pub use forwarded::{ForwardedConfig, forwarded_auth_layer};
-pub use limiter::LoginLimit;
 pub use routes::{LoginRequest, RefreshRequest, SessionResponse, auth_router};
 pub use session::session_layer;
 pub use state::AuthState;

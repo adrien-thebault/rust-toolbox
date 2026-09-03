@@ -3,6 +3,7 @@
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -12,10 +13,13 @@ use toolbox_auth::{
     AuthError, JwtIdentityProvider, PasswordIdentityProvider, Principal, ProviderRegistry,
     RefreshInfo, StoredUser, UserStore, hash_password,
 };
-use toolbox_web::auth::{AuthState, LoginLimit, auth_router, session_layer};
+use toolbox_web::{
+    ClientIpTrust,
+    auth::{AuthState, auth_router, session_layer},
+    rate_limit::RateLimit,
+};
 
 mod forwarded;
-mod limiter;
 mod routes;
 mod session;
 
@@ -87,12 +91,15 @@ fn state() -> State {
 }
 
 fn app(state: State) -> Router {
-    app_with(state, LoginLimit::default())
+    app_with(
+        state,
+        &RateLimit::new(5, Duration::from_secs(5), ClientIpTrust::hops(1)),
+    )
 }
 
-fn app_with(state: State, login: LoginLimit) -> Router {
+fn app_with(state: State, login: &RateLimit) -> Router {
     with_peer(
-        auth_router::<State>(&login)
+        auth_router::<State>(login)
             .route(
                 "/me-or-anon",
                 get(|p: Option<axum::Extension<Principal>>| async move {

@@ -16,15 +16,22 @@
 //! [`RateLimitAdapter`] declares `LocalDegraded` and the startup guard warns
 //! rather than refusing.
 
-use std::{net::IpAddr, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 
 use axum::response::{IntoResponse, Response};
-use governor::{clock::QuantaInstant, middleware::RateLimitingMiddleware};
+use governor::{
+    clock::QuantaInstant,
+    middleware::{NoOpMiddleware, RateLimitingMiddleware},
+};
 use toolbox_cluster::deployment::{Adapter, Scope};
-use tower_governor::{GovernorError, governor::GovernorConfig, key_extractor::KeyExtractor};
+use tower_governor::{
+    GovernorError, GovernorLayer,
+    governor::{GovernorConfig, GovernorConfigBuilder},
+    key_extractor::KeyExtractor,
+};
 
 use crate::{
-    client_ip::{TrustedHops, bucket, client_ip_of},
+    client_ip::{ClientIpTrust, bucket, client_ip_of},
     error::ApiError,
 };
 
@@ -33,23 +40,23 @@ use crate::{
 /// IPv6 addresses are bucketed by their /64 prefix: an attacker holding a /64
 /// otherwise has 2^64 distinct keys to spend, and a keyed limiter grows one
 /// entry per key.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone)]
 pub struct ForwardedForKeyExtractor {
-    /// How many proxies to trust when picking the client entry.
-    hops: TrustedHops,
+    /// How the client entry is picked out of `X-Forwarded-For`.
+    trust: ClientIpTrust,
 }
 
 impl ForwardedForKeyExtractor {
-    /// An extractor trusting `hops` proxies. See [`TrustedHops`].
+    /// An extractor using `trust` to find the client. See [`ClientIpTrust`].
     ///
     /// # Arguments
     ///
-    /// * `hops` - How many proxies append to `X-Forwarded-For`. It must match
-    ///   what the rest of the process uses, or the limiter keys on a different
-    ///   caller than the logs do.
+    /// * `trust` - How to read `X-Forwarded-For`. It must match what the rest
+    ///   of the process uses, or the limiter keys on a different caller than
+    ///   the logs do.
     #[must_use]
-    pub fn new(hops: TrustedHops) -> Self {
-        Self { hops }
+    pub fn new(trust: ClientIpTrust) -> Self {
+        Self { trust }
     }
 }
 
@@ -62,9 +69,64 @@ impl KeyExtractor for ForwardedForKeyExtractor {
     }
 
     fn extract<T>(&self, req: &http::Request<T>) -> Result<Self::Key, GovernorError> {
-        client_ip_of(req.headers(), req.extensions(), self.hops)
+        client_ip_of(req.headers(), req.extensions(), &self.trust)
             .map(bucket)
             .ok_or(GovernorError::UnableToExtractKey)
+    }
+}
+
+/// A per-IP throttle: `burst` requests, then one back every `replenish_every`.
+///
+/// The values have no safe default - a login endpoint wants a few per minute, a
+/// public read endpoint wants far more - so all three are stated. `trust`
+/// decides how the caller is identified; it must match the rest of the process.
+#[derive(Debug, Clone)]
+pub struct RateLimit {
+    /// How many requests one caller may make back to back.
+    pub burst: u32,
+    /// How long before one spent request is given back.
+    pub replenish_every: Duration,
+    /// How the caller is identified behind proxies.
+    pub trust: ClientIpTrust,
+}
+
+impl RateLimit {
+    /// A throttle allowing `burst` requests, replenished one per
+    /// `replenish_every`, keyed by `trust`.
+    #[must_use]
+    pub fn new(burst: u32, replenish_every: Duration, trust: ClientIpTrust) -> Self {
+        Self {
+            burst,
+            replenish_every,
+            trust,
+        }
+    }
+
+    /// The tower layer. It keys on [`ForwardedForKeyExtractor`] and answers a
+    /// rejection through [`error_response_handler`], so a throttled request
+    /// looks like every other error.
+    ///
+    /// `burst` and the period are clamped above zero here, which is the only
+    /// way `finish` returns `None`, so the `expect` is unreachable - no
+    /// `# Panics`.
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn layer(
+        &self,
+    ) -> GovernorLayer<ForwardedForKeyExtractor, NoOpMiddleware<QuantaInstant>, axum::body::Body>
+    {
+        let config = GovernorConfigBuilder::default()
+            .key_extractor(ForwardedForKeyExtractor::new(self.trust.clone()))
+            .per_millisecond(
+                u64::try_from(self.replenish_every.as_millis())
+                    .unwrap_or(u64::MAX)
+                    .max(1),
+            )
+            .burst_size(self.burst.max(1))
+            .finish()
+            .expect("a non-zero burst and period");
+
+        GovernorLayer::new(Arc::new(config)).error_handler(error_response_handler)
     }
 }
 

@@ -13,8 +13,8 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use toolbox_auth::{AuthError, Credential, Principal};
 
-use super::{AuthState, LoginLimit, limiter::login_limiter};
-use crate::error::ApiError;
+use super::AuthState;
+use crate::{error::ApiError, rate_limit::RateLimit};
 
 /// A login request.
 #[derive(Debug, Deserialize)]
@@ -51,16 +51,16 @@ pub struct RefreshRequest {
 ///
 /// # Arguments
 ///
-/// * `limit` - How `/auth/login` and `/auth/refresh` are throttled. Taken
-///   rather than defaulted because `hops` has no safe default: guessing it
-///   wrong is what turns a per-caller limit into a global one.
-pub fn auth_router<S: AuthState>(limit: &LoginLimit) -> Router<S> {
+/// * `limit` - How `/auth/login` and `/auth/refresh` are throttled. A
+///   credential endpoint wants only a few attempts per minute; see
+///   [`RateLimit`].
+pub fn auth_router<S: AuthState>(limit: &RateLimit) -> Router<S> {
     Router::new()
         .route("/auth/login", post(login::<S>))
         .route("/auth/refresh", post(refresh::<S>))
         // Applied to the two routes above and no others, because a layer wraps
         // what was already added. `/auth/me` is called on every page load.
-        .layer(login_limiter(limit))
+        .layer(limit.layer())
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
 }

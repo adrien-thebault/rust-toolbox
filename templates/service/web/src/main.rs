@@ -1,5 +1,7 @@
 //! The HTTP gateway.
 
+use std::time::Duration;
+
 use clap::Parser;
 use {{crate_name}}_web::{auth, auth::AuthConfig, routes::router};
 use toolbox_cluster::Adapter;
@@ -11,10 +13,9 @@ use toolbox_server::{
     telemetry::TelemetryArgs,
 };
 use toolbox_web::{
-    TrustedHops,
-    auth::LoginLimit,
+    ClientIpTrust,
     health::{HealthState, health_router},
-    rate_limit::RateLimitAdapter,
+    rate_limit::{RateLimit, RateLimitAdapter},
     serve,
 };
 
@@ -60,10 +61,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AuthConfig::from_env()?;
     let state = auth::state(todos, &config)?;
 
-    let login = LoginLimit {
-        hops: TrustedHops(args.trusted_hops),
-        ..LoginLimit::default()
-    };
+    // A handful of attempts, then one back every few seconds: a typo goes
+    // unnoticed, credential stuffing from one address does not.
+    let login = RateLimit::new(5, Duration::from_secs(5), ClientIpTrust::hops(args.trusted_hops));
 
     let deployment = args.deployment.resolve()?;
     let limiter = RateLimitAdapter;

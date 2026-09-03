@@ -3,6 +3,8 @@
 //! It owns authentication, rate limiting and the RFC 9457 error shape; the
 //! backend owns the data.
 
+use std::time::Duration;
+
 use clap::Parser;
 use example_web::{
     auth::{self, AuthConfig},
@@ -17,10 +19,9 @@ use toolbox_server::{
     telemetry::TelemetryArgs,
 };
 use toolbox_web::{
-    TrustedHops,
-    auth::LoginLimit,
+    ClientIpTrust,
     health::{HealthState, health_router},
-    rate_limit::RateLimitAdapter,
+    rate_limit::{RateLimit, RateLimitAdapter},
     serve,
 };
 
@@ -61,10 +62,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // a refusal to start rather than a 500 on the first login.
     let config = AuthConfig::from_env()?;
     let state = auth::state(todos, &config)?;
-    let login = LoginLimit {
-        hops: TrustedHops(args.trusted_hops),
-        ..LoginLimit::default()
-    };
+    // A handful of attempts, then one back every few seconds: a typo goes
+    // unnoticed, credential stuffing from one address does not.
+    let login = RateLimit::new(
+        5,
+        Duration::from_secs(5),
+        ClientIpTrust::hops(args.trusted_hops),
+    );
 
     let deployment = args.deployment.resolve()?;
     let limiter = RateLimitAdapter;

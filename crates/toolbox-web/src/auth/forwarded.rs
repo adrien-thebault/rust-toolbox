@@ -18,7 +18,7 @@ use toolbox_auth::{
 };
 
 use super::AuthState;
-use crate::client_ip::{TrustedHops, client_ip_of};
+use crate::client_ip::{ClientIpTrust, client_ip_of};
 
 /// What [`forwarded_auth_layer`] needs beyond the request itself.
 ///
@@ -29,9 +29,9 @@ use crate::client_ip::{TrustedHops, client_ip_of};
 pub struct ForwardedConfig {
     /// The header names, copied from the provider.
     headers: ForwardedHeaders,
-    /// How many proxy hops to trust when resolving the peer address, matching
-    /// what the rest of the process uses.
-    pub hops: TrustedHops,
+    /// How the peer address is resolved, matching what the rest of the process
+    /// uses. It feeds the provider's peer-trust check.
+    pub trust: ClientIpTrust,
     /// The header carrying the proxy's shared secret, when the registry's
     /// [`ForwardedIdentityProvider`] trusts a secret rather than a peer list.
     /// Its value is read into [`ForwardedIdentity::secret`]; unset means the
@@ -44,14 +44,14 @@ impl ForwardedConfig {
     ///
     /// Use [`for_provider`](Self::for_provider) instead when the registry holds
     /// a [`ForwardedIdentityProvider`] configured for different names. No
-    /// `Default`: `hops` feeds the peer-trust check, so the config is a
+    /// `Default`: `trust` feeds the peer-trust check, so the config is a
     /// deliberate call.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             headers: ForwardedHeaders::default(),
-            hops: TrustedHops::default(),
+            trust: ClientIpTrust::hops(1),
             secret_header: None,
         }
     }
@@ -67,19 +67,19 @@ impl ForwardedConfig {
     pub fn for_provider(provider: &ForwardedIdentityProvider) -> Self {
         Self {
             headers: provider.headers().clone(),
-            hops: TrustedHops::default(),
+            trust: ClientIpTrust::hops(1),
             secret_header: None,
         }
     }
 
-    /// How many proxy hops to trust when resolving the peer address.
+    /// How the peer address is resolved.
     ///
     /// # Arguments
     ///
-    /// * `hops` - Must match what the rest of the process uses.
+    /// * `trust` - Must match what the rest of the process uses.
     #[must_use]
-    pub fn hops(mut self, hops: TrustedHops) -> Self {
-        self.hops = hops;
+    pub fn trust(mut self, trust: ClientIpTrust) -> Self {
+        self.trust = trust;
         self
     }
 
@@ -155,7 +155,7 @@ fn forwarded_identity(
         user: read(&config.headers.user),
         groups: read(&config.headers.groups),
         email: read(&config.headers.email),
-        peer: client_ip_of(headers, extensions, config.hops),
+        peer: client_ip_of(headers, extensions, &config.trust),
         secret: config
             .secret_header
             .as_deref()
