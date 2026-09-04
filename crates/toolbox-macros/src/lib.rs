@@ -47,8 +47,8 @@ use syn::{DeriveInput, parse_macro_input};
 ///   `SELECT .. WHERE id = LAST_INSERT_ID()`. A proc macro sees the token
 ///   `crate::Backend`, not the type it resolves to, so which one cannot be
 ///   inferred from `backend`.
-/// - `timestamps` - maintain `created_at` and `updated_at` through
-///   [`toolbox_db::Now`](../toolbox_db/trait.Now.html).
+/// - `timestamps` - maintain `created_at` and `updated_at` as `chrono::Utc::now()`
+///   on every insert and save.
 /// - `soft_delete = <field>` - a nullable column; deletes become updates and
 ///   every read filters on it.
 /// - `version = <field>` - optimistic locking; a save whose version check

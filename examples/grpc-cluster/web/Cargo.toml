@@ -48,7 +48,6 @@ tonic      = { workspace = true }
 
 [dev-dependencies]
 toolbox-test   = { workspace = true, features = ["db", "web", "grpc"] }
-toolbox-db     = { workspace = true, features = ["chrono"] }
 diesel       = { workspace = true, features = ["r2d2", "sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
 tempfile     = { workspace = true }
 tokio        = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

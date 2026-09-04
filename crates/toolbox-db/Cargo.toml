@@ -16,9 +16,7 @@ path = "tests/integration.rs"
 
 [features]
 default = []
-# `Now` impls. NOT backend features - see the crate docs.
-chrono = ["dep:chrono"]
-time   = ["dep:time"]
+# NOT a backend feature - see the crate docs.
 clap   = ["dep:clap"]
 
 [dependencies]
@@ -29,8 +27,6 @@ diesel_migrations  = { workspace = true }
 tokio              = { workspace = true, features = ["rt"] }
 thiserror          = { workspace = true }
 tracing            = { workspace = true }
-chrono             = { workspace = true, optional = true, features = ["clock", "std"] }
-time               = { workspace = true, optional = true }
 clap               = { workspace = true, optional = true, features = ["derive", "env"] }
 
 [dev-dependencies]
@@ -45,9 +41,6 @@ chrono   = { workspace = true, features = ["clock", "std"] }
 toolbox-core = { workspace = true }
 tokio    = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tempfile = { workspace = true }
-# The crate's own tests need its `chrono` feature; a self dev-dependency is how
-# a crate turns on one of its features for its own test build.
-toolbox-db = { path = ".", features = ["chrono"] }
 
 [lints]
 workspace = true

@@ -21,7 +21,7 @@ proc-macro2 = { workspace = true }
 trybuild = { workspace = true }
 # The ui cases are real entities, so they need everything a consumer has. The
 # dev-dependency back onto toolbox-db is a cycle cargo permits.
-toolbox-db   = { workspace = true, features = ["chrono"] }
+toolbox-db   = { workspace = true }
 toolbox-core = { workspace = true }
 diesel       = { workspace = true, features = ["r2d2", "sqlite", "chrono"] }
 chrono       = { workspace = true, features = ["clock", "std"] }

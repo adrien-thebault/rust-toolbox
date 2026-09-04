@@ -394,7 +394,7 @@ fn sort_arms(cfg: &EntityConfig) -> Vec<TokenStream> {
 fn touch_created(cfg: &EntityConfig) -> TokenStream {
     cfg.timestamps.as_ref().map_or_else(TokenStream::new, |ts| {
         let created = &ts.created_at;
-        quote! { __row.#created = ::toolbox_db::Now::now(); }
+        quote! { __row.#created = ::chrono::Utc::now().naive_utc(); }
     })
 }
 
@@ -407,7 +407,7 @@ fn touch_created(cfg: &EntityConfig) -> TokenStream {
 fn touch_updated(cfg: &EntityConfig) -> TokenStream {
     cfg.timestamps.as_ref().map_or_else(TokenStream::new, |ts| {
         let updated = &ts.updated_at;
-        quote! { __row.#updated = ::toolbox_db::Now::now(); }
+        quote! { __row.#updated = ::chrono::Utc::now().naive_utc(); }
     })
 }
 
@@ -568,7 +568,7 @@ fn delete_body(cfg: &EntityConfig) -> TokenStream {
                 .as_ref()
                 .expect("parsed alongside the column");
             quote! {
-                let __now: #ty = ::toolbox_db::Now::now();
+                let __now: #ty = ::chrono::Utc::now().naive_utc();
                 ::core::result::Result::Ok(
                     ::diesel::update(
                         #table::table
@@ -607,7 +607,7 @@ fn delete_many_body(cfg: &EntityConfig) -> TokenStream {
                 .as_ref()
                 .expect("parsed alongside the column");
             quote! {
-                let __now: #ty = ::toolbox_db::Now::now();
+                let __now: #ty = ::chrono::Utc::now().naive_utc();
                 ::core::result::Result::Ok(
                     ::diesel::update(
                         #table::table

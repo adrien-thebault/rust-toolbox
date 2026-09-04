@@ -1019,7 +1019,6 @@ dependencies = [
  "toolbox-auth",
  "toolbox-cluster",
  "toolbox-core",
- "toolbox-db",
  "toolbox-grpc",
  "toolbox-server",
  "toolbox-test",
@@ -3682,10 +3681,8 @@ dependencies = [
  "diesel_migrations",
  "tempfile",
  "thiserror 2.0.20",
- "time",
  "tokio",
  "toolbox-core",
- "toolbox-db",
  "toolbox-macros",
  "tracing",
 ]

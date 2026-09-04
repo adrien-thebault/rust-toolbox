@@ -28,7 +28,7 @@ core -> db -> cluster -> server -> {web, grpc}
 |---|---|
 | `toolbox-core` | `ErrorKind`, `ServiceError`, `ErrorInfo`, RFC 9457 `Problem`, `Page`/`PageRequest`/`Sort`. serde and thiserror only |
 | `toolbox-macros` | `#[derive(Entity)]`. Proc-macro crate, so necessarily separate |
-| `toolbox-db` | `Db<C>`, `DbError`, `Entity`/`Now`, `Paginate`, locked `migrate()`, `SqlitePragmas`, `DatabaseArgs` |
+| `toolbox-db` | `Db<C>`, `DbError`, `Entity`, `Paginate`, locked `migrate()`, `SqlitePragmas`, `DatabaseArgs` |
 | `toolbox-cluster` | `CloudEvent`; the `EventBus`/`KvStore`/`LockManager` traits, their local adapters, and the deployment guard |
 | `toolbox-cluster-postgres` | the shared adapters: outbox, key-value, leased locks |
 | `toolbox-schedule` | scheduled tasks that run once per cluster, plus the `Clock` port (`system`/`manual`) |

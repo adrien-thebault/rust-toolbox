@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [dependencies]
 toolbox-core    = { workspace = true }
-toolbox-db      = { workspace = true, features = ["chrono", "clap"] }
+toolbox-db      = { workspace = true, features = ["clap"] }
 toolbox-grpc    = { workspace = true }
 toolbox-server  = { workspace = true, features = ["clap"] }
 

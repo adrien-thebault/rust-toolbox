@@ -9,7 +9,7 @@ is visible in review.
 | Module | What it holds |
 |---|---|
 | `db` | `Db<C>` and `DbBuilder<C>`: `run`, `query`, `transaction`, and their `_named` spans |
-| `entity` | the `Entity` and `Now` traits the derive implements and relies on |
+| `entity` | the `Entity` trait the derive implements |
 | `pagination` | `Paginate`, which composes onto **any** diesel query, and the sort-field allowlist check that guards `ORDER BY` |
 | `migrate` | migrations, serialised across replicas by the backend's own session lock |
 | `sqlite` | connection pragmas |

@@ -17,8 +17,9 @@
 //! - a feature enabled anywhere in a workspace cannot silently change which
 //!   backend another crate compiles against.
 //!
-//! The `chrono`, `time` and `clap` features here add [`Now`] impls and the
-//! clap argument struct. They are not backend selectors.
+//! The `clap` feature here adds the argument struct. It is not a backend
+//! selector. `#[derive(Entity)]`'s timestamp autofill always uses `chrono`,
+//! the one datetime library this workspace names - see `CLAUDE.md`.
 
 pub mod args;
 pub mod db;
@@ -32,7 +33,7 @@ pub use db::{Db, DbBuilder, DbPool, DbPooledConn};
 /// Re-exported so `#[derive(Entity)]` can name it without the consumer
 /// declaring `diesel_migrations` itself.
 pub use diesel_migrations::{EmbeddedMigrations, embed_migrations};
-pub use entity::{Entity, Now};
+pub use entity::Entity;
 pub use error::{DbError, DbResult};
 pub use pagination::{Paginate, Paginated};
 pub use sqlite::SqlitePragmas;
