@@ -77,22 +77,6 @@ async fn an_expired_entry_is_gone() {
 }
 
 #[tokio::test]
-async fn the_adapter_declares_what_it_actually_does() {
-    let caps = InMemoryKvStore::default().capabilities();
-    assert!(
-        caps.atomic_take,
-        "asserted by concurrent_takes_produce_exactly_one_winner"
-    );
-    assert!(
-        caps.atomic_add,
-        "asserted by concurrent_adds_produce_exactly_one_winner"
-    );
-    assert!(caps.ttl);
-    assert!(!caps.durable);
-    assert!(!caps.shared, "entries are invisible to other replicas");
-}
-
-#[tokio::test]
 async fn add_creates_a_key_once_and_reports_which_call_won() {
     let kv = InMemoryKvStore::default();
     assert!(kv.add("k", b"first".to_vec(), None).await.unwrap());

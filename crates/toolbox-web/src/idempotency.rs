@@ -72,22 +72,14 @@ impl Idempotency {
     ///
     /// # Arguments
     ///
-    /// * `kv` - The store. It must promise an atomic add, or two concurrent
-    ///   retries could both claim the same key.
-    ///
-    /// # Errors
-    /// [`ApiError`] when the adapter cannot promise an atomic add - without it
-    /// two racing first requests could both be told to run the handler.
-    pub fn new(kv: Arc<dyn KvStore>) -> Result<Self, ApiError> {
-        if !kv.capabilities().atomic_add {
-            return Err(ApiError::internal(std::io::Error::other(
-                "idempotency needs a key-value store with an atomic add",
-            )));
-        }
-        Ok(Self {
+    /// * `kv` - The store. `KvStore::add` is atomic by contract, which is what
+    ///   stops two racing retries both claiming the same key.
+    #[must_use]
+    pub fn new(kv: Arc<dyn KvStore>) -> Self {
+        Self {
             kv,
             ttl: DEFAULT_TTL,
-        })
+        }
     }
 
     /// How long a response stays replayable.

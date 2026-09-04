@@ -8,7 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 
-use super::{LockGuard, LockManager, LockManagerCapabilities, LockManagerError, LockRelease};
+use super::{LockGuard, LockManager, LockManagerError, LockRelease};
 
 /// Who holds a lock, and until when.
 #[derive(Debug, Clone)]
@@ -59,13 +59,6 @@ impl LockRelease for InProcessRelease {
 
 #[async_trait]
 impl LockManager for InProcessLockManager {
-    fn capabilities(&self) -> LockManagerCapabilities {
-        LockManagerCapabilities {
-            shared: false,
-            leased: true,
-        }
-    }
-
     async fn try_lock(
         &self,
         key: &str,

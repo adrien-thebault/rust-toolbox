@@ -9,10 +9,7 @@ use async_trait::async_trait;
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt as _;
 
-use super::{
-    BusOrdering, CloudEvent, Delivery, EventBus, EventBusCapabilities, EventBusError, EventStream,
-    StartPosition, Topic,
-};
+use super::{CloudEvent, EventBus, EventBusError, EventStream, Topic};
 
 /// The default bus: a tokio broadcast channel per topic.
 ///
@@ -20,6 +17,10 @@ use super::{
 /// subscriber on another, so under more than one replica a subscriber misses
 /// most of the stream. Use a shared adapter once you are running more than
 /// one.
+///
+/// **At-most-once, and not durable.** A subscriber that falls behind `buffer`
+/// events loses the ones it missed rather than blocking the publisher; there
+/// is no history to replay once it is gone.
 pub struct InProcessEventBus {
     /// One broadcast sender per topic, created on first use.
     topics: Mutex<HashMap<Topic, broadcast::Sender<CloudEvent>>>,
@@ -74,31 +75,13 @@ impl InProcessEventBus {
 
 #[async_trait]
 impl EventBus for InProcessEventBus {
-    fn capabilities(&self) -> EventBusCapabilities {
-        EventBusCapabilities {
-            delivery: Delivery::AtMostOnce,
-            replay: None,
-            ordering: BusOrdering::PerTopic,
-            max_payload: usize::MAX,
-            durable: false,
-        }
-    }
-
     async fn publish(&self, topic: &Topic, event: CloudEvent) -> Result<(), EventBusError> {
         // An error here means nobody is subscribed, which is not a failure.
         let _ = self.sender(topic).send(event);
         Ok(())
     }
 
-    async fn subscribe(
-        &self,
-        topic: &Topic,
-        from: StartPosition,
-    ) -> Result<EventStream, EventBusError> {
-        // No replay: only `Now` is honest here. `Earliest` used to be accepted
-        // and then silently behave like `Now`, since a fresh receiver holds no
-        // history.
-        self.capabilities().check_start(&from, "in-process")?;
+    async fn subscribe(&self, topic: &Topic) -> Result<EventStream, EventBusError> {
         let rx = self.sender(topic).subscribe();
         let stream =
             tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(std::result::Result::ok);

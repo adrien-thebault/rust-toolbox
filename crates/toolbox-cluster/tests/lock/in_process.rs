@@ -105,10 +105,3 @@ async fn a_stale_guard_does_not_release_someone_elses_lock() {
     );
     drop(fresh);
 }
-
-#[tokio::test]
-async fn the_adapter_declares_what_it_actually_does() {
-    let caps = InProcessLockManager::new().capabilities();
-    assert!(!caps.shared, "two replicas would each take the same lock");
-    assert!(caps.leased);
-}

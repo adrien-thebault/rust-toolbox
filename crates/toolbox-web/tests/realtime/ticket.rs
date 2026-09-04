@@ -5,7 +5,7 @@ use toolbox_cluster::InMemoryKvStore;
 use toolbox_web::realtime::TicketStore;
 
 fn tickets() -> TicketStore {
-    TicketStore::new(Arc::new(InMemoryKvStore::default())).unwrap()
+    TicketStore::new(Arc::new(InMemoryKvStore::default()))
 }
 
 fn principal() -> Principal {
@@ -67,51 +67,4 @@ async fn a_ticket_carries_nothing_readable() {
     assert_eq!(ticket.len(), 64, "256 bits, hex");
     assert!(ticket.chars().all(|c| c.is_ascii_hexdigit()));
     assert!(!ticket.contains("ada") && !ticket.contains("orders"));
-}
-
-/// Without an atomic take a ticket is not single-use, and two connections
-/// could redeem the same one.
-#[tokio::test]
-async fn tickets_refuse_a_store_that_cannot_take_atomically() {
-    struct NoTake;
-
-    #[async_trait::async_trait]
-    impl toolbox_cluster::KvStore for NoTake {
-        fn capabilities(&self) -> toolbox_cluster::KvStoreCapabilities {
-            toolbox_cluster::KvStoreCapabilities {
-                atomic_take: false,
-                atomic_add: false,
-                ttl: true,
-                durable: false,
-                shared: false,
-            }
-        }
-        async fn get(&self, _k: &str) -> Result<Option<Vec<u8>>, toolbox_cluster::KvStoreError> {
-            Ok(None)
-        }
-        async fn set(
-            &self,
-            _k: &str,
-            _v: Vec<u8>,
-            _t: Option<Duration>,
-        ) -> Result<(), toolbox_cluster::KvStoreError> {
-            Ok(())
-        }
-        async fn add(
-            &self,
-            _k: &str,
-            _v: Vec<u8>,
-            _t: Option<Duration>,
-        ) -> Result<bool, toolbox_cluster::KvStoreError> {
-            Ok(true)
-        }
-        async fn take(&self, _k: &str) -> Result<Option<Vec<u8>>, toolbox_cluster::KvStoreError> {
-            Ok(None)
-        }
-        async fn delete(&self, _k: &str) -> Result<(), toolbox_cluster::KvStoreError> {
-            Ok(())
-        }
-    }
-
-    assert!(TicketStore::new(Arc::new(NoTake)).is_err());
 }

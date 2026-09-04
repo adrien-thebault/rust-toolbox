@@ -23,7 +23,7 @@ fn key(s: &str) -> IdempotencyKey {
 }
 
 fn store() -> Idempotency {
-    Idempotency::new(Arc::new(InMemoryKvStore::default())).unwrap()
+    Idempotency::new(Arc::new(InMemoryKvStore::default()))
 }
 
 fn response() -> StoredResponse {

@@ -11,15 +11,6 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 pub use in_process::InProcessLockManager;
 
-/// What a lock adapter can do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LockManagerCapabilities {
-    /// Whether the lock is visible to other replicas.
-    pub shared: bool,
-    /// Whether a lease expires on its own if the holder dies.
-    pub leased: bool,
-}
-
 /// Why a lock operation failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -119,11 +110,12 @@ impl Drop for LockGuard {
 }
 
 /// Take a named lock across whatever the adapter's scope is.
+///
+/// Every lock is leased - a holder that dies without releasing must not block
+/// the work forever - and that is a requirement every adapter carries, not a
+/// capability to check.
 #[async_trait]
 pub trait LockManager: Send + Sync {
-    /// What this adapter can do.
-    fn capabilities(&self) -> LockManagerCapabilities;
-
     /// Try to take `key` for at most `lease`.
     ///
     /// Returns `Ok(None)` when someone else holds it - not an error, because

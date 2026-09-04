@@ -57,23 +57,15 @@ impl TicketStore {
     ///
     /// # Arguments
     ///
-    /// * `kv` - The store. Without an atomic take a ticket is not single-use,
-    ///   and two connections could redeem the same one.
-    ///
-    /// # Errors
-    /// [`ApiError`] when the adapter cannot promise an atomic take - without
-    /// it a ticket is not single-use, and two connections could redeem the
-    /// same one.
-    pub fn new(kv: Arc<dyn KvStore>) -> Result<Self, ApiError> {
-        if !kv.capabilities().atomic_take {
-            return Err(ApiError::internal(std::io::Error::other(
-                "realtime tickets need a key-value store with an atomic take",
-            )));
-        }
-        Ok(Self {
+    /// * `kv` - The store. `KvStore::take` is atomic by contract, which is
+    ///   what keeps a ticket single-use: two connections cannot both redeem
+    ///   the same one.
+    #[must_use]
+    pub fn new(kv: Arc<dyn KvStore>) -> Self {
+        Self {
             kv,
             ttl: TICKET_TTL,
-        })
+        }
     }
 
     /// Override the lifetime.

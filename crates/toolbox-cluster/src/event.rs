@@ -11,15 +11,12 @@
 //! refuses, and a crate of its own for two constructors would not earn the line.
 //!
 //! [`EventBus`] is the transport. It holds state across requests, so it is a
-//! trait with adapters and declared capabilities, not a struct: a feature
-//! needing replay fails at subscribe time on an adapter that cannot replay, in
-//! development, rather than on a Tuesday in production. It depends on the
-//! envelope the way `lock` depends on `deployment` for `Scope` - the payload is
+//! trait with a local adapter and at least one shared adapter; the payload is
 //! always a [`CloudEvent`].
 
 mod in_process;
 
-use std::{pin::Pin, time::Duration};
+use std::pin::Pin;
 
 use async_trait::async_trait;
 use cloudevents::{EventBuilder, EventBuilderV10, event::Data};
@@ -148,155 +145,10 @@ impl From<&str> for Topic {
     }
 }
 
-/// How many times a subscriber may see an event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Delivery {
-    /// Dropped rather than redelivered. Fine for a UI notification, wrong for
-    /// anything that changes state.
-    AtMostOnce,
-    /// Redelivered until acknowledged, so a handler must be idempotent.
-    AtLeastOnce,
-}
-
-/// What ordering an adapter promises.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BusOrdering {
-    /// None.
-    None,
-    /// Events on one topic arrive in publish order.
-    PerTopic,
-    /// Events sharing a partition key arrive in publish order.
-    PerPartitionKey,
-}
-
-/// What an adapter can actually do.
-///
-/// The bus contract is the **intersection** of these across adapters, so a
-/// capability is declared rather than assumed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EventBusCapabilities {
-    /// How many times a subscriber may see an event.
-    pub delivery: Delivery,
-    /// How far back a subscriber may resume. `None` means no replay at all.
-    pub replay: Option<Duration>,
-    /// What ordering is promised.
-    pub ordering: BusOrdering,
-    /// The largest event payload in bytes.
-    pub max_payload: usize,
-    /// Whether events survive a restart.
-    pub durable: bool,
-}
-
-impl EventBusCapabilities {
-    /// Reject a [`StartPosition`] this adapter cannot serve, so the failure
-    /// lands at subscribe time rather than as a silently short stream.
-    ///
-    /// # Arguments
-    ///
-    /// * `from` - Where the subscriber asked to start.
-    /// * `adapter` - The adapter name, for the error.
-    ///
-    /// # Errors
-    /// [`EventBusError::Unsupported`] when `from` is anything but the tail and
-    /// this adapter has no `replay`.
-    pub fn check_start(
-        &self,
-        from: &StartPosition,
-        adapter: &'static str,
-    ) -> Result<(), EventBusError> {
-        match from {
-            StartPosition::Now => Ok(()),
-            StartPosition::Earliest | StartPosition::Cursor(_) if self.replay.is_some() => Ok(()),
-            StartPosition::Earliest | StartPosition::Cursor(_) => Err(EventBusError::Unsupported {
-                needed: MissingCapability::Replay,
-                adapter,
-            }),
-        }
-    }
-
-    /// Reject a payload larger than [`EventBusCapabilities::max_payload`], for an
-    /// adapter to call in `publish` before it hands the event to its transport.
-    ///
-    /// # Arguments
-    ///
-    /// * `size` - The serialized payload size in bytes.
-    ///
-    /// # Errors
-    /// [`EventBusError::TooLarge`] when `size` is over the limit.
-    pub fn check_payload(&self, size: usize) -> Result<(), EventBusError> {
-        if size > self.max_payload {
-            return Err(EventBusError::TooLarge {
-                size,
-                max: self.max_payload,
-            });
-        }
-        Ok(())
-    }
-
-    /// Reject a subscriber that needs delivery to survive a restart on an
-    /// adapter that is not durable.
-    ///
-    /// # Arguments
-    ///
-    /// * `adapter` - The adapter name, for the error.
-    ///
-    /// # Errors
-    /// [`EventBusError::Unsupported`] with [`MissingCapability::Durability`] when
-    /// this adapter is not durable.
-    pub fn require_durable(&self, adapter: &'static str) -> Result<(), EventBusError> {
-        if self.durable {
-            return Ok(());
-        }
-        Err(EventBusError::Unsupported {
-            needed: MissingCapability::Durability,
-            adapter,
-        })
-    }
-}
-
-/// A capability a caller asked for that an adapter does not have.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MissingCapability {
-    /// Resuming from a cursor.
-    Replay,
-    /// Surviving a restart.
-    Durability,
-    /// Redelivery until acknowledged.
-    AtLeastOnce,
-}
-
-/// Where a subscriber starts reading.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StartPosition {
-    /// Only events published from now on.
-    Now,
-    /// Everything the adapter still holds.
-    Earliest,
-    /// Immediately after this cursor. Needs [`MissingCapability::Replay`].
-    Cursor(String),
-}
-
 /// Why a bus operation failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum EventBusError {
-    /// The adapter cannot do what was asked. Raised at subscribe time, not at
-    /// delivery time, so the failure is visible where it can be fixed.
-    #[error("the `{adapter}` event bus cannot do {needed:?}")]
-    Unsupported {
-        /// What was needed.
-        needed: MissingCapability,
-        /// Which adapter was asked.
-        adapter: &'static str,
-    },
-    /// The payload exceeded the adapter's limit.
-    #[error("event payload is {size} bytes, over the {max} byte limit")]
-    TooLarge {
-        /// The payload's size.
-        size: usize,
-        /// The limit.
-        max: usize,
-    },
     /// The adapter's transport failed.
     #[error("event bus transport: {0}")]
     Transport(String),
@@ -306,11 +158,17 @@ pub enum EventBusError {
 pub type EventStream = Pin<Box<dyn Stream<Item = CloudEvent> + Send>>;
 
 /// Publish and subscribe to events.
+///
+/// Every adapter starts a subscription from the tail - the only shape this
+/// workspace's one consumer, `toolbox-web`'s SSE reconnect story, has ever
+/// needed. It resumes a gap by re-querying the domain for what it missed, then
+/// subscribing live; a bus with replay is a future adapter's addition, not a
+/// contract every adapter carries today. Delivery and durability genuinely
+/// differ per adapter and belong in its own doc comment, not a negotiated
+/// capability: [`InProcessEventBus`] is at-most-once and drops on lag, and a
+/// shared adapter would document its own guarantee the same way.
 #[async_trait]
 pub trait EventBus: Send + Sync {
-    /// What this adapter can do.
-    fn capabilities(&self) -> EventBusCapabilities;
-
     /// Publish one event.
     ///
     /// # Arguments
@@ -321,24 +179,16 @@ pub trait EventBus: Send + Sync {
     ///   may need to own it past the call.
     ///
     /// # Errors
-    /// [`EventBusError`] when the payload is too large or the transport fails.
+    /// [`EventBusError`] when the transport fails.
     async fn publish(&self, topic: &Topic, event: CloudEvent) -> Result<(), EventBusError>;
 
-    /// Subscribe to a topic.
+    /// Subscribe to a topic, from now on.
     ///
     /// # Arguments
     ///
     /// * `topic` - What to subscribe to.
-    /// * `from` - Where to start reading. Anything other than the tail needs a
-    ///   capability, so an adapter without it fails here rather than silently
-    ///   starting from now.
     ///
     /// # Errors
-    /// [`EventBusError::Unsupported`] when `from` needs a capability this adapter
-    /// does not have.
-    async fn subscribe(
-        &self,
-        topic: &Topic,
-        from: StartPosition,
-    ) -> Result<EventStream, EventBusError>;
+    /// [`EventBusError`] when the transport fails.
+    async fn subscribe(&self, topic: &Topic) -> Result<EventStream, EventBusError>;
 }

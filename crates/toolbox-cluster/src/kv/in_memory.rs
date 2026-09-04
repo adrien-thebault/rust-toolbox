@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use moka::{Expiry, future::Cache};
 
-use super::{KvStore, KvStoreCapabilities, KvStoreError};
+use super::{KvStore, KvStoreError};
 
 /// An entry, carrying its own expiry so the cache can honour per-key TTLs.
 #[derive(Debug, Clone)]
@@ -103,16 +103,6 @@ impl InMemoryKvStore {
 
 #[async_trait]
 impl KvStore for InMemoryKvStore {
-    fn capabilities(&self) -> KvStoreCapabilities {
-        KvStoreCapabilities {
-            atomic_take: true,
-            atomic_add: true,
-            ttl: true,
-            durable: false,
-            shared: false,
-        }
-    }
-
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
         Ok(self
             .cache
