@@ -27,7 +27,7 @@ pub const X_SHARED_SECRET: &str = "x-shared-secret";
 pub const X_FWD_PRINCIPAL: &str = "x-fwd-principal";
 
 pub use client::{
-    Backoff, ClientChannel, ClientConfig, ClientError, ClientInterceptor, ClientService,
+    BackoffConfig, ClientChannel, ClientConfig, ClientError, ClientInterceptor, ClientService,
     RetryPolicy, client, forwarding, is_retryable, with_retry,
 };
 pub use limits::MessageLimits;

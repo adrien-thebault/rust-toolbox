@@ -12,7 +12,7 @@ use tracing::debug;
 /// Exponential backoff parameters: the first wait, the ceiling, the multiplier
 /// applied to each successive wait, and whether to jitter.
 #[derive(Debug, Clone, Copy)]
-pub struct Backoff {
+pub struct BackoffConfig {
     /// The first wait.
     pub min_delay: Duration,
     /// The longest wait.
@@ -23,7 +23,7 @@ pub struct Backoff {
     pub jitter: bool,
 }
 
-impl Default for Backoff {
+impl Default for BackoffConfig {
     fn default() -> Self {
         Self {
             min_delay: Duration::from_millis(100),
@@ -46,7 +46,7 @@ pub enum RetryPolicy {
         /// How many attempts in total, including the first.
         max_attempts: usize,
         /// How long to wait between them.
-        backoff: Backoff,
+        backoff: BackoffConfig,
         /// The bare method names that may be retried, e.g. `["GetEvent"]`.
         methods: &'static [&'static str],
     },

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use tonic::{Code, Status};
-use toolbox_grpc::{Backoff, RetryPolicy, is_retryable, with_retry};
+use toolbox_grpc::{BackoffConfig, RetryPolicy, is_retryable, with_retry};
 
 /// A policy that silently duplicates a create is worse than no retry at all,
 /// so the default is off and the methods must be listed.
@@ -17,7 +17,7 @@ fn the_default_policy_retries_nothing() {
 fn only_the_listed_methods_are_retried() {
     let policy = RetryPolicy::Idempotent {
         max_attempts: 3,
-        backoff: Backoff::default(),
+        backoff: BackoffConfig::default(),
         methods: &["GetEvent", "ListEvents"],
     };
 
@@ -30,7 +30,7 @@ fn only_the_listed_methods_are_retried() {
 
 #[test]
 fn the_default_backoff_jitters_so_a_fleet_does_not_retry_in_lockstep() {
-    let backoff = Backoff::default();
+    let backoff = BackoffConfig::default();
     assert!(backoff.jitter);
     assert!(backoff.min_delay < backoff.max_delay);
     assert!(backoff.factor > 1.0);
@@ -69,7 +69,7 @@ async fn with_retry_does_nothing_under_the_default_policy() {
 async fn a_listed_method_is_retried_until_it_succeeds() {
     let policy = RetryPolicy::Idempotent {
         max_attempts: 3,
-        backoff: Backoff {
+        backoff: BackoffConfig {
             min_delay: Duration::from_millis(1),
             max_delay: Duration::from_millis(2),
             factor: 1.0,
@@ -102,7 +102,7 @@ async fn a_listed_method_is_retried_until_it_succeeds() {
 async fn an_unlisted_method_is_not_retried() {
     let policy = RetryPolicy::Idempotent {
         max_attempts: 5,
-        backoff: Backoff::default(),
+        backoff: BackoffConfig::default(),
         methods: &["GetTodo"],
     };
 
@@ -120,7 +120,7 @@ async fn an_unlisted_method_is_not_retried() {
 async fn a_non_retryable_failure_stops_immediately() {
     let policy = RetryPolicy::Idempotent {
         max_attempts: 5,
-        backoff: Backoff {
+        backoff: BackoffConfig {
             min_delay: Duration::from_millis(1),
             max_delay: Duration::from_millis(1),
             factor: 1.0,
@@ -143,7 +143,7 @@ async fn a_non_retryable_failure_stops_immediately() {
 async fn retries_are_bounded_by_max_attempts() {
     let policy = RetryPolicy::Idempotent {
         max_attempts: 3,
-        backoff: Backoff {
+        backoff: BackoffConfig {
             min_delay: Duration::from_millis(1),
             max_delay: Duration::from_millis(1),
             factor: 1.0,

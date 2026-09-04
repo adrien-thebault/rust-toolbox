@@ -18,7 +18,7 @@ use std::time::Duration;
 
 pub use error::ClientError;
 pub use interceptor::{ClientInterceptor, forwarding};
-pub use retry::{Backoff, RetryPolicy, is_retryable, with_retry};
+pub use retry::{BackoffConfig, RetryPolicy, is_retryable, with_retry};
 use secrecy::SecretString;
 use tonic::{
     service::interceptor::InterceptedService,

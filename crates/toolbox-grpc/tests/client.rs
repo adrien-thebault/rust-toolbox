@@ -1,7 +1,7 @@
 mod error;
 mod retry;
 
-use toolbox_grpc::{Backoff, ClientConfig, MessageLimits, RetryPolicy};
+use toolbox_grpc::{BackoffConfig, ClientConfig, MessageLimits, RetryPolicy};
 
 #[test]
 fn a_config_defaults_to_no_retries_and_bounded_messages() {
@@ -29,7 +29,7 @@ fn limits_a_secret_and_a_retry_policy_are_builder_set() {
         .service_secret("s3cr3t")
         .retry(RetryPolicy::Idempotent {
             max_attempts: 2,
-            backoff: Backoff::default(),
+            backoff: BackoffConfig::default(),
             methods: &["GetTodo"],
         });
 
