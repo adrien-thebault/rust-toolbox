@@ -3,7 +3,7 @@
 use clap::Parser;
 use {{crate_name}}_todo::{Connection, MIGRATIONS, TodoService, proto};
 use toolbox_db::args::DatabaseArgs;
-use toolbox_grpc::{ServerConfig, serve};
+use toolbox_grpc::{RoutesBuilder, ServerConfig, serve};
 use toolbox_server::{
     args::{DeploymentArgs, ServerArgs},
     startup::StartupConfig,
@@ -40,12 +40,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment = args.deployment.resolve()?;
     let cfg = StartupConfig::new(args.server.listen_addr, &deployment);
 
-    // Graceful shutdown, health, reflection and the deployment check all come
-    // from serve; none of it is written here. A second domain is one more
-    // `.add_service(...)` if it shares this process, or its own binary if not.
-    serve(cfg, ServerConfig::default().reflection(proto::DESCRIPTOR))
-        .add_service(TodoService::new(db).into_server())
-        .run()
-        .await?;
+    // Graceful shutdown, health, reflection, the standard stack and the
+    // deployment check all come from serve; none of it is written here. A
+    // second domain is one more `add_service` if it shares this process, or its
+    // own binary if not.
+    let mut routes = RoutesBuilder::default();
+    routes.add_service(TodoService::new(db).into_server());
+    serve(cfg, ServerConfig::default().reflection(proto::DESCRIPTOR), routes).await?;
     Ok(())
 }

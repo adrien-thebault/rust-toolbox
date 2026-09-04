@@ -9,7 +9,7 @@ tonic building blocks, split by direction: `client` calls another service,
 | `client::interceptor` | what every outgoing request carries: deadline, shared secret, forwarded principal |
 | `client::retry` | `RetryPolicy` and `with_retry` |
 | `client::error` | `ClientError` |
-| `server` | `serve()`, health and reflection |
+| `server` | `serve()`: bind, the standard stack, graceful drain, health and reflection |
 | `server::shared_secret` | `shared_secret_layer`: the "is this an allowed caller" gate |
 | `server::identity` | `identity_layer`, `require`/`optional`: who the end user is |
 | `status` | `to_status`, `from_status`, and the `ErrorKind` mapping |

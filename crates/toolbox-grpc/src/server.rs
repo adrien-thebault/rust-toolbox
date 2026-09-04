@@ -1,11 +1,19 @@
 //! Serving a tonic server.
+//!
+//! Shaped to match `toolbox_web::server::serve`: assemble the transport object,
+//! hand it over, and the one call binds, serves and drains. The one gRPC-only
+//! difference is that the standard stack is applied here rather than by the
+//! caller, because every service in one tonic server gets the same treatment -
+//! there is no per-route split like the axum realtime one.
 
 pub mod identity;
 pub mod shared_secret;
 
-use tonic::{service::RoutesBuilder, transport::Server};
+pub use tonic::service::RoutesBuilder;
+use tonic::transport::Server;
 use toolbox_server::{
     shutdown::shutdown_signal,
+    stack::{StackConfig, grpc_stack},
     startup::{StartupConfig, StartupError, bind},
 };
 use tracing::warn;
@@ -23,18 +31,22 @@ pub struct ServerConfig {
     ///
     /// ```ignore
     /// let cfg = ServerConfig::default();
-    /// serve(serve_cfg, cfg.clone())
-    ///     .add_service(
-    ///         TodoServiceServer::new(svc)
-    ///             .max_decoding_message_size(cfg.limits.max_decoding)
-    ///             .max_encoding_message_size(cfg.limits.max_encoding),
-    ///     )
+    /// let mut routes = RoutesBuilder::default();
+    /// routes.add_service(
+    ///     TodoServiceServer::new(svc)
+    ///         .max_decoding_message_size(cfg.limits.max_decoding)
+    ///         .max_encoding_message_size(cfg.limits.max_encoding),
+    /// );
+    /// serve(serve_cfg, cfg, routes).await?;
     /// ```
     ///
     /// Carrying it here is still worth it: the client half reads the same value
     /// from `ClientChannel::limits()`, so the two ends drift only if somebody
     /// passes different configs, rather than by forgetting one.
     pub limits: MessageLimits,
+    /// Timeout, trace level and body limit for the standard stack this server
+    /// wraps every service in.
+    pub stack: StackConfig,
     /// Whether to serve the standard health service.
     pub health: bool,
     /// Whether to serve server reflection, so `grpcurl` works without the protos
@@ -46,6 +58,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             limits: MessageLimits::default(),
+            stack: StackConfig::default(),
             health: true,
             reflection: None,
         }
@@ -64,113 +77,95 @@ impl ServerConfig {
         self.reflection = Some(descriptor);
         self
     }
+
+    /// Set the standard stack's timeout, body limit and trace level.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack` - The stack settings. `StackConfig::unbounded()` is what a
+    ///   server of long-lived streams needs, so the deadline layer does not cut
+    ///   them off.
+    #[must_use]
+    pub fn stack(mut self, stack: StackConfig) -> Self {
+        self.stack = stack;
+        self
+    }
 }
 
-/// Start building a gRPC server.
+/// Bind, serve, and drain gracefully on `SIGTERM`.
+///
+/// The standard gRPC stack (`grpc_stack`) is applied for you, unlike the axum
+/// side where `http_stack` is the caller's to place: a router with realtime
+/// routes needs a different stack on those, whereas every service in one tonic
+/// server gets the same treatment.
 ///
 /// # Arguments
 ///
 /// * `cfg` - Where to listen, plus the adapters and deployment the guard checks
 ///   first.
-/// * `server` - What the server does beyond routing: health, reflection and
-///   limits.
-#[must_use]
-pub fn serve(cfg: StartupConfig<'_>, server: ServerConfig) -> ServerBuilder<'_> {
-    ServerBuilder {
-        cfg,
-        server,
-        routes: RoutesBuilder::default(),
-    }
-}
-
-/// Collects services, then serves them with the standard drain sequence.
-pub struct ServerBuilder<'a> {
-    /// Listen address, deployment and shutdown handle.
-    cfg: StartupConfig<'a>,
-    /// gRPC-specific stack and limit settings.
+/// * `server` - What the server does beyond routing: the stack, health,
+///   reflection and message limits.
+/// * `routes` - The services to serve. Health and reflection are added onto it
+///   here, from `server`.
+///
+/// # Errors
+/// [`StartupError::Deployment`] when a single-replica adapter is running
+/// clustered, or [`StartupError::Io`] when the address cannot be bound.
+pub async fn serve(
+    cfg: StartupConfig<'_>,
     server: ServerConfig,
-    /// The services collected so far.
-    routes: RoutesBuilder,
-}
+    mut routes: RoutesBuilder,
+) -> Result<(), StartupError> {
+    let health_reporter = if server.health {
+        let (reporter, health) = tonic_health::server::health_reporter();
+        // The empty service name is the gRPC convention for "the server as a
+        // whole", which is what a Kubernetes gRPC probe with no `service`
+        // checks.
+        reporter
+            .set_service_status("", tonic_health::ServingStatus::Serving)
+            .await;
+        routes.add_service(health);
+        Some(reporter)
+    } else {
+        None
+    };
 
-impl std::fmt::Debug for ServerBuilder<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ServerBuilder")
-            .field("server", &self.server)
-            .finish_non_exhaustive()
-    }
-}
-
-impl ServerBuilder<'_> {
-    /// Mount a service.
-    ///
-    /// # Arguments
-    ///
-    /// * `service` - A generated tonic service to mount. Every service added
-    ///   here gets the same stack and the same drain.
-    #[must_use]
-    pub fn add_service<S>(mut self, service: S) -> Self
-    where
-        S: tower::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<tonic::body::Body>,
-                Error = std::convert::Infallible,
-            > + tonic::server::NamedService
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        S::Future: Send + 'static,
-    {
-        self.routes.add_service(service);
-        self
-    }
-
-    /// Bind and serve until `SIGTERM`, then drain.
-    ///
-    /// # Errors
-    /// [`StartupError::Deployment`] when a single-replica adapter is running
-    /// clustered, or [`StartupError::Io`] when the address cannot be bound.
-    pub async fn run(mut self) -> Result<(), StartupError> {
-        if self.server.health {
-            let (reporter, health) = tonic_health::server::health_reporter();
-            // The empty service name is the gRPC convention for "the server as
-            // a whole", which is what a Kubernetes gRPC probe with no `service`
-            // checks.
-            reporter
-                .set_service_status("", tonic_health::ServingStatus::Serving)
-                .await;
-            self.routes.add_service(health);
-        }
-
-        if let Some(descriptor) = self.server.reflection {
-            match tonic_reflection::server::Builder::configure()
-                .register_encoded_file_descriptor_set(descriptor)
-                .build_v1()
-            {
-                Ok(service) => {
-                    self.routes.add_service(service);
-                }
-                Err(e) => warn!(error = %e, "reflection could not be enabled"),
+    if let Some(descriptor) = server.reflection {
+        match tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(descriptor)
+            .build_v1()
+        {
+            Ok(service) => {
+                routes.add_service(service);
             }
+            Err(e) => warn!(error = %e, "reflection could not be enabled"),
         }
-
-        let listener = bind(&self.cfg).await?;
-        let shutdown = self.cfg.shutdown_handle.clone();
-        let drain = self.cfg.shutdown;
-
-        Server::builder()
-            .add_routes(self.routes.routes())
-            .serve_with_incoming_shutdown(
-                tokio_stream::wrappers::TcpListenerStream::new(listener),
-                async move {
-                    shutdown_signal().await;
-                    shutdown.drain(drain).await;
-                },
-            )
-            .await
-            .map_err(|e| StartupError::Io(std::io::Error::other(e.to_string())))?;
-
-        Ok(())
     }
+
+    let listener = bind(&cfg).await?;
+    let shutdown = cfg.shutdown_handle.clone();
+    let drain = cfg.shutdown;
+
+    Server::builder()
+        .layer(grpc_stack(server.stack))
+        .add_routes(routes.routes())
+        .serve_with_incoming_shutdown(
+            tokio_stream::wrappers::TcpListenerStream::new(listener),
+            async move {
+                shutdown_signal().await;
+                // Fail the gRPC health probe the moment the signal lands, so a
+                // Kubernetes readiness check pulls this replica before the drain
+                // wait - the same contract the axum side's `/ready` honours.
+                if let Some(reporter) = health_reporter {
+                    reporter
+                        .set_service_status("", tonic_health::ServingStatus::NotServing)
+                        .await;
+                }
+                shutdown.drain(drain).await;
+            },
+        )
+        .await
+        .map_err(|e| StartupError::Io(std::io::Error::other(e.to_string())))?;
+
+    Ok(())
 }
