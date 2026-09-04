@@ -92,9 +92,11 @@ README links them.
    or wire contract. If one exists and fits, implement it even when bespoke
    would be 20% less code. If it does not fit, write why in the doc comment.
 3. **Does it hold state across requests?** Then it is a **trait with
-   adapters**, not a struct: a local adapter, at least one shared adapter,
-   capabilities declared rather than assumed, and unsupported operations
-   failing at wiring time rather than at runtime.
+   adapters**, not a struct: a local adapter, at least one shared adapter, and
+   unsupported operations failing at wiring time rather than at runtime.
+   Declare a capability only where adapters genuinely differ today - a
+   requirement every adapter must meet belongs in the contract, not in a
+   negotiated flag.
 
 **Write the answer into the module's doc comment.** One sentence, straight
 after the summary line, saying why the module is there. No "Why this exists:"
@@ -169,3 +171,19 @@ Do not helpfully reintroduce these:
   `ipnet` and `cloudevents-sdk` already exist.
 - The three mutually exclusive backend features and their `compile_error!`
   blocks.
+- `toolbox-cluster-postgres`, `OutboxBus`, `PostgresKvStore`,
+  `PostgresLockManager` - the crate reimplemented infrastructure (a broker, a
+  KV store, a lock service) in Postgres rather than adapting this workspace's
+  code to a third-party one, had no in-repo consumer, and was the only crate
+  shipping migrations into a consumer's schema. Write the Redis, etcd or Kafka
+  adapter the traits were always the seam for instead.
+- The deployment guard - `Deployment`, `Scope`, `Adapter`, `DeploymentArgs`,
+  `check_deployment()`. Insurance against an org-drift failure mode (the
+  person who chooses an adapter and the person who flips `DEPLOYMENT=clustered`
+  being different people at different times) that this workspace's own
+  maintainers do not need protecting against.
+- `toolbox_db::Now` - a trait implemented for three different datetime crates
+  behind two cargo features, kept alive for a chrono-to-jiff swap nobody
+  planned. `#[derive(Entity)]`'s timestamp autofill calls `chrono` directly
+  now; the swap, if it ever happens, is a `toolbox-macros` change, not a
+  consumer-facing one.

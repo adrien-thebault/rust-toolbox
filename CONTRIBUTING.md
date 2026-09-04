@@ -32,8 +32,10 @@ does **not** fit, write why in the doc comment.
 ### Does it hold state across requests?
 
 Then it is a **trait with adapters**, not a struct: a local adapter, at least
-one shared adapter, capabilities declared rather than assumed, and unsupported
-operations failing at *wiring* time rather than at runtime.
+one shared adapter, and unsupported operations failing at *wiring* time rather
+than at runtime. Declare a capability only where adapters genuinely differ
+today - a requirement every adapter must meet belongs in the contract, not in
+a negotiated flag.
 
 ### Then write the answer down
 
