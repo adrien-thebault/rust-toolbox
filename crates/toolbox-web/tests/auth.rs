@@ -14,9 +14,9 @@ use toolbox_auth::{
     RefreshInfo, StoredUser, UserStore, hash_password,
 };
 use toolbox_web::{
-    ClientIpTrust,
+    ClientIpTrustPolicy,
     auth::{AuthState, auth_router, session_layer},
-    rate_limit::RateLimit,
+    rate_limit::RateLimitConfig,
 };
 
 mod forwarded;
@@ -93,11 +93,11 @@ fn state() -> State {
 fn app(state: State) -> Router {
     app_with(
         state,
-        &RateLimit::new(5, Duration::from_secs(5), ClientIpTrust::hops(1)),
+        &RateLimitConfig::new(5, Duration::from_secs(5), ClientIpTrustPolicy::hops(1)),
     )
 }
 
-fn app_with(state: State, login: &RateLimit) -> Router {
+fn app_with(state: State, login: &RateLimitConfig) -> Router {
     with_peer(
         auth_router::<State>(login)
             .route(

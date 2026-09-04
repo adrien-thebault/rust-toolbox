@@ -39,7 +39,7 @@ pub struct StoredResponse {
 
 /// What a claim attempt found.
 #[derive(Debug)]
-pub enum Claim {
+pub enum IdempotencyOutcome {
     /// This caller owns the key and should run the handler.
     Fresh,
     /// The first request finished; replay its response.
@@ -106,7 +106,11 @@ impl Idempotency {
     ///
     /// # Errors
     /// [`ApiError`] when the store fails.
-    pub async fn claim(&self, key: &IdempotencyKey, route: &str) -> Result<Claim, ApiError> {
+    pub async fn claim(
+        &self,
+        key: &IdempotencyKey,
+        route: &str,
+    ) -> Result<IdempotencyOutcome, ApiError> {
         // Scoped by route as well as key, because two endpoints given the same
         // client-chosen key are two different operations - and replaying one's
         // response for the other would be worse than not replaying at all.
@@ -120,21 +124,21 @@ impl Idempotency {
             .await
             .map_err(store_error)?
         {
-            return Ok(Claim::Fresh);
+            return Ok(IdempotencyOutcome::Fresh);
         }
 
         match self.kv.get(&key).await.map_err(store_error)? {
             // The entry expired between the `add` and the `get`; run the
             // handler rather than failing the request.
-            None => Ok(Claim::Fresh),
-            Some(raw) if raw == IN_FLIGHT => Ok(Claim::InFlight),
+            None => Ok(IdempotencyOutcome::Fresh),
+            Some(raw) if raw == IN_FLIGHT => Ok(IdempotencyOutcome::InFlight),
             Some(raw) => match serde_json::from_slice(&raw) {
-                Ok(stored) => Ok(Claim::Replay(Box::new(stored))),
+                Ok(stored) => Ok(IdempotencyOutcome::Replay(Box::new(stored))),
                 // A record we cannot read is a record we cannot honour; run
                 // the handler rather than failing the request.
                 Err(e) => {
                     warn!(error = %e, "an idempotency record could not be decoded");
-                    Ok(Claim::Fresh)
+                    Ok(IdempotencyOutcome::Fresh)
                 }
             },
         }

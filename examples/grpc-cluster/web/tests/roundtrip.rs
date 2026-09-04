@@ -6,7 +6,7 @@ use example_web::{auth::AuthConfig, routes::router};
 use secrecy::SecretString;
 use toolbox_grpc::{ClientConfig, client};
 use toolbox_test::{TestCluster, TestGateway, assert_problem, temp_db};
-use toolbox_web::{ClientIpTrust, rate_limit::RateLimit};
+use toolbox_web::{ClientIpTrustPolicy, rate_limit::RateLimitConfig};
 
 /// The seeded account's password. Hashed at test time rather than committed,
 /// so the fixture cannot drift from the argon2 parameters the crate uses.
@@ -25,16 +25,18 @@ fn config() -> AuthConfig {
 /// A backend on a real socket plus a gateway in process, which is the shape a
 /// deployment actually has.
 async fn cluster() -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
-    cluster_with(RateLimit::new(
+    cluster_with(RateLimitConfig::new(
         5,
         Duration::from_secs(5),
-        ClientIpTrust::hops(1),
+        ClientIpTrustPolicy::hops(1),
     ))
     .await
 }
 
 /// As above, with the credential routes throttled differently.
-async fn cluster_with(login: RateLimit) -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
+async fn cluster_with(
+    login: RateLimitConfig,
+) -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
     let (db, guard) = temp_db::<Connection>();
     db.migrate(MIGRATIONS).await.expect("migrations");
 
@@ -315,10 +317,10 @@ async fn a_refresh_token_redeems_for_a_usable_session() {
 /// rate limit that `auth_router` never attached.
 #[tokio::test]
 async fn repeated_login_attempts_are_throttled_and_the_rest_of_the_api_is_not() {
-    let (app, _cluster, _guard) = cluster_with(RateLimit::new(
+    let (app, _cluster, _guard) = cluster_with(RateLimitConfig::new(
         2,
         Duration::from_secs(60),
-        ClientIpTrust::hops(1),
+        ClientIpTrustPolicy::hops(1),
     ))
     .await;
 

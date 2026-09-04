@@ -12,9 +12,9 @@ use toolbox_server::{
     telemetry::TelemetryArgs,
 };
 use toolbox_web::{
-    ClientIpTrust,
+    ClientIpTrustPolicy,
     health::{HealthState, health_router},
-    rate_limit::RateLimit,
+    rate_limit::RateLimitConfig,
     serve,
 };
 
@@ -59,10 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // A handful of attempts, then one back every few seconds: a typo goes
     // unnoticed, credential stuffing from one address does not.
-    let login = RateLimit::new(
+    let login = RateLimitConfig::new(
         5,
         Duration::from_secs(5),
-        ClientIpTrust::hops(args.trusted_hops),
+        ClientIpTrustPolicy::hops(args.trusted_hops),
     );
 
     let cfg = StartupConfig::new(args.server.listen_addr);

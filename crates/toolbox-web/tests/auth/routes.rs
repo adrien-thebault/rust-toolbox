@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use http::StatusCode;
-use toolbox_web::{ClientIpTrust, rate_limit::RateLimit};
+use toolbox_web::{ClientIpTrustPolicy, rate_limit::RateLimitConfig};
 
 use super::{app, app_with, state};
 use crate::{call, get as get_req, post_json};
@@ -15,7 +15,7 @@ use crate::{call, get as get_req, post_json};
 async fn the_credential_routes_are_throttled_and_the_others_are_not() {
     let app = app_with(
         state(),
-        &RateLimit::new(1, Duration::from_secs(60), ClientIpTrust::hops(1)),
+        &RateLimitConfig::new(1, Duration::from_secs(60), ClientIpTrustPolicy::hops(1)),
     );
     let wrong = r#"{"username":"ada","password":"nope"}"#;
 

@@ -18,7 +18,7 @@ use toolbox_auth::{
 };
 
 use super::AuthState;
-use crate::client_ip::{ClientIpTrust, client_ip_of};
+use crate::client_ip::{ClientIpTrustPolicy, client_ip_of};
 
 /// What [`forwarded_auth_layer`] needs beyond the request itself.
 ///
@@ -31,7 +31,7 @@ pub struct ForwardedConfig {
     headers: ForwardedHeaders,
     /// How the peer address is resolved, matching what the rest of the process
     /// uses. It feeds the provider's peer-trust check.
-    pub trust: ClientIpTrust,
+    pub trust: ClientIpTrustPolicy,
     /// The header carrying the proxy's shared secret, when the registry's
     /// [`ForwardedIdentityProvider`] trusts a secret rather than a peer list.
     /// Its value is read into [`ForwardedIdentity::secret`]; unset means the
@@ -51,7 +51,7 @@ impl ForwardedConfig {
     pub fn new() -> Self {
         Self {
             headers: ForwardedHeaders::default(),
-            trust: ClientIpTrust::hops(1),
+            trust: ClientIpTrustPolicy::hops(1),
             secret_header: None,
         }
     }
@@ -67,7 +67,7 @@ impl ForwardedConfig {
     pub fn for_provider(provider: &ForwardedIdentityProvider) -> Self {
         Self {
             headers: provider.headers().clone(),
-            trust: ClientIpTrust::hops(1),
+            trust: ClientIpTrustPolicy::hops(1),
             secret_header: None,
         }
     }
@@ -78,7 +78,7 @@ impl ForwardedConfig {
     ///
     /// * `trust` - Must match what the rest of the process uses.
     #[must_use]
-    pub fn trust(mut self, trust: ClientIpTrust) -> Self {
+    pub fn trust(mut self, trust: ClientIpTrustPolicy) -> Self {
         self.trust = trust;
         self
     }

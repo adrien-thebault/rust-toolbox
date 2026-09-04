@@ -29,7 +29,7 @@ use tower_governor::{
 };
 
 use crate::{
-    client_ip::{ClientIpTrust, bucket, client_ip_of},
+    client_ip::{ClientIpTrustPolicy, bucket, client_ip_of},
     error::ApiError,
 };
 
@@ -41,11 +41,11 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct ForwardedForKeyExtractor {
     /// How the client entry is picked out of `X-Forwarded-For`.
-    trust: ClientIpTrust,
+    trust: ClientIpTrustPolicy,
 }
 
 impl ForwardedForKeyExtractor {
-    /// An extractor using `trust` to find the client. See [`ClientIpTrust`].
+    /// An extractor using `trust` to find the client. See [`ClientIpTrustPolicy`].
     ///
     /// # Arguments
     ///
@@ -53,7 +53,7 @@ impl ForwardedForKeyExtractor {
     ///   of the process uses, or the limiter keys on a different caller than
     ///   the logs do.
     #[must_use]
-    pub fn new(trust: ClientIpTrust) -> Self {
+    pub fn new(trust: ClientIpTrustPolicy) -> Self {
         Self { trust }
     }
 }
@@ -79,20 +79,20 @@ impl KeyExtractor for ForwardedForKeyExtractor {
 /// public read endpoint wants far more - so all three are stated. `trust`
 /// decides how the caller is identified; it must match the rest of the process.
 #[derive(Debug, Clone)]
-pub struct RateLimit {
+pub struct RateLimitConfig {
     /// How many requests one caller may make back to back.
     pub burst: u32,
     /// How long before one spent request is given back.
     pub replenish_every: Duration,
     /// How the caller is identified behind proxies.
-    pub trust: ClientIpTrust,
+    pub trust: ClientIpTrustPolicy,
 }
 
-impl RateLimit {
+impl RateLimitConfig {
     /// A throttle allowing `burst` requests, replenished one per
     /// `replenish_every`, keyed by `trust`.
     #[must_use]
-    pub fn new(burst: u32, replenish_every: Duration, trust: ClientIpTrust) -> Self {
+    pub fn new(burst: u32, replenish_every: Duration, trust: ClientIpTrustPolicy) -> Self {
         Self {
             burst,
             replenish_every,

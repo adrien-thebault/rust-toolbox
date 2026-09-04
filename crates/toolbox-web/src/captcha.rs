@@ -1,8 +1,7 @@
 //! Captcha verification for login and signup forms.
 //!
-//! Three providers with three slightly different response shapes behind one
-//! trait, so swapping Turnstile for hCaptcha is a configuration change rather
-//! than a code change.
+//! One trait, so a login route depends on "something that checks a token"
+//! rather than a specific vendor.
 
 mod always_pass;
 mod third_party;
@@ -33,27 +32,4 @@ pub trait CaptchaVerifier: Send + Sync + 'static {
     /// [`ApiError`] when the provider could not be reached, which is
     /// deliberately **not** the same as the token being bad.
     async fn verify(&self, token: &str, remote_ip: Option<&str>) -> Result<bool, ApiError>;
-}
-
-/// Which provider to verify against.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CaptchaProvider {
-    /// Cloudflare Turnstile.
-    Turnstile,
-    /// hCaptcha.
-    HCaptcha,
-    /// Google reCAPTCHA v2/v3.
-    ReCaptcha,
-}
-
-impl CaptchaProvider {
-    /// The verification endpoint.
-    #[must_use]
-    pub fn endpoint(self) -> &'static str {
-        match self {
-            Self::Turnstile => "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-            Self::HCaptcha => "https://api.hcaptcha.com/siteverify",
-            Self::ReCaptcha => "https://www.google.com/recaptcha/api/siteverify",
-        }
-    }
 }

@@ -3,8 +3,8 @@ use std::time::Duration;
 use axum::{Router, routing::get};
 use http::StatusCode;
 use toolbox_web::{
-    ClientIpTrust,
-    rate_limit::{ForwardedForKeyExtractor, RateLimit, error_response_handler},
+    ClientIpTrustPolicy,
+    rate_limit::{ForwardedForKeyExtractor, RateLimitConfig, error_response_handler},
 };
 use tower_governor::{GovernorError, key_extractor::KeyExtractor};
 
@@ -27,7 +27,7 @@ fn request(xff: &str, peer: [u8; 4]) -> http::Request<()> {
 /// the right of `X-Forwarded-For` is what stops a client choosing its bucket.
 #[test]
 fn the_extractor_keys_on_the_trusted_hop_not_the_client_supplied_entry() {
-    let extractor = ForwardedForKeyExtractor::new(ClientIpTrust::hops(1));
+    let extractor = ForwardedForKeyExtractor::new(ClientIpTrustPolicy::hops(1));
     let key = extractor
         .extract(&request("1.1.1.1, 2.2.2.2", [10, 0, 0, 1]))
         .unwrap();
@@ -36,7 +36,7 @@ fn the_extractor_keys_on_the_trusted_hop_not_the_client_supplied_entry() {
 
 #[test]
 fn the_extractor_falls_back_to_the_peer_when_the_header_is_short() {
-    let extractor = ForwardedForKeyExtractor::new(ClientIpTrust::hops(2));
+    let extractor = ForwardedForKeyExtractor::new(ClientIpTrustPolicy::hops(2));
     let key = extractor
         .extract(&request("1.1.1.1", [10, 0, 0, 1]))
         .unwrap();
@@ -69,7 +69,7 @@ fn an_unidentifiable_client_is_a_400_not_a_429() {
 async fn the_layer_throttles_once_the_burst_is_spent() {
     let app = Router::new()
         .route("/x", get(|| async { "ok" }))
-        .layer(RateLimit::new(1, Duration::from_secs(60), ClientIpTrust::Peer).layer());
+        .layer(RateLimitConfig::new(1, Duration::from_secs(60), ClientIpTrustPolicy::Peer).layer());
 
     let req = || {
         let mut r = http::Request::builder()

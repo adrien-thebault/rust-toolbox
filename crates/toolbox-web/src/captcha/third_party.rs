@@ -1,4 +1,9 @@
-//! Verification against one of the third-party providers.
+//! Verification against a third-party siteverify endpoint.
+//!
+//! Turnstile, hCaptcha and reCAPTCHA all answer the same shape - `{success,
+//! "error-codes"}` - because Turnstile and hCaptcha were both built as
+//! drop-in reCAPTCHA replacements. So there is nothing here to select between:
+//! the consumer names the endpoint, this posts the form and reads the answer.
 
 use std::time::Duration;
 
@@ -6,7 +11,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::{debug, warn};
 
-use super::{CaptchaProvider, CaptchaVerifier};
+use super::CaptchaVerifier;
 use crate::error::ApiError;
 
 /// How long to wait for the provider before giving up.
@@ -15,7 +20,8 @@ use crate::error::ApiError;
 /// being slow.
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The siteverify response shared by the three providers.
+/// The siteverify response shared by every provider that speaks this
+/// protocol.
 #[derive(Debug, Deserialize)]
 struct SiteVerify {
     /// Whether the token passed.
@@ -26,10 +32,10 @@ struct SiteVerify {
     error_codes: Vec<String>,
 }
 
-/// Verifies against one of the three third-party providers.
+/// Verifies against a siteverify-shaped endpoint.
 pub struct ThirdPartyCaptcha {
-    /// Which provider to verify against.
-    provider: CaptchaProvider,
+    /// The provider's verification endpoint.
+    endpoint: String,
     /// The provider secret key.
     secret: secrecy::SecretString,
     /// The client used for the siteverify call.
@@ -39,7 +45,7 @@ pub struct ThirdPartyCaptcha {
 impl std::fmt::Debug for ThirdPartyCaptcha {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThirdPartyCaptcha")
-            .field("provider", &self.provider)
+            .field("endpoint", &self.endpoint)
             .finish_non_exhaustive()
     }
 }
@@ -49,19 +55,23 @@ impl ThirdPartyCaptcha {
     ///
     /// # Arguments
     ///
-    /// * `provider` - Which third-party service to verify against.
+    /// * `endpoint` - The provider's siteverify URL - Turnstile's
+    ///   `https://challenges.cloudflare.com/turnstile/v0/siteverify`,
+    ///   hCaptcha's `https://api.hcaptcha.com/siteverify`, reCAPTCHA's
+    ///   `https://www.google.com/recaptcha/api/siteverify`, or a self-hosted
+    ///   one that speaks the same protocol.
     /// * `secret` - The provider's server-side secret. It never reaches the
     ///   browser.
     ///
     /// # Errors
     /// [`ApiError`] when the HTTP client cannot be built.
-    pub fn new(provider: CaptchaProvider, secret: impl Into<String>) -> Result<Self, ApiError> {
+    pub fn new(endpoint: impl Into<String>, secret: impl Into<String>) -> Result<Self, ApiError> {
         let http = reqwest::ClientBuilder::new()
             .timeout(TIMEOUT)
             .build()
             .map_err(ApiError::internal)?;
         Ok(Self {
-            provider,
+            endpoint: endpoint.into(),
             secret: secrecy::SecretString::from(secret.into()),
             http,
         })
@@ -83,7 +93,7 @@ impl CaptchaVerifier for ThirdPartyCaptcha {
 
         let response = self
             .http
-            .post(self.provider.endpoint())
+            .post(&self.endpoint)
             .form(&form)
             .send()
             .await

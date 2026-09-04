@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use toolbox_auth::{AuthError, Credential, Principal};
 
 use super::AuthState;
-use crate::{error::ApiError, rate_limit::RateLimit};
+use crate::{error::ApiError, rate_limit::RateLimitConfig};
 
 /// A login request.
 #[derive(Debug, Deserialize)]
@@ -53,8 +53,8 @@ pub struct RefreshRequest {
 ///
 /// * `limit` - How `/auth/login` and `/auth/refresh` are throttled. A
 ///   credential endpoint wants only a few attempts per minute; see
-///   [`RateLimit`].
-pub fn auth_router<S: AuthState>(limit: &RateLimit) -> Router<S> {
+///   [`RateLimitConfig`].
+pub fn auth_router<S: AuthState>(limit: &RateLimitConfig) -> Router<S> {
     Router::new()
         .route("/auth/login", post(login::<S>))
         .route("/auth/refresh", post(refresh::<S>))

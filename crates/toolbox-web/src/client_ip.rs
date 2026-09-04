@@ -23,7 +23,7 @@ pub const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for
 /// global one, or lets a client forge its own bucket. Pick one deliberately,
 /// and use the same one everywhere.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ClientIpTrust {
+pub enum ClientIpTrustPolicy {
     /// Nothing sits in front: use the TCP peer, ignore `X-Forwarded-For`.
     Peer,
     /// Exactly `n` proxies append one entry each, so the client is `n` entries
@@ -35,7 +35,7 @@ pub enum ClientIpTrust {
     BehindProxies(Vec<IpNet>),
 }
 
-impl ClientIpTrust {
+impl ClientIpTrustPolicy {
     /// `n` proxy hops, or [`Peer`](Self::Peer) when `n` is zero.
     ///
     /// # Arguments
@@ -62,15 +62,15 @@ impl ClientIpTrust {
 /// * `headers` - The request headers, read for `X-Forwarded-For`.
 /// * `peer` - The TCP peer, used when there is no usable forwarded entry.
 ///   `None` when the router was not served with connect info.
-/// * `trust` - How to read the header. See [`ClientIpTrust`].
+/// * `trust` - How to read the header. See [`ClientIpTrustPolicy`].
 #[must_use]
 pub fn resolve_client_ip(
     headers: &HeaderMap,
     peer: Option<SocketAddr>,
-    trust: &ClientIpTrust,
+    trust: &ClientIpTrustPolicy,
 ) -> Option<IpAddr> {
     let peer_ip = peer.map(|p| p.ip());
-    if *trust == ClientIpTrust::Peer {
+    if *trust == ClientIpTrustPolicy::Peer {
         return peer_ip;
     }
 
@@ -88,13 +88,13 @@ pub fn resolve_client_ip(
         .collect();
 
     match trust {
-        ClientIpTrust::Peer => peer_ip,
-        ClientIpTrust::Hops(n) => entries
+        ClientIpTrustPolicy::Peer => peer_ip,
+        ClientIpTrustPolicy::Hops(n) => entries
             .len()
             .checked_sub(n.get())
             .and_then(|i| entries.get(i).copied().flatten())
             .or(peer_ip),
-        ClientIpTrust::BehindProxies(nets) => {
+        ClientIpTrustPolicy::BehindProxies(nets) => {
             for entry in entries.iter().rev() {
                 match entry {
                     // A trusted proxy: keep walking left.
@@ -138,9 +138,9 @@ fn parse_forwarded_entry(entry: &str) -> Option<IpAddr> {
 /// # Arguments
 ///
 /// * `parts` - The request parts being extracted from.
-/// * `trust` - How to read the forwarded header. See [`ClientIpTrust`].
+/// * `trust` - How to read the forwarded header. See [`ClientIpTrustPolicy`].
 #[must_use]
-pub fn client_ip(parts: &Parts, trust: &ClientIpTrust) -> Option<IpAddr> {
+pub fn client_ip(parts: &Parts, trust: &ClientIpTrustPolicy) -> Option<IpAddr> {
     client_ip_of(&parts.headers, &parts.extensions, trust)
 }
 
@@ -159,7 +159,7 @@ pub fn client_ip(parts: &Parts, trust: &ClientIpTrust) -> Option<IpAddr> {
 pub fn client_ip_of(
     headers: &HeaderMap,
     extensions: &http::Extensions,
-    trust: &ClientIpTrust,
+    trust: &ClientIpTrustPolicy,
 ) -> Option<IpAddr> {
     let peer = extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
     resolve_client_ip(headers, peer, trust)

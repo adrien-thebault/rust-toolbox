@@ -9,7 +9,7 @@ use axum::Router;
 use toolbox_web::{
     ApiError,
     auth::{ForwardedConfig, auth_router, forwarded_auth_layer, session_layer},
-    rate_limit::RateLimit,
+    rate_limit::RateLimitConfig,
 };
 
 use crate::state::AppState;
@@ -50,7 +50,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 /// * `login` - How `/auth/login` and `/auth/refresh` are throttled. The rest of
 ///   the API is not, which is why the limiter goes inside `auth_router` rather
 ///   than over the whole gateway.
-pub fn router(state: AppState, login: &RateLimit) -> Router {
+pub fn router(state: AppState, login: &RateLimitConfig) -> Router {
     // A forwarded-identity fallback: harmless with no `ForwardedIdentityProvider`
     // in the registry, and one `.with(...)` in `auth::providers` away from being
     // live. `session_layer` is the outer layer, so a real bearer token wins.

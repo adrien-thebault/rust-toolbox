@@ -3,7 +3,7 @@ use std::sync::Arc;
 use toolbox_cluster::InMemoryKvStore;
 use toolbox_web::{
     extract::IdempotencyKey,
-    idempotency::{Claim, Idempotency, StoredResponse, in_flight_error},
+    idempotency::{Idempotency, IdempotencyOutcome, StoredResponse, in_flight_error},
 };
 
 fn key(s: &str) -> IdempotencyKey {
@@ -39,7 +39,7 @@ async fn a_first_request_claims_the_key() {
     let idem = store();
     assert!(matches!(
         idem.claim(&key("abc"), "/pay").await.unwrap(),
-        Claim::Fresh
+        IdempotencyOutcome::Fresh
     ));
 }
 
@@ -51,7 +51,7 @@ async fn a_second_request_while_the_first_runs_is_a_conflict() {
     idem.claim(&key("abc"), "/pay").await.unwrap();
     assert!(matches!(
         idem.claim(&key("abc"), "/pay").await.unwrap(),
-        Claim::InFlight
+        IdempotencyOutcome::InFlight
     ));
 
     let err = in_flight_error();
@@ -66,7 +66,7 @@ async fn a_retry_after_completion_replays_the_recorded_response() {
     idem.record(&key("abc"), "/pay", &response()).await.unwrap();
 
     match idem.claim(&key("abc"), "/pay").await.unwrap() {
-        Claim::Replay(stored) => {
+        IdempotencyOutcome::Replay(stored) => {
             assert_eq!(stored.status, 201);
             assert_eq!(stored.body, br#"{"id":7}"#);
             assert_eq!(stored.content_type, "application/json");
@@ -86,7 +86,7 @@ async fn the_same_key_on_a_different_route_is_a_different_operation() {
 
     assert!(matches!(
         idem.claim(&key("abc"), "/refund").await.unwrap(),
-        Claim::Fresh
+        IdempotencyOutcome::Fresh
     ));
 }
 
@@ -100,7 +100,7 @@ async fn releasing_a_failed_request_lets_the_caller_retry() {
 
     assert!(matches!(
         idem.claim(&key("abc"), "/pay").await.unwrap(),
-        Claim::Fresh
+        IdempotencyOutcome::Fresh
     ));
 }
 
@@ -110,6 +110,6 @@ async fn different_keys_do_not_interfere() {
     idem.claim(&key("a"), "/pay").await.unwrap();
     assert!(matches!(
         idem.claim(&key("b"), "/pay").await.unwrap(),
-        Claim::Fresh
+        IdempotencyOutcome::Fresh
     ));
 }
