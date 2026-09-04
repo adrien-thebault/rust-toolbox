@@ -1,6 +1,6 @@
 use axum::{Router, routing::get};
 use toolbox_core::ErrorKind;
-use toolbox_test::{TestApp, assert_problem, problem::ProblemResponse};
+use toolbox_test::{TestGateway, assert_problem, problem::ProblemResponse};
 use toolbox_web::ApiError;
 
 fn app() -> Router {
@@ -27,14 +27,14 @@ fn app() -> Router {
 
 #[tokio::test]
 async fn assert_problem_checks_status_code_and_media_type() {
-    let app = TestApp::new(app());
+    let app = TestGateway::new(app());
     let problem = app.get_problem("/missing").await;
     assert_problem!(problem, 404, "EVENT_NOT_FOUND");
 }
 
 #[tokio::test]
 async fn assert_problem_can_require_a_metadata_field() {
-    let app = TestApp::new(app());
+    let app = TestGateway::new(app());
     let problem = app.get_problem("/invalid").await;
     assert_problem!(problem, 400, "VALIDATION_FAILED", "email");
 }

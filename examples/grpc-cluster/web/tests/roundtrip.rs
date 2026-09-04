@@ -5,7 +5,7 @@ use example_todo::{Connection, MIGRATIONS, TodoService};
 use example_web::{auth::AuthConfig, routes::router};
 use secrecy::SecretString;
 use toolbox_grpc::{ClientConfig, client};
-use toolbox_test::{TestApp, TestCluster, assert_problem, temp_db};
+use toolbox_test::{TestCluster, TestGateway, assert_problem, temp_db};
 use toolbox_web::{ClientIpTrust, rate_limit::RateLimit};
 
 /// The seeded account's password. Hashed at test time rather than committed,
@@ -24,7 +24,7 @@ fn config() -> AuthConfig {
 
 /// A backend on a real socket plus a gateway in process, which is the shape a
 /// deployment actually has.
-async fn cluster() -> (TestApp, TestCluster, toolbox_test::db::TempDb) {
+async fn cluster() -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
     cluster_with(RateLimit::new(
         5,
         Duration::from_secs(5),
@@ -34,7 +34,7 @@ async fn cluster() -> (TestApp, TestCluster, toolbox_test::db::TempDb) {
 }
 
 /// As above, with the credential routes throttled differently.
-async fn cluster_with(login: RateLimit) -> (TestApp, TestCluster, toolbox_test::db::TempDb) {
+async fn cluster_with(login: RateLimit) -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
     let (db, guard) = temp_db::<Connection>();
     db.migrate(MIGRATIONS).await.expect("migrations");
 
@@ -48,12 +48,12 @@ async fn cluster_with(login: RateLimit) -> (TestApp, TestCluster, toolbox_test::
 
     let channel = client(
         "todo",
-        &ClientConfig::new(&cluster.backends().uri("todo")).expect("a valid uri"),
+        &ClientConfig::new(&cluster.backend_uri("todo")).expect("a valid uri"),
     );
 
     let state = example_web::auth::state(channel, &config()).expect("the gateway configured");
 
-    (TestApp::new(router(state, &login)), cluster, guard)
+    (TestGateway::new(router(state, &login)), cluster, guard)
 }
 
 /// Log in as the seeded admin and return the bearer token.
@@ -61,7 +61,7 @@ async fn cluster_with(login: RateLimit) -> (TestApp, TestCluster, toolbox_test::
 /// No middleware injecting a `Principal`: the token comes out of the real login
 /// route, so the test covers the codec and the extractor rather than faking
 /// both.
-async fn login(app: &TestApp) -> String {
+async fn login(app: &TestGateway) -> String {
     let response = app
         .post_json(
             "/auth/login",
@@ -339,7 +339,7 @@ async fn repeated_login_attempts_are_throttled_and_the_rest_of_the_api_is_not() 
         "the wait the limiter computed has to reach the client, or it can only guess"
     );
     assert_problem!(
-        toolbox_test::app::problem_of(&throttled),
+        toolbox_test::gateway::problem_of(&throttled),
         429,
         "RATE_LIMITED"
     );
@@ -428,7 +428,7 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
 
     let channel = client(
         "todo",
-        &ClientConfig::new(&cluster.backends().uri("todo")).expect("a valid uri"),
+        &ClientConfig::new(&cluster.backend_uri("todo")).expect("a valid uri"),
     );
 
     // Without a caller deadline in scope, nothing is sent - inventing one

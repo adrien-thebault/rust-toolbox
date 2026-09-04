@@ -14,46 +14,6 @@ const READY_TIMEOUT: Duration = Duration::from_secs(10);
 /// How often to retry while waiting.
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
-/// Where each backend ended up listening.
-#[derive(Debug, Clone, Default)]
-pub struct BackendAddrs(BTreeMap<&'static str, SocketAddr>);
-
-impl BackendAddrs {
-    /// One backend's address.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The backend's registered name.
-    #[must_use]
-    pub fn get(&self, name: &str) -> Option<SocketAddr> {
-        self.0.get(name).copied()
-    }
-
-    /// One backend's address as a `http://host:port` URI.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The backend's registered name. An unknown one panics, because
-    ///   it is a wiring mistake in the test rather than a runtime condition.
-    ///
-    /// # Panics
-    /// When no backend was registered under `name`, which is a test wiring
-    /// mistake worth failing on rather than returning `None` into a builder.
-    #[must_use]
-    pub fn uri(&self, name: &str) -> String {
-        let addr = self
-            .get(name)
-            .unwrap_or_else(|| panic!("no backend named `{name}`; have {:?}", self.0.keys()));
-        format!("http://{addr}")
-    }
-
-    /// Every registered backend.
-    #[must_use]
-    pub fn all(&self) -> &BTreeMap<&'static str, SocketAddr> {
-        &self.0
-    }
-}
-
 /// Why a cluster could not be brought up.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -80,7 +40,7 @@ pub enum ClusterError {
 #[derive(Debug, Default)]
 pub struct TestCluster {
     /// The ephemeral address of each started backend, by name.
-    addrs: BackendAddrs,
+    addrs: BTreeMap<&'static str, SocketAddr>,
     /// The serve task for each backend, aborted on drop.
     handles: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -130,15 +90,36 @@ impl TestCluster {
         });
 
         wait_until_accepting(name, addr).await?;
-        self.addrs.0.insert(name, addr);
+        self.addrs.insert(name, addr);
         self.handles.push(handle);
         Ok(self)
     }
 
-    /// Where each backend is listening, to build clients from.
+    /// One backend's address, or `None` if nothing was registered under `name`.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The backend's registered name.
     #[must_use]
-    pub fn backends(&self) -> &BackendAddrs {
-        &self.addrs
+    pub fn backend(&self, name: &str) -> Option<SocketAddr> {
+        self.addrs.get(name).copied()
+    }
+
+    /// One backend's address as a `http://host:port` URI, to build a client from.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The backend's registered name.
+    ///
+    /// # Panics
+    /// When no backend was registered under `name`, which is a test wiring
+    /// mistake worth failing on rather than feeding `None` into a client builder.
+    #[must_use]
+    pub fn backend_uri(&self, name: &str) -> String {
+        let addr = self
+            .backend(name)
+            .unwrap_or_else(|| panic!("no backend named `{name}`; have {:?}", self.addrs.keys()));
+        format!("http://{addr}")
     }
 }
 

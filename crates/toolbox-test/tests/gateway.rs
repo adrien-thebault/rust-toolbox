@@ -1,5 +1,5 @@
 use axum::{Router, routing::get};
-use toolbox_test::TestApp;
+use toolbox_test::TestGateway;
 
 fn app() -> Router {
     Router::new().route("/ok", get(|| async { "fine" }))
@@ -7,7 +7,7 @@ fn app() -> Router {
 
 #[tokio::test]
 async fn the_gateway_runs_in_process_with_no_port_and_no_readiness_wait() {
-    let app = TestApp::new(app());
+    let app = TestGateway::new(app());
     let res = app.get("/ok").await;
     assert_eq!(res.status_code(), 200);
     assert_eq!(res.text(), "fine");
@@ -15,7 +15,7 @@ async fn the_gateway_runs_in_process_with_no_port_and_no_readiness_wait() {
 
 #[tokio::test]
 async fn post_json_reaches_a_post_route() {
-    let app = TestApp::new(Router::new().route(
+    let app = TestGateway::new(Router::new().route(
         "/echo",
         axum::routing::post(|body: String| async move { body }),
     ));

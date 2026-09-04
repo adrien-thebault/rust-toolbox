@@ -15,22 +15,22 @@ use crate::problem::ProblemResponse;
 pub const TEST_PEER: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::LOCALHOST), 51_000);
 
-/// A router driven in process.
+/// A gateway driven in process.
 ///
 /// No port is bound and there is no readiness wait, because there is nothing
 /// to wait for: `axum-test` calls the router directly.
-pub struct TestApp {
+pub struct TestGateway {
     /// The in-process axum-test server driving the router.
     server: axum_test::TestServer,
 }
 
-impl std::fmt::Debug for TestApp {
+impl std::fmt::Debug for TestGateway {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("TestApp")
+        f.write_str("TestGateway")
     }
 }
 
-impl TestApp {
+impl TestGateway {
     /// Drive `router` in process.
     ///
     /// # Arguments

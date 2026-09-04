@@ -7,7 +7,7 @@ Dev-only. Nothing here should ever be a runtime dependency.
 | Module | What it holds |
 |---|---|
 | `db` | `temp_db`: a private, migrated, self-deleting database |
-| `app` | `TestApp`: a router driven in process, no port and no readiness wait |
+| `gateway` | `TestGateway`: a gateway driven in process, no port and no readiness wait |
 | `cluster` | `TestCluster`: gRPC backends on ephemeral ports |
 | `problem` | `assert_problem!` |
 

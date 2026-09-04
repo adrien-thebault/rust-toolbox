@@ -36,7 +36,7 @@ core -> db -> cluster -> server -> {web, grpc}
 | `toolbox-auth` | `Principal`, `Role`, `IdentityProvider`/`ProviderRegistry`, `PrincipalMapping`, `JwtIdentityProvider` (mints HS256 sessions + stateless refresh, verifies a bearer - its own, JWKS or a public key). Depends only on `toolbox-core`, so a backend validates a token without compiling axum or the cluster traits. No OIDC redirect flow, no identity federation |
 | `toolbox-web` | `ApiError`, `Authenticated<R>`, `ValidJson`, `PageQuery`, `Idempotent`, health, CORS, rate limiting, `client_ip`, OpenAPI, SSE, `serve` |
 | `toolbox-grpc` | `to_status`/`from_status`, `client()`, `pagination.proto`, `shared_secret_layer`/`identity_layer`, health, reflection, `serve` |
-| `toolbox-test` | `temp_db`, `TestApp`, `TestCluster`, `assert_problem!`. Dev-only |
+| `toolbox-test` | `temp_db`, `TestGateway`, `TestCluster`, `assert_problem!`. Dev-only |
 | `toolbox` | facade features, prelude, `toolbox::deps` |
 
 Two boundaries that are easy to break by accident:
