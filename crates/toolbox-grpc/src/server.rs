@@ -9,10 +9,12 @@
 pub mod identity;
 pub mod shared_secret;
 
+use std::{sync::Arc, time::Duration};
+
 pub use tonic::service::RoutesBuilder;
 use tonic::transport::Server;
 use toolbox_server::{
-    shutdown::shutdown_signal,
+    shutdown::{ReadinessCheck, Shutdown, shutdown_signal},
     stack::{StackConfig, grpc_stack},
     startup::{StartupConfig, StartupError, bind},
 };
@@ -20,8 +22,13 @@ use tracing::warn;
 
 use crate::limits::MessageLimits;
 
+/// How often the readiness poller re-evaluates the checks. It also re-evaluates
+/// the instant shutdown begins, so this only bounds how stale a dependency
+/// transition can be, not how fast the drain reacts.
+const READINESS_POLL: Duration = Duration::from_secs(2);
+
 /// What a gRPC server does beyond routing.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ServerConfig {
     /// Message limits, as the single value both ends read.
     ///
@@ -52,6 +59,21 @@ pub struct ServerConfig {
     /// Whether to serve server reflection, so `grpcurl` works without the protos
     /// to hand.
     pub reflection: Option<&'static [u8]>,
+    /// Dependencies the gRPC readiness probe consults, alongside the drain
+    /// state. Empty means "ready whenever the process is up and not draining".
+    pub readiness: Arc<Vec<Box<dyn ReadinessCheck>>>,
+}
+
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("limits", &self.limits)
+            .field("stack", &self.stack)
+            .field("health", &self.health)
+            .field("reflection", &self.reflection.is_some())
+            .field("readiness", &self.readiness.len())
+            .finish()
+    }
 }
 
 impl Default for ServerConfig {
@@ -61,6 +83,7 @@ impl Default for ServerConfig {
             stack: StackConfig::default(),
             health: true,
             reflection: None,
+            readiness: Arc::new(Vec::new()),
         }
     }
 }
@@ -90,6 +113,19 @@ impl ServerConfig {
         self.stack = stack;
         self
     }
+
+    /// Gate the gRPC readiness probe on `checks` as well as the drain state.
+    ///
+    /// # Arguments
+    ///
+    /// * `checks` - The dependencies readiness consults. The health probe for
+    ///   the empty service name then reports `NOT_SERVING` while any of them is
+    ///   unusable, the same signal the axum side's `/ready` gives.
+    #[must_use]
+    pub fn readiness_checks(mut self, checks: Vec<Box<dyn ReadinessCheck>>) -> Self {
+        self.readiness = Arc::new(checks);
+        self
+    }
 }
 
 /// Bind, serve, and drain gracefully on `SIGTERM`.
@@ -104,7 +140,7 @@ impl ServerConfig {
 /// * `cfg` - Where to listen, plus the adapters and deployment the guard checks
 ///   first.
 /// * `server` - What the server does beyond routing: the stack, health,
-///   reflection and message limits.
+///   reflection, message limits and the readiness checks.
 /// * `routes` - The services to serve. Health and reflection are added onto it
 ///   here, from `server`.
 ///
@@ -143,10 +179,24 @@ pub async fn serve(
     }
 
     let listener = bind(&cfg).await?;
-    let shutdown = cfg.shutdown_handle.clone();
     let drain = cfg.shutdown;
+    let shutdown = cfg.shutdown_handle.clone();
 
-    Server::builder()
+    // The health reporter goes to exactly one place: the poller when there are
+    // checks to run, otherwise the shutdown future for a bare flip on `SIGTERM`.
+    let (poll, drain_reporter) = match health_reporter {
+        Some(reporter) if !server.readiness.is_empty() => (
+            Some(poll_readiness(
+                reporter,
+                Arc::clone(&server.readiness),
+                shutdown.clone(),
+            )),
+            None,
+        ),
+        other => (None, other),
+    };
+
+    let serve = Server::builder()
         .layer(grpc_stack(server.stack))
         .add_routes(routes.routes())
         .serve_with_incoming_shutdown(
@@ -156,16 +206,54 @@ pub async fn serve(
                 // Fail the gRPC health probe the moment the signal lands, so a
                 // Kubernetes readiness check pulls this replica before the drain
                 // wait - the same contract the axum side's `/ready` honours.
-                if let Some(reporter) = health_reporter {
+                if let Some(reporter) = drain_reporter {
                     reporter
                         .set_service_status("", tonic_health::ServingStatus::NotServing)
                         .await;
                 }
                 shutdown.drain(drain).await;
             },
-        )
-        .await
-        .map_err(|e| StartupError::Io(std::io::Error::other(e.to_string())))?;
+        );
+
+    let result = if let Some(poll) = poll {
+        tokio::select! {
+            r = serve => r,
+            () = poll => Ok(()),
+        }
+    } else {
+        serve.await
+    };
+    result.map_err(|e| StartupError::Io(std::io::Error::other(e.to_string())))?;
 
     Ok(())
+}
+
+/// Keep the gRPC health status in step with the readiness checks until `serve`
+/// returns.
+///
+/// tonic's health service reports the last status pushed to it, so unlike the
+/// axum `/ready` route - which re-evaluates per request - this has to poll. It
+/// wakes on the shutdown signal too, so a draining replica reports
+/// `NOT_SERVING` at once rather than up to [`READINESS_POLL`] later.
+async fn poll_readiness(
+    reporter: tonic_health::server::HealthReporter,
+    checks: Arc<Vec<Box<dyn ReadinessCheck>>>,
+    shutdown: Shutdown,
+) {
+    let mut on_shutdown = shutdown.watch();
+    let mut ticker = tokio::time::interval(READINESS_POLL);
+    loop {
+        let ready = !shutdown.is_shutting_down() && checks.iter().all(|check| check.is_ready());
+        let status = if ready {
+            tonic_health::ServingStatus::Serving
+        } else {
+            tonic_health::ServingStatus::NotServing
+        };
+        reporter.set_service_status("", status).await;
+
+        tokio::select! {
+            _ = ticker.tick() => {}
+            _ = on_shutdown.changed() => {}
+        }
+    }
 }
