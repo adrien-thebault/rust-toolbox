@@ -2,7 +2,7 @@
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 mod deadline;
-mod shutdown;
+mod lifecycle;
 mod stack;
 mod startup;
 mod telemetry;

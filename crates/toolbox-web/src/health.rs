@@ -8,5 +8,5 @@
 mod routes;
 mod state;
 
-pub use routes::{Check, HealthResponse, health_router};
+pub use routes::{CheckResult, HealthResponse, health_router};
 pub use state::{HealthState, ReadinessCheck};

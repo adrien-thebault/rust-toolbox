@@ -37,7 +37,7 @@ pub use client_ip::{ClientIpTrust, client_ip, resolve_client_ip};
 pub use cors::{cors, cors_localhost};
 pub use error::{ApiError, status_for};
 pub use extract::{Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson};
-pub use health::{Check, HealthResponse, HealthState, ReadinessCheck, health_router};
+pub use health::{CheckResult, HealthResponse, HealthState, ReadinessCheck, health_router};
 #[cfg(feature = "idempotency")]
 pub use idempotency::{Claim, Idempotency, StoredResponse, in_flight_error};
 #[cfg(feature = "openapi")]

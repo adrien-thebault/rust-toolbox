@@ -1,16 +1,10 @@
-//! Graceful shutdown, as the five-step sequence rather than a signal future.
+//! The drain sequence itself.
 //!
-//! It encodes the drain sequence - in particular the delay between failing
-//! readiness and refusing connections - which is the step everyone omits and
-//! the one that drops requests on every rolling deploy.
+//! It encodes the delay between failing readiness and refusing connections -
+//! the step everyone omits, and the one that drops requests on every rolling
+//! deploy.
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::time::Duration;
 
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
@@ -69,11 +63,9 @@ pub async fn shutdown_signal() {
     }
 }
 
-/// A clonable handle to the process's shutdown state.
+/// A clonable handle to the process's drain state.
 #[derive(Debug, Clone)]
 pub struct Shutdown {
-    /// Whether the process is still accepting new traffic.
-    ready: Arc<AtomicBool>,
     /// Broadcasts the drain signal to every waiter.
     tx: watch::Sender<bool>,
 }
@@ -85,20 +77,11 @@ impl Default for Shutdown {
 }
 
 impl Shutdown {
-    /// A handle that starts ready and not shutting down.
+    /// A handle that starts not shutting down.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            ready: Arc::new(AtomicBool::new(true)),
             tx: watch::channel(false).0,
-        }
-    }
-
-    /// The readiness flag, for `/ready` to read.
-    #[must_use]
-    pub fn readiness(&self) -> ReadinessHandle {
-        ReadinessHandle {
-            ready: Arc::clone(&self.ready),
         }
     }
 
@@ -119,7 +102,6 @@ impl Shutdown {
 
     /// Step 1: start failing readiness while continuing to serve.
     pub fn begin(&self) {
-        self.ready.store(false, Ordering::SeqCst);
         // `send` fails and leaves the value untouched when nothing is
         // subscribed; `send_replace` always applies, so the flag is correct
         // whether or not anyone is watching.
@@ -144,30 +126,4 @@ impl Shutdown {
         );
         tokio::time::sleep(cfg.drain_delay).await;
     }
-}
-
-/// Readable readiness state, handed to the `/ready` route.
-#[derive(Debug, Clone)]
-pub struct ReadinessHandle {
-    /// Whether the process should receive new traffic.
-    ready: Arc<AtomicBool>,
-}
-
-impl ReadinessHandle {
-    /// Whether the process should receive new traffic.
-    #[must_use]
-    pub fn is_ready(&self) -> bool {
-        self.ready.load(Ordering::SeqCst)
-    }
-}
-
-/// A dependency whose health decides whether this process should get traffic.
-///
-/// Here rather than in a transport crate so `toolbox-web`'s `/ready` route and
-/// `toolbox-grpc`'s health poller read the one trait.
-pub trait ReadinessCheck: Send + Sync + 'static {
-    /// What to call it in a readiness report.
-    fn name(&self) -> &'static str;
-    /// Whether it is currently usable.
-    fn is_ready(&self) -> bool;
 }

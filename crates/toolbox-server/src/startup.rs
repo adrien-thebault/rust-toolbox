@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 
 use tracing::info;
 
-use crate::shutdown::{Shutdown, ShutdownConfig};
+use crate::lifecycle::{Shutdown, ShutdownConfig};
 
 /// Everything `serve_*` needs that is not the application itself.
 pub struct StartupConfig {

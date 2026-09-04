@@ -12,8 +12,8 @@ Shared by axum and tonic; depends on neither.
 | `stack::grpc` | `grpc_stack`: the same, classified by `grpc-status` |
 | `stack::realtime` | `realtime_stack`: no timeout, no body limit, on purpose |
 | `deadline` | the `DEADLINE` task-local, the gRPC timeout format, and the layer that enforces it |
-| `shutdown` | the five-step drain |
-| `startup` | the deployment check and the bind |
+| `lifecycle` | `Health`, `LifecycleHandle`; `lifecycle::shutdown` the five-step drain, `lifecycle::ready` the `ReadinessCheck` contract, `lifecycle::startup` waiting for the first pass |
+| `startup` | the bind |
 | `telemetry` | `-v`/`-q`, `LOG_FORMAT`, `RUST_LOG` |
 | `args` | `ServerArgs` |
 

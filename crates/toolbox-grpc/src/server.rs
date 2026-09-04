@@ -14,7 +14,7 @@ use std::{sync::Arc, time::Duration};
 pub use tonic::service::RoutesBuilder;
 use tonic::transport::Server;
 use toolbox_server::{
-    shutdown::{ReadinessCheck, Shutdown, shutdown_signal},
+    lifecycle::{LifecycleHandle, ReadinessCheck, shutdown_signal},
     stack::{StackConfig, grpc_stack},
     startup::{StartupConfig, StartupError, bind},
 };
@@ -179,18 +179,15 @@ pub async fn serve(
     let listener = bind(&cfg).await?;
     let drain = cfg.shutdown;
     let shutdown = cfg.shutdown_handle.clone();
+    let lifecycle =
+        LifecycleHandle::new(shutdown.clone()).with_shared_checks(Arc::clone(&server.readiness));
 
     // The health reporter goes to exactly one place: the poller when there are
     // checks to run, otherwise the shutdown future for a bare flip on `SIGTERM`.
     let (poll, drain_reporter) = match health_reporter {
-        Some(reporter) if !server.readiness.is_empty() => (
-            Some(poll_readiness(
-                reporter,
-                Arc::clone(&server.readiness),
-                shutdown.clone(),
-            )),
-            None,
-        ),
+        Some(reporter) if !server.readiness.is_empty() => {
+            (Some(poll_readiness(reporter, lifecycle)), None)
+        }
         other => (None, other),
     };
 
@@ -226,7 +223,7 @@ pub async fn serve(
     Ok(())
 }
 
-/// Keep the gRPC health status in step with the readiness checks until `serve`
+/// Keep the gRPC health status in step with the lifecycle until `serve`
 /// returns.
 ///
 /// tonic's health service reports the last status pushed to it, so unlike the
@@ -235,14 +232,12 @@ pub async fn serve(
 /// `NOT_SERVING` at once rather than up to [`READINESS_POLL`] later.
 async fn poll_readiness(
     reporter: tonic_health::server::HealthReporter,
-    checks: Arc<Vec<Box<dyn ReadinessCheck>>>,
-    shutdown: Shutdown,
+    lifecycle: LifecycleHandle,
 ) {
-    let mut on_shutdown = shutdown.watch();
+    let mut on_shutdown = lifecycle.shutdown_watch();
     let mut ticker = tokio::time::interval(READINESS_POLL);
     loop {
-        let ready = !shutdown.is_shutting_down() && checks.iter().all(|check| check.is_ready());
-        let status = if ready {
+        let status = if lifecycle.current().is_ready() {
             tonic_health::ServingStatus::Serving
         } else {
             tonic_health::ServingStatus::NotServing

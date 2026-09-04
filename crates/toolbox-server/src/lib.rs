@@ -7,14 +7,17 @@
 
 pub mod args;
 pub mod deadline;
-pub mod shutdown;
+pub mod lifecycle;
 pub mod stack;
 pub mod startup;
 pub mod telemetry;
 pub mod trace_context;
 
 pub use deadline::{DEADLINE, DeadlineLayer, current_deadline, time_remaining};
-pub use shutdown::{ReadinessCheck, ReadinessHandle, Shutdown, ShutdownConfig, shutdown_signal};
+pub use lifecycle::{
+    Health, LifecycleHandle, ReadinessCheck, Shutdown, ShutdownConfig, shutdown_signal,
+    wait_until_ready,
+};
 pub use stack::{
     GrpcStack, HttpStack, RealtimeStack, StackConfig, grpc_stack, http_stack, realtime_stack,
 };

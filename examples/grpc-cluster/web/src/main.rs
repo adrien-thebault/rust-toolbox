@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let cfg = StartupConfig::new(args.server.listen_addr);
-    let health = HealthState::new(cfg.shutdown_handle.readiness());
+    let health = HealthState::new(cfg.shutdown_handle.clone());
 
     // The stack is applied here, not by serve: a router with realtime
     // routes needs realtime_stack on those and http_stack on the rest.

@@ -10,7 +10,7 @@ use std::{
 };
 
 use toolbox_grpc::{RoutesBuilder, ServerConfig, serve};
-use toolbox_server::{shutdown::ReadinessCheck, startup::StartupConfig};
+use toolbox_server::{lifecycle::ReadinessCheck, startup::StartupConfig};
 
 /// `serve` binds the listener and runs the tonic serve loop until it is
 /// cancelled - it must not return on its own.
