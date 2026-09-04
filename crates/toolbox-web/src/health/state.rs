@@ -3,15 +3,8 @@
 
 use std::sync::Arc;
 
+pub use toolbox_server::shutdown::ReadinessCheck;
 use toolbox_server::shutdown::ReadinessHandle;
-
-/// A dependency whose health decides whether this process should get traffic.
-pub trait ReadinessCheck: Send + Sync + 'static {
-    /// What to call it in the response body.
-    fn name(&self) -> &'static str;
-    /// Whether it is currently usable.
-    fn is_ready(&self) -> bool;
-}
 
 /// The state `health_router` needs.
 #[derive(Clone)]

@@ -15,7 +15,7 @@ pub mod trace_context;
 
 pub use args::ArgsError;
 pub use deadline::{DEADLINE, DeadlineLayer, current_deadline, time_remaining};
-pub use shutdown::{ReadinessHandle, Shutdown, ShutdownConfig, shutdown_signal};
+pub use shutdown::{ReadinessCheck, ReadinessHandle, Shutdown, ShutdownConfig, shutdown_signal};
 pub use stack::{
     GrpcStack, HttpStack, RealtimeStack, StackConfig, grpc_stack, http_stack, realtime_stack,
 };
