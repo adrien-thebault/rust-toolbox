@@ -19,7 +19,7 @@ use utoipa::openapi::OpenApi;
 /// # Errors
 /// [`serde_json::Error`] when the document cannot be serialized, which would
 /// mean utoipa produced something invalid.
-pub fn dump_openapi(api: &OpenApi) -> Result<String, serde_json::Error> {
+pub fn serialize_openapi(api: &OpenApi) -> Result<String, serde_json::Error> {
     let value = serde_json::to_value(api)?;
     serde_json::to_string_pretty(&canonicalize(value))
 }

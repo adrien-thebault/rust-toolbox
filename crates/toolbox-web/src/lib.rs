@@ -43,7 +43,7 @@ pub use health::{HealthCheck, HealthCheckResult, HealthResponse, HealthState, he
 #[cfg(feature = "idempotency")]
 pub use idempotency::{Idempotency, IdempotencyOutcome, StoredResponse, in_flight_error};
 #[cfg(feature = "openapi")]
-pub use openapi::{OpenApiConfig, dump_openapi, openapi_router, with_standard_errors};
+pub use openapi::{OpenApiConfig, openapi_router, serialize_openapi, with_standard_errors};
 pub use pagination::{attach_page_headers, page_links};
 #[cfg(feature = "rate-limit")]
 pub use rate_limit::RateLimitConfig;

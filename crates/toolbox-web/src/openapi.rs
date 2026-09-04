@@ -9,12 +9,12 @@
 //! repository owns the frontend.
 
 mod augment;
-mod dump;
 mod router;
+mod serialize;
 
 pub use augment::{bearer_security, with_standard_errors};
-pub use dump::dump_openapi;
 pub use router::openapi_router;
+pub use serialize::serialize_openapi;
 
 /// Where the docs page and the JSON spec are mounted.
 #[derive(Debug, Clone)]

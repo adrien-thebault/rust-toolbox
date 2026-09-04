@@ -1,4 +1,4 @@
-use toolbox_web::openapi::{dump_openapi, with_standard_errors};
+use toolbox_web::openapi::{serialize_openapi, with_standard_errors};
 use utoipa::OpenApi;
 
 use super::Api;
@@ -6,18 +6,21 @@ use super::Api;
 /// The drift guard is `git diff --exit-code` against a committed file, which
 /// is useless if key order shuffles between runs.
 #[test]
-fn the_dump_is_byte_identical_across_runs() {
+fn the_serialization_is_byte_identical_across_runs() {
     let mut a = Api::openapi();
     with_standard_errors(&mut a);
     let mut b = Api::openapi();
     with_standard_errors(&mut b);
 
-    assert_eq!(dump_openapi(&a).unwrap(), dump_openapi(&b).unwrap());
+    assert_eq!(
+        serialize_openapi(&a).unwrap(),
+        serialize_openapi(&b).unwrap()
+    );
 }
 
 #[test]
-fn the_dump_has_its_keys_sorted() {
-    let spec = dump_openapi(&Api::openapi()).unwrap();
+fn the_serialization_has_its_keys_sorted() {
+    let spec = serialize_openapi(&Api::openapi()).unwrap();
     let value: serde_json::Value = serde_json::from_str(&spec).unwrap();
     assert_sorted(&value);
 }

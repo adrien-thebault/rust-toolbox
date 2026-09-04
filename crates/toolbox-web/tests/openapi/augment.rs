@@ -1,5 +1,5 @@
 use toolbox_core::PROBLEM_JSON;
-use toolbox_web::openapi::{bearer_security, dump_openapi, with_standard_errors};
+use toolbox_web::openapi::{bearer_security, serialize_openapi, with_standard_errors};
 use utoipa::OpenApi;
 
 use super::Api;
@@ -30,7 +30,7 @@ fn every_operation_gains_the_standard_error_responses() {
 fn the_error_responses_are_problem_json() {
     let mut api = Api::openapi();
     with_standard_errors(&mut api);
-    let spec = dump_openapi(&api).unwrap();
+    let spec = serialize_openapi(&api).unwrap();
     assert!(
         spec.contains(PROBLEM_JSON),
         "the standard errors declare their media type"
@@ -56,7 +56,7 @@ fn a_hand_annotated_response_is_not_overwritten() {
 fn bearer_security_is_declared_once_on_the_document() {
     let mut api = Api::openapi();
     bearer_security(&mut api);
-    let spec = dump_openapi(&api).unwrap();
+    let spec = serialize_openapi(&api).unwrap();
     assert!(spec.contains("\"bearer\""), "{spec}");
     assert!(spec.contains("\"JWT\""), "{spec}");
 }

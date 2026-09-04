@@ -3,8 +3,8 @@
 use utoipa::OpenApi;
 
 mod augment;
-mod dump;
 mod router;
+mod serialize;
 
 #[derive(utoipa::ToSchema, serde::Serialize)]
 struct Todo {

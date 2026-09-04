@@ -8,7 +8,7 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "{}",
-        toolbox_web::openapi::dump_openapi(&example_web::routes::openapi())?
+        toolbox_web::openapi::serialize_openapi(&example_web::routes::openapi())?
     );
     Ok(())
 }
