@@ -505,10 +505,35 @@ impl JwtIdentityProvider {
     /// [`AuthError::Malformed`] when this provider holds no HMAC secret, or the
     /// token cannot be encoded.
     pub fn issue(&self, principal: &Principal) -> Result<String, AuthError> {
+        self.issue_with_ttl(principal, self.ttl)
+    }
+
+    /// Issue an access token for a principal, valid for `ttl` instead of the
+    /// configured default.
+    ///
+    /// For a token meant to travel somewhere a normal session token should
+    /// not - a URL query string, because the caller cannot set a header - and
+    /// that therefore wants to expire in seconds rather than minutes. It is
+    /// still a full access token: verified the same way, usable on any route,
+    /// scoped by nothing but its own short life.
+    ///
+    /// # Arguments
+    ///
+    /// * `principal` - Who the token is for.
+    /// * `ttl` - How long this one token is valid.
+    ///
+    /// # Errors
+    /// [`AuthError::Malformed`] when this provider holds no HMAC secret, or the
+    /// token cannot be encoded.
+    pub fn issue_with_ttl(
+        &self,
+        principal: &Principal,
+        ttl: Duration,
+    ) -> Result<String, AuthError> {
         self.encode(&Claims::for_access(
             principal,
             &self.issuer,
-            self.ttl,
+            ttl,
             self.audience.as_deref(),
         ))
     }

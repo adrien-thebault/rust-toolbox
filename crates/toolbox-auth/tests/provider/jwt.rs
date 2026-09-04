@@ -33,6 +33,27 @@ async fn a_session_round_trips() {
     assert_eq!(back.email.as_deref(), Some("a@example.test"));
 }
 
+#[tokio::test]
+async fn a_ttl_override_still_verifies_like_any_access_token() {
+    let codec = codec();
+    let token = codec
+        .issue_with_ttl(&principal(), Duration::from_secs(30))
+        .unwrap();
+    let back = codec.verify(&token).await.unwrap();
+    assert_eq!(back.subject, "u1");
+}
+
+/// The override is per call - it must not leak into the provider's own
+/// configured default for every other `issue`.
+#[test]
+fn a_ttl_override_does_not_change_the_configured_default() {
+    let codec = codec();
+    codec
+        .issue_with_ttl(&principal(), Duration::from_secs(30))
+        .unwrap();
+    assert_eq!(codec.token_ttl(), Duration::from_secs(15 * 60));
+}
+
 /// A JWT cannot be revoked, so its lifetime is the revocation window. The
 /// obvious implementation used twelve hours.
 #[test]
