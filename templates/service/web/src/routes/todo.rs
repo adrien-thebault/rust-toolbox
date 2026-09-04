@@ -22,7 +22,7 @@ use crate::{auth::Admin, routes::from_backend, state::AppState};
 ///
 /// Hand-written rather than the proto type: proto3 enums serialize as integers,
 /// so a generated schema documents them awkwardly.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TodoDto {
     /// Its id.
     pub id: i32,
@@ -46,7 +46,7 @@ impl From<{{crate_name}}_todo::proto::Todo> for TodoDto {
 }
 
 /// A new todo.
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct NewTodoRequest {
     /// What to do.
     #[garde(length(min = 1, max = 200))]
@@ -78,7 +78,12 @@ fn client(state: &AppState) -> TodoServiceClient<toolbox_grpc::ClientService> {
 ///
 /// * `state` - The gateway's state, for the backend channel.
 /// * `page` - The window and sort, already validated against the maximum limit.
-async fn list(
+#[utoipa::path(
+    get, path = "/api/todos",
+    params(("offset" = Option<i64>, Query,), ("limit" = Option<i64>, Query,), ("sort" = Option<String>, Query,)),
+    responses((status = 200, body = [TodoDto]))
+)]
+pub(crate) async fn list(
     State(state): State<AppState>,
     PageQuery(page): PageQuery,
 ) -> Result<Json<Vec<TodoDto>>, ApiError> {
@@ -102,7 +107,12 @@ async fn list(
 /// * `state` - The gateway's state, for the backend channel.
 /// * `id` - Which todo. A miss is the backend's `TODO_NOT_FOUND`, relayed with
 ///   its code intact.
-async fn fetch(
+#[utoipa::path(
+    get, path = "/api/todos/{id}",
+    params(("id" = i32, Path,)),
+    responses((status = 200, body = TodoDto))
+)]
+pub(crate) async fn fetch(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<TodoDto>, ApiError> {
@@ -123,7 +133,13 @@ async fn fetch(
 ///   and never reaches the backend.
 /// * `state` - The gateway's state, for the backend channel.
 /// * `body` - The new todo, rejected here if invalid so no hop is made.
-async fn create(
+#[utoipa::path(
+    post, path = "/api/todos",
+    request_body = NewTodoRequest,
+    responses((status = 200, body = TodoDto)),
+    security(("bearer" = []))
+)]
+pub(crate) async fn create(
     _: Authenticated<Admin>,
     State(state): State<AppState>,
     ValidJson(body): ValidJson<NewTodoRequest>,

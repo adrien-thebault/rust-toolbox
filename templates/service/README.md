@@ -17,6 +17,8 @@ the rust-toolbox template.
 - locked migrations, so replicas starting together do not race
 {% if gateway %}- login, refresh, logout and `/auth/me`, with the login rate
   limit already attached
+- an OpenAPI spec generated from the routes, with a CI check that the committed
+  `web/openapi.json` stays in sync
 {% endif %}
 
 ## Running it
@@ -25,12 +27,15 @@ the rust-toolbox template.
 cp .env.example .env      # then set {% if gateway %}SESSION_SECRET and ADMIN_PASSWORD_HASH{% else %}DATABASE_URL{% endif %}
 cargo fmt --all           # imports sort by crate name, and yours is new
 cargo build               # writes Cargo.lock - commit it, see below
-docker compose up --build
+{% if gateway %}./openapi.sh              # writes web/openapi.json - commit it too
+{% endif %}docker compose up --build
 ```
 
 `cargo fmt` first because a crate's own name sorts into its import blocks, and
 the template cannot know it in advance. One run and `cargo fmt --check` in the
-generated CI passes from then on.
+generated CI passes from then on.{% if gateway %} The same goes for `./openapi.sh`
+and the `openapi` CI job: run it once, commit `web/openapi.json`, and a diff
+afterwards means a route changed shape without the spec being regenerated.{% endif %}
 
 **Commit `Cargo.lock`.** This is an application, not a library, so the lockfile
 is what makes a build reproducible - and the `Dockerfile` does `COPY Cargo.lock`
@@ -80,9 +85,12 @@ web/
     lib.rs
     state.rs          AppState, and the AuthState impl that mounts /auth/*
     auth.rs           who may log in, and the roles this project has
-    routes.rs         the router and the Status -> ApiError seam
+    routes.rs         the router, the OpenAPI doc, the Status -> ApiError seam
     routes/
       todo.rs         the DTOs and the todo routes
+  examples/
+    dump_openapi.rs   prints the spec; ./openapi.sh redirects it into openapi.json
+  openapi.json        the committed spec, checked for drift in CI
 {% endif %}```
 
 Three units, and they are deliberately different sizes:

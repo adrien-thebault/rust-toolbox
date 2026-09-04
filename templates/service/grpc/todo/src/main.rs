@@ -46,6 +46,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // own binary if not.
     let mut routes = RoutesBuilder::default();
     routes.add_service(TodoService::new(db).into_server());
-    serve(cfg, ServerConfig::default().reflection(proto::DESCRIPTOR), routes).await?;
+    serve(
+        cfg,
+        ServerConfig::default().reflection(proto::DESCRIPTOR),
+        routes,
+    )
+    .await?;
     Ok(())
 }

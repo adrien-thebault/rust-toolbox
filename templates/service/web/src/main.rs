@@ -63,7 +63,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // A handful of attempts, then one back every few seconds: a typo goes
     // unnoticed, credential stuffing from one address does not.
-    let login = RateLimit::new(5, Duration::from_secs(5), ClientIpTrust::hops(args.trusted_hops));
+    let login = RateLimit::new(
+        5,
+        Duration::from_secs(5),
+        ClientIpTrust::hops(args.trusted_hops),
+    );
 
     let deployment = args.deployment.resolve()?;
     let limiter = RateLimitAdapter;

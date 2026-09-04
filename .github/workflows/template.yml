@@ -73,3 +73,12 @@ jobs:
           # The Dockerfile does `COPY Cargo.lock` with --locked, so the README
           # tells you to build once and commit the result. Assert that works.
           test -f Cargo.lock
+
+      # The gateway variants ship an OpenAPI dumper and the script CI runs on it;
+      # prove both produce a spec, the same way the README's first run does.
+      - name: The OpenAPI spec generates
+        if: matrix.gateway == 'true'
+        run: |
+          cd /tmp/generated/svc
+          ./openapi.sh
+          test -s web/openapi.json

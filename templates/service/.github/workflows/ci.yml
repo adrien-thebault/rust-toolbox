@@ -31,3 +31,16 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace --all-features
       - uses: EmbarkStudios/cargo-deny-action@v2
+{% if gateway %}
+  # A route whose schema changed without web/openapi.json being regenerated
+  # fails here, naming exactly what moved. Run ./openapi.sh and commit.
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: arduino/setup-protoc@v3
+      - run: ./openapi.sh
+      - run: git diff --exit-code web/openapi.json
+{% endif %}

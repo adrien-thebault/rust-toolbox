@@ -14,6 +14,29 @@ use toolbox_web::{
 
 use crate::state::AppState;
 
+/// The API surface, for the OpenAPI spec.
+///
+/// The login routes are deliberately absent: `auth_router`'s handlers are
+/// private to `toolbox-web`, so a consumer documents them by hand or not at
+/// all. Not at all, here.
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(todo::list, todo::fetch, todo::create),
+    components(schemas(todo::TodoDto, todo::NewTodoRequest)),
+    info(title = "{{project-name}} API", version = "0.1.0")
+)]
+pub struct ApiDoc;
+
+/// The spec, with the toolbox's standard error responses attached.
+#[must_use]
+pub fn openapi() -> utoipa::openapi::OpenApi {
+    use utoipa::OpenApi as _;
+    let mut api = ApiDoc::openapi();
+    toolbox_web::openapi::with_standard_errors(&mut api);
+    toolbox_web::openapi::bearer_security(&mut api);
+    api
+}
+
 /// Every route the gateway serves, with the session middleware attached.
 ///
 /// The state is taken here rather than left for the caller, because

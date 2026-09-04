@@ -4,10 +4,16 @@ description = "The HTTP gateway: it owns authentication and calls the domains."
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+autoexamples = false
 
 [[bin]]
 name = "gateway"
 path = "src/main.rs"
+
+# A tool that prints the OpenAPI spec, not a process anybody deploys.
+[[example]]
+name = "dump-openapi"
+path = "examples/dump_openapi.rs"
 
 [dependencies]
 toolbox-core    = { workspace = true }
@@ -29,6 +35,7 @@ thiserror   = { workspace = true }
 tokio       = { workspace = true }
 tonic       = { workspace = true }
 tracing     = { workspace = true }
+utoipa      = { workspace = true }
 
 [lints]
 workspace = true

@@ -19,7 +19,7 @@ toolbox-cluster = { git = "https://github.com/adrien-thebault/rust-toolbox.git",
 toolbox-server  = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["clap"] }
 toolbox-grpc    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
 {% if gateway %}toolbox-auth    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["password"] }
-toolbox-web     = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["rate-limit", "auth-router"] }
+toolbox-web     = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["rate-limit", "auth-router", "openapi"] }
 {% endif %}
 # Declared directly, not through toolbox::deps: their derives emit absolute
 # `diesel::` and `serde::` paths.
@@ -32,6 +32,7 @@ diesel_migrations = "2.3"
 axum        = "0.8"
 garde       = { version = "0.23", features = ["derive"] }
 secrecy     = "0.10"
+utoipa      = { version = "5.5", features = ["axum_extras", "macros"] }
 {% endif %}chrono      = { version = "0.4", features = ["clock", "std"] }
 clap        = { version = "4", features = ["derive", "env"] }
 prost       = "0.14"
