@@ -14,9 +14,9 @@ use std::{sync::Arc, time::Duration};
 pub use tonic::service::RoutesBuilder;
 use tonic::transport::Server;
 use toolbox_server::{
-    lifecycle::{LifecycleHandle, ReadinessCheck, shutdown_signal},
+    bind,
+    lifecycle::{LifecycleHandle, ReadinessCheck, StartupConfig, StartupError, shutdown_signal},
     stack::{StackConfig, grpc_stack},
-    startup::{StartupConfig, StartupError, bind},
 };
 use tracing::warn;
 

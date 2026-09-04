@@ -8,7 +8,7 @@ use clap::Parser;
 use example_todo::{Connection, MIGRATIONS, TodoService, proto};
 use toolbox_db::args::DatabaseArgs;
 use toolbox_grpc::{RoutesBuilder, ServerConfig, serve};
-use toolbox_server::{args::ServerArgs, startup::StartupConfig, telemetry::TelemetryArgs};
+use toolbox_server::{StartupConfig, args::ServerArgs, telemetry::TelemetryArgs};
 
 /// Command-line arguments.
 #[derive(Parser)]

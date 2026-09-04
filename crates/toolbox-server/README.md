@@ -12,10 +12,12 @@ Shared by axum and tonic; depends on neither.
 | `stack::grpc` | `grpc_stack`: the same, classified by `grpc-status` |
 | `stack::realtime` | `realtime_stack`: no timeout, no body limit, on purpose |
 | `deadline` | the `DEADLINE` task-local, the gRPC timeout format, and the layer that enforces it |
-| `lifecycle` | `Health`, `LifecycleHandle`; `lifecycle::shutdown` the five-step drain, `lifecycle::ready` the `ReadinessCheck` contract, `lifecycle::startup` waiting for the first pass |
-| `startup` | the bind |
+| `lifecycle` | `Health`, `LifecycleHandle`; `lifecycle::shutdown` the five-step drain, `lifecycle::ready` the `ReadinessCheck` contract, `lifecycle::startup` `StartupConfig`/`StartupError` and waiting for the first pass |
 | `telemetry` | `-v`/`-q`, `LOG_FORMAT`, `RUST_LOG` |
 | `args` | `ServerArgs` |
+
+`bind` lives at the crate root, not its own module - it is the one thing every
+transport shares and nothing else in the crate needs to wrap it in.
 
 `realtime_stack` has no timeout and no body limit, and that is the entire
 reason it exists: a 30-second request timeout kills every SSE and WebSocket

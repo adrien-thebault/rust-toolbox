@@ -4,7 +4,6 @@
 mod deadline;
 mod lifecycle;
 mod stack;
-mod startup;
 mod telemetry;
 mod trace_context;
 
@@ -13,6 +12,7 @@ use std::convert::Infallible;
 use bytes::Bytes;
 use http::{Request, Response};
 use http_body_util::Full;
+use toolbox_server::{StartupConfig, bind};
 
 /// A body type that satisfies every bound the stacks impose.
 pub type TestBody = Full<Bytes>;
@@ -31,4 +31,11 @@ pub async fn slow(_req: Request<TestBody>) -> Result<Response<TestBody>, Infalli
 /// An empty request.
 pub fn req() -> Request<TestBody> {
     Request::builder().uri("/x").body(Full::default()).unwrap()
+}
+
+#[tokio::test]
+async fn binding_hands_out_a_listener_on_the_requested_address() {
+    let cfg = StartupConfig::new("127.0.0.1:0".parse().unwrap());
+    let listener = bind(&cfg).await.unwrap();
+    assert!(listener.local_addr().unwrap().port() > 0);
 }

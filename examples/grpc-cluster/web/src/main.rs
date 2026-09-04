@@ -12,9 +12,9 @@ use example_web::{
 };
 use toolbox_grpc::{ClientConfig, client};
 use toolbox_server::{
+    StartupConfig,
     args::ServerArgs,
     stack::{StackConfig, http_stack},
-    startup::StartupConfig,
     telemetry::TelemetryArgs,
 };
 use toolbox_web::{

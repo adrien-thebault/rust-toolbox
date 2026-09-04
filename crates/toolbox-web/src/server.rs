@@ -8,8 +8,8 @@ use std::net::SocketAddr;
 
 use axum::Router;
 use toolbox_server::{
-    lifecycle::shutdown_signal,
-    startup::{StartupConfig, StartupError, bind},
+    bind,
+    lifecycle::{StartupConfig, StartupError, shutdown_signal},
 };
 use tracing::info;
 

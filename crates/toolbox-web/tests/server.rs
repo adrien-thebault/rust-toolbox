@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use axum::{Router, routing::get};
-use toolbox_server::startup::StartupConfig;
+use toolbox_server::StartupConfig;
 use toolbox_web::server::serve;
 
 /// `serve` binds the listener and runs the axum serve loop until it is

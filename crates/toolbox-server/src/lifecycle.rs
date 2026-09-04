@@ -4,8 +4,9 @@
 //! A process is starting, ready, degraded or draining, in that order except
 //! that degraded can only follow ready. The three submodules each own one
 //! mechanism - [`shutdown`] the drain sequence, [`ready`] the dependency
-//! contract, [`startup`] waiting for the first pass - and this module is
-//! where they combine into the one [`Health`] a caller actually wants to read.
+//! contract, [`startup`] the bind config and waiting for the first pass -
+//! and this module is where they combine into the one [`Health`] a caller
+//! actually wants to read.
 
 pub mod ready;
 pub mod shutdown;
@@ -18,7 +19,7 @@ use std::sync::{
 
 pub use ready::ReadinessCheck;
 pub use shutdown::{Shutdown, ShutdownConfig, shutdown_signal};
-pub use startup::wait_until_ready;
+pub use startup::{StartupConfig, StartupError, wait_until_ready};
 
 /// Where the process is in its boot-to-drain lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
