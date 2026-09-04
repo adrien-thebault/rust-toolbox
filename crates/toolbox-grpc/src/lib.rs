@@ -21,14 +21,14 @@ pub mod status;
 /// [`server::shared_secret::shared_secret_layer`] checks. Written on every
 /// outbound call by [`client::interceptor::ClientInterceptor`].
 pub const X_SHARED_SECRET: &str = "x-shared-secret";
-/// The metadata key carrying a base64 [`toolbox_auth::ForwardedPrincipal`],
+/// The metadata key carrying a base64 [`toolbox_auth::AssertedPrincipal`],
 /// resolved by [`server::identity::identity_layer`]. Written only
-/// while a [`client::forwarding`] scope is active.
-pub const X_FWD_PRINCIPAL: &str = "x-fwd-principal";
+/// while a [`client::asserting`] scope is active.
+pub const X_ASSERTED_PRINCIPAL: &str = "x-asserted-principal";
 
 pub use client::{
     BackoffConfig, ClientChannel, ClientConfig, ClientError, ClientInterceptor, ClientService,
-    RetryPolicy, client, forwarding, is_retryable, with_retry,
+    RetryPolicy, asserting, client, is_retryable, with_retry,
 };
 pub use limits::MessageLimits;
 pub use pagination::{PROTO_INCLUDE, PageInfo, PageRequestProto, split};

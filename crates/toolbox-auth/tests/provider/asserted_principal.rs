@@ -1,6 +1,6 @@
 use secrecy::SecretString;
 use toolbox_auth::{
-    AuthError, Credential, ForwardedPrincipal, ForwardedPrincipalProvider, IdentityProvider,
+    AssertedPrincipal, AssertedPrincipalProvider, AuthError, Credential, IdentityProvider,
     Principal,
 };
 
@@ -9,15 +9,15 @@ fn principal() -> Principal {
 }
 
 #[tokio::test]
-async fn a_forwarded_principal_round_trips_through_the_registry() {
+async fn an_asserted_principal_round_trips_through_the_registry() {
     let original = principal();
-    let encoded = ForwardedPrincipal::from(&original).encode();
-    let decoded = ForwardedPrincipal::decode(&encoded).unwrap();
+    let encoded = AssertedPrincipal::from(&original).encode();
+    let decoded = AssertedPrincipal::decode(&encoded).unwrap();
 
-    let resolved = ForwardedPrincipalProvider::new()
+    let resolved = AssertedPrincipalProvider::new()
         .authenticate(&Credential::Custom(Box::new(decoded)))
         .await
-        .expect("the provider claims a ForwardedPrincipal")
+        .expect("the provider claims an AssertedPrincipal")
         .expect("and resolves it");
 
     assert_eq!(resolved, original);
@@ -28,17 +28,17 @@ async fn a_forwarded_principal_round_trips_through_the_registry() {
 }
 
 #[tokio::test]
-async fn it_ignores_a_credential_that_is_not_a_forwarded_principal() {
-    let out = ForwardedPrincipalProvider::new()
+async fn it_ignores_a_credential_that_is_not_an_asserted_principal() {
+    let out = AssertedPrincipalProvider::new()
         .authenticate(&Credential::Bearer(SecretString::from("a-token")))
         .await;
     assert!(out.is_none(), "not this provider's credential");
 }
 
 #[tokio::test]
-async fn a_forwarded_principal_with_no_subject_is_refused() {
-    let empty = ForwardedPrincipal(Principal::new("", "keycloak"));
-    let out = ForwardedPrincipalProvider::new()
+async fn an_asserted_principal_with_no_subject_is_refused() {
+    let empty = AssertedPrincipal(Principal::new("", "keycloak"));
+    let out = AssertedPrincipalProvider::new()
         .authenticate(&Credential::Custom(Box::new(empty)))
         .await
         .expect("claimed");
@@ -48,12 +48,12 @@ async fn a_forwarded_principal_with_no_subject_is_refused() {
 #[test]
 fn decode_rejects_junk() {
     assert!(matches!(
-        ForwardedPrincipal::decode("not base64 !!!"),
+        AssertedPrincipal::decode("not base64 !!!"),
         Err(AuthError::Malformed(_))
     ));
     // Valid base64 ("hello"), but not a principal.
     assert!(matches!(
-        ForwardedPrincipal::decode("aGVsbG8="),
+        AssertedPrincipal::decode("aGVsbG8="),
         Err(AuthError::Malformed(_))
     ));
 }

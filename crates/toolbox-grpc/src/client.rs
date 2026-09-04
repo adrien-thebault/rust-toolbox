@@ -17,7 +17,7 @@ pub mod retry;
 use std::time::Duration;
 
 pub use error::ClientError;
-pub use interceptor::{ClientInterceptor, forwarding};
+pub use interceptor::{ClientInterceptor, asserting};
 pub use retry::{BackoffConfig, RetryPolicy, is_retryable, with_retry};
 use secrecy::SecretString;
 use tonic::{
@@ -148,7 +148,7 @@ pub type ClientService = InterceptedService<Channel, ClientInterceptor>;
 impl ClientChannel {
     /// The channel, to hand to a generated client.
     ///
-    /// Carries the deadline-propagation, shared-secret and forwarded-principal
+    /// Carries the deadline-propagation, shared-secret and asserted-principal
     /// interceptor, so a gateway that times out does not leave this backend
     /// working on a request nobody is waiting for.
     #[must_use]
@@ -159,7 +159,7 @@ impl ClientChannel {
     /// The bare channel, without the interceptor.
     ///
     /// For a caller that needs to compose its own middleware. Note that using it
-    /// gives up deadline propagation, service auth and identity forwarding.
+    /// gives up deadline propagation, service auth and identity assertion.
     #[must_use]
     pub fn raw_channel(&self) -> Channel {
         self.channel.clone()

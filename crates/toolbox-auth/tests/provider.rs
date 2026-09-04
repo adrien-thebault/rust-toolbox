@@ -1,4 +1,4 @@
-mod forwarded_principal;
+mod asserted_principal;
 mod jwt;
 mod password;
 mod proxy_header;

@@ -6,10 +6,9 @@ use std::{
 use http::{Request, Response};
 use secrecy::SecretString;
 use toolbox_auth::{
-    ForwardedPrincipal, ForwardedPrincipalProvider, JwtIdentityProvider, Principal,
-    ProviderRegistry,
+    AssertedPrincipal, AssertedPrincipalProvider, JwtIdentityProvider, Principal, ProviderRegistry,
 };
-use toolbox_grpc::{X_FWD_PRINCIPAL, identity};
+use toolbox_grpc::{X_ASSERTED_PRINCIPAL, identity};
 use tower::{Layer, ServiceExt, service_fn};
 
 /// A `service_fn` that records the `Principal` extension it was called with.
@@ -27,18 +26,18 @@ macro_rules! recorder {
 }
 
 #[tokio::test]
-async fn a_forwarded_principal_is_resolved_into_the_extensions() {
-    let registry = Arc::new(ProviderRegistry::new().with(ForwardedPrincipalProvider::new()));
+async fn an_asserted_principal_is_resolved_into_the_extensions() {
+    let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
     let seen: Arc<Mutex<Option<Principal>>> = Arc::new(Mutex::new(None));
     let svc = identity::identity_layer(registry)
-        .extracting(identity::forwarded_principal)
+        .extracting(identity::asserted_principal)
         .layer(recorder!(seen));
 
     let principal = Principal::new("alice", "keycloak").with_role("ADMIN");
     let mut req = Request::new(());
     req.headers_mut().insert(
-        X_FWD_PRINCIPAL,
-        ForwardedPrincipal::from(&principal)
+        X_ASSERTED_PRINCIPAL,
+        AssertedPrincipal::from(&principal)
             .encode()
             .parse()
             .unwrap(),
@@ -109,14 +108,14 @@ async fn a_custom_extractor_resolves_its_own_credential() {
 
 #[tokio::test]
 async fn a_layer_with_no_sources_resolves_nothing() {
-    let registry = Arc::new(ProviderRegistry::new().with(ForwardedPrincipalProvider::new()));
+    let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
     let seen: Arc<Mutex<Option<Principal>>> = Arc::new(Mutex::new(None));
     let svc = identity::identity_layer(registry).layer(recorder!(seen));
 
     let mut req = Request::new(());
     req.headers_mut().insert(
-        X_FWD_PRINCIPAL,
-        ForwardedPrincipal::from(&Principal::new("eve", "keycloak"))
+        X_ASSERTED_PRINCIPAL,
+        AssertedPrincipal::from(&Principal::new("eve", "keycloak"))
             .encode()
             .parse()
             .unwrap(),

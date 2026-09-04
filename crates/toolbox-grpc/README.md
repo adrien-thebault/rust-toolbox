@@ -6,7 +6,7 @@ tonic building blocks, split by direction: `client` calls another service,
 | Module | What it holds |
 |---|---|
 | `client` | `client()` and one channel type; `uri` points at your LB or `Service` |
-| `client::interceptor` | what every outgoing request carries: deadline, shared secret, forwarded principal |
+| `client::interceptor` | what every outgoing request carries: deadline, shared secret, asserted principal |
 | `client::retry` | `RetryPolicy` and `with_retry` |
 | `client::error` | `ClientError` |
 | `server` | `serve()`: bind, the standard stack, graceful drain, health and reflection |
@@ -38,7 +38,7 @@ sources and it runs whatever they find through a `ProviderRegistry`:
 
 ```rust
 identity_layer(registry)
-    .extracting(identity::forwarded_principal) // the gateway's x-fwd-principal
-    .extracting(identity::bearer)              // a direct Authorization: Bearer
-    .extracting(|headers| ...)                 // whatever else your registry knows
+    .extracting(identity::asserted_principal) // the gateway's x-asserted-principal
+    .extracting(identity::bearer)             // a direct Authorization: Bearer
+    .extracting(|headers| ...)                // whatever else your registry knows
 ```

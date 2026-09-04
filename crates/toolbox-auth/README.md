@@ -13,6 +13,7 @@ traits - to do it, which is why this is its own crate. It depends only on
 | `provider` | `IdentityProvider` (`id` + `authenticate`), `ProviderRegistry`, `Credential` |
 | `provider::password` | `PasswordIdentityProvider`, `UserStore`, `auth_epoch` (feature `password`) |
 | `provider::proxy_header` | `ForwardedIdentityProvider`, `ForwardedHeaders` - trusting an authenticating reverse proxy |
+| `provider::asserted_principal` | `AssertedPrincipalProvider`, `AssertedPrincipal` - trusting a whole principal your own gateway already resolved |
 | `provider::jwt` | `JwtIdentityProvider`, `Claims` - mint the gateway's sessions, verify a bearer token |
 
 Every name is re-exported flat, so `toolbox_auth::PasswordIdentityProvider`

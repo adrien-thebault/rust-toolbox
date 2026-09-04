@@ -10,7 +10,7 @@ use tonic::{
 };
 use toolbox_server::deadline::{format_grpc_timeout, time_remaining};
 
-use crate::{X_FWD_PRINCIPAL, X_SHARED_SECRET};
+use crate::{X_ASSERTED_PRINCIPAL, X_SHARED_SECRET};
 
 /// The slack this hop keeps out of a propagated deadline: enough for the
 /// backend's answer to travel back, deserialize, and be turned into a response
@@ -22,29 +22,29 @@ use crate::{X_FWD_PRINCIPAL, X_SHARED_SECRET};
 const SLACK: Duration = Duration::from_millis(100);
 
 tokio::task_local! {
-    /// The encoded [`toolbox_auth::ForwardedPrincipal`] for the current
-    /// outbound-call scope, set by [`forwarding`].
-    static FORWARDED_PRINCIPAL: String;
+    /// The encoded [`toolbox_auth::AssertedPrincipal`] for the current
+    /// outbound-call scope, set by [`asserting`].
+    static ASSERTED_PRINCIPAL: String;
 }
 
-/// Run `f` with `encoded` attached, as `x-fwd-principal`, to every backend call
-/// it makes.
+/// Run `f` with `encoded` attached, as `x-asserted-principal`, to every backend
+/// call it makes.
 ///
 /// The gateway resolves the caller's principal once per inbound request and
-/// wraps its fan-out in this; a call made outside any scope forwards no
+/// wraps its fan-out in this; a call made outside any scope asserts no
 /// principal.
 ///
 /// # Arguments
 ///
-/// * `encoded` - `toolbox_auth::ForwardedPrincipal::encode()` of the principal
-///   to forward.
+/// * `encoded` - `toolbox_auth::AssertedPrincipal::encode()` of the principal
+///   to assert.
 /// * `f` - The work whose backend calls should carry it.
-pub async fn forwarding<F: Future>(encoded: String, f: F) -> F::Output {
-    FORWARDED_PRINCIPAL.scope(encoded, f).await
+pub async fn asserting<F: Future>(encoded: String, f: F) -> F::Output {
+    ASSERTED_PRINCIPAL.scope(encoded, f).await
 }
 
 /// Attaches the caller's remaining deadline, the shared service secret, and any
-/// forwarded principal to every outgoing request.
+/// asserted principal to every outgoing request.
 ///
 /// An interceptor rather than a tower layer, because tonic's `Channel` is a
 /// concrete type with no middleware hook: wrapping it in an `InterceptedService`
@@ -94,10 +94,10 @@ impl Interceptor for ClientInterceptor {
                 .metadata_mut()
                 .insert(X_SHARED_SECRET, secret.clone());
         }
-        if let Ok(encoded) = FORWARDED_PRINCIPAL.try_with(String::clone)
+        if let Ok(encoded) = ASSERTED_PRINCIPAL.try_with(String::clone)
             && let Ok(value) = MetadataValue::try_from(encoded.as_str())
         {
-            request.metadata_mut().insert(X_FWD_PRINCIPAL, value);
+            request.metadata_mut().insert(X_ASSERTED_PRINCIPAL, value);
         }
         Ok(request)
     }

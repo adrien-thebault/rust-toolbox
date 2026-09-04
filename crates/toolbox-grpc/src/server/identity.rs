@@ -9,8 +9,8 @@
 //!
 //! ```ignore
 //! identity_layer(registry)
-//!     .extracting(forwarded_principal) // the gateway's `x-fwd-principal`
-//!     .extracting(bearer)              // a direct `authorization: Bearer`
+//!     .extracting(asserted_principal) // the gateway's `x-asserted-principal`
+//!     .extracting(bearer)             // a direct `authorization: Bearer`
 //! ```
 //!
 //! Put [`super::shared_secret::shared_secret_layer`] in front: this trusts
@@ -26,10 +26,10 @@ use std::{
 use http::{HeaderMap, Request, Response, header::AUTHORIZATION};
 use secrecy::SecretString;
 use tonic::Status;
-use toolbox_auth::{Credential, ForwardedPrincipal, Principal, ProviderRegistry};
+use toolbox_auth::{AssertedPrincipal, Credential, Principal, ProviderRegistry};
 use tower::{Layer, Service};
 
-use crate::X_FWD_PRINCIPAL;
+use crate::X_ASSERTED_PRINCIPAL;
 
 /// Pulls a [`Credential`] out of a request's headers, or `None` if this one is
 /// not there.
@@ -66,7 +66,7 @@ pub fn require<T>(request: &tonic::Request<T>) -> Result<&Principal, Status> {
 /// [`require`].
 ///
 /// It extracts nothing on its own - add [`IdentityLayer::extracting`] sources
-/// ([`forwarded_principal`], [`bearer`], your own). With none, every request
+/// ([`asserted_principal`], [`bearer`], your own). With none, every request
 /// proceeds with no principal. A missing or unresolvable credential is not an
 /// error either.
 ///
@@ -81,18 +81,18 @@ pub fn identity_layer(registry: Arc<ProviderRegistry>) -> IdentityLayer {
     }
 }
 
-/// The gateway's forwarded principal, from `x-fwd-principal`.
+/// The gateway's asserted principal, from `x-asserted-principal`.
 ///
 /// Pass to [`IdentityLayer::extracting`] for a service behind the toolbox
-/// gateway; pair it with a `ForwardedPrincipalProvider` in the registry.
+/// gateway; pair it with an `AssertedPrincipalProvider` in the registry.
 ///
 /// # Arguments
 ///
 /// * `headers` - The request headers.
 #[must_use]
-pub fn forwarded_principal(headers: &HeaderMap) -> Option<Credential> {
-    let encoded = headers.get(X_FWD_PRINCIPAL)?.to_str().ok()?;
-    ForwardedPrincipal::decode(encoded)
+pub fn asserted_principal(headers: &HeaderMap) -> Option<Credential> {
+    let encoded = headers.get(X_ASSERTED_PRINCIPAL)?.to_str().ok()?;
+    AssertedPrincipal::decode(encoded)
         .ok()
         .map(|f| Credential::Custom(Box::new(f)))
 }
@@ -132,7 +132,7 @@ pub struct IdentityLayer {
 impl IdentityLayer {
     /// Add a credential source, tried after the ones already added.
     ///
-    /// [`forwarded_principal`] and [`bearer`] are the provided two; a deployment
+    /// [`asserted_principal`] and [`bearer`] are the provided two; a deployment
     /// whose registry has a provider on some other credential adds its own.
     ///
     /// # Arguments

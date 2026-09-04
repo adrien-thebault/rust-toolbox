@@ -1,7 +1,7 @@
 //! Identity providers.
 //!
 //! [`IdentityProvider`] has several implementations - password, forwarded
-//! header, forwarded principal, JWT - and is used as `dyn`, which is the whole
+//! header, asserted principal, JWT - and is used as `dyn`, which is the whole
 //! point: a deployment picks its providers at runtime and [`ProviderRegistry`]
 //! is the single place a credential becomes a [`Principal`], whether it arrives
 //! at `/auth/login` or on every request as a bearer token.
@@ -10,7 +10,7 @@
 //! exactly one per application, and `Credential` was a closed toolbox-owned
 //! enum. All three are fixed here.
 
-pub mod forwarded_principal;
+pub mod asserted_principal;
 pub mod jwt;
 #[cfg(feature = "password")]
 pub mod password;
@@ -18,8 +18,8 @@ pub mod proxy_header;
 
 use std::sync::Arc;
 
+pub use asserted_principal::{AssertedPrincipal, AssertedPrincipalProvider};
 use async_trait::async_trait;
-pub use forwarded_principal::{ForwardedPrincipal, ForwardedPrincipalProvider};
 pub use jwt::{Claims, JwtIdentityProvider, RefreshInfo, Refreshed, TokenUse};
 #[cfg(feature = "password")]
 pub use password::{

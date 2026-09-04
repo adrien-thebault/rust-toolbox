@@ -26,15 +26,15 @@ use crate::principal::{AuthError, Principal};
 /// distinct type to put in [`Credential::Custom`], separate from a
 /// proxy-header [`ForwardedIdentity`](super::proxy_header::ForwardedIdentity).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ForwardedPrincipal(pub Principal);
+pub struct AssertedPrincipal(pub Principal);
 
-impl From<&Principal> for ForwardedPrincipal {
+impl From<&Principal> for AssertedPrincipal {
     fn from(principal: &Principal) -> Self {
         Self(principal.clone())
     }
 }
 
-impl ForwardedPrincipal {
+impl AssertedPrincipal {
     /// Encode for a transport header: the principal's JSON, base64, ASCII-safe.
     #[must_use]
     pub fn encode(&self) -> String {
@@ -45,7 +45,7 @@ impl ForwardedPrincipal {
         STANDARD.encode(serde_json::to_vec(&self.0).unwrap_or_default())
     }
 
-    /// Decode what [`ForwardedPrincipal::encode`] produced.
+    /// Decode what [`AssertedPrincipal::encode`] produced.
     ///
     /// # Arguments
     ///
@@ -56,34 +56,34 @@ impl ForwardedPrincipal {
     pub fn decode(encoded: &str) -> Result<Self, AuthError> {
         let bytes = STANDARD
             .decode(encoded)
-            .map_err(|_| AuthError::Malformed("forwarded principal is not base64".to_owned()))?;
+            .map_err(|_| AuthError::Malformed("asserted principal is not base64".to_owned()))?;
         let principal = serde_json::from_slice(&bytes).map_err(|_| {
-            AuthError::Malformed("forwarded principal is not a principal".to_owned())
+            AuthError::Malformed("asserted principal is not a principal".to_owned())
         })?;
         Ok(Self(principal))
     }
 }
 
-/// Turns a gateway-forwarded [`ForwardedPrincipal`] back into a [`Principal`].
+/// Turns a gateway-asserted [`AssertedPrincipal`] back into a [`Principal`].
 ///
 /// A plain resolver: it trusts its input, because the transport's shared-secret
 /// gate already established that the caller is the gateway. See the module
 /// docs.
 #[derive(Debug, Clone)]
-pub struct ForwardedPrincipalProvider {
+pub struct AssertedPrincipalProvider {
     /// The registry id.
     id: String,
 }
 
-impl Default for ForwardedPrincipalProvider {
+impl Default for AssertedPrincipalProvider {
     fn default() -> Self {
         Self {
-            id: "forwarded-principal".to_owned(),
+            id: "asserted-principal".to_owned(),
         }
     }
 }
 
-impl ForwardedPrincipalProvider {
+impl AssertedPrincipalProvider {
     /// A provider with the default id.
     #[must_use]
     pub fn new() -> Self {
@@ -103,21 +103,21 @@ impl ForwardedPrincipalProvider {
 }
 
 #[async_trait]
-impl IdentityProvider for ForwardedPrincipalProvider {
+impl IdentityProvider for AssertedPrincipalProvider {
     fn id(&self) -> &str {
         &self.id
     }
 
     async fn authenticate(&self, credential: &Credential) -> Option<Result<Principal, AuthError>> {
-        // The identity arrives as forwarded metadata, not a posted credential,
+        // The identity arrives as asserted metadata, not a posted credential,
         // so the transport wraps it in `Credential::Custom`.
         let Credential::Custom(any) = credential else {
             return None;
         };
-        let forwarded = any.downcast_ref::<ForwardedPrincipal>()?;
-        if forwarded.0.subject.is_empty() {
+        let asserted = any.downcast_ref::<AssertedPrincipal>()?;
+        if asserted.0.subject.is_empty() {
             return Some(Err(AuthError::Unauthenticated));
         }
-        Some(Ok(forwarded.0.clone()))
+        Some(Ok(asserted.0.clone()))
     }
 }
