@@ -1,34 +1,34 @@
 use std::time::Duration;
 
-use toolbox_server::lifecycle::{LifecycleHandle, Shutdown, wait_until_ready};
+use toolbox_server::lifecycle::{LifecycleHandle, Shutdown, wait_until_healthy};
 
 #[tokio::test]
 async fn a_handle_with_no_checks_resolves_at_once() {
     let handle = LifecycleHandle::new(Shutdown::new());
-    tokio::time::timeout(Duration::from_millis(100), wait_until_ready(&handle))
+    tokio::time::timeout(Duration::from_millis(100), wait_until_healthy(&handle))
         .await
-        .expect("no checks means ready immediately");
+        .expect("no checks means healthy immediately");
 }
 
 #[tokio::test]
-async fn shutdown_before_readiness_still_resolves_rather_than_hanging() {
+async fn shutdown_before_becoming_healthy_still_resolves_rather_than_hanging() {
     let shutdown = Shutdown::new();
-    let handle = LifecycleHandle::new(shutdown.clone()).with_checks(vec![Box::new(NeverReady)]);
+    let handle = LifecycleHandle::new(shutdown.clone()).with_checks(vec![Box::new(NeverHealthy)]);
     shutdown.begin();
 
-    tokio::time::timeout(Duration::from_millis(100), wait_until_ready(&handle))
+    tokio::time::timeout(Duration::from_millis(100), wait_until_healthy(&handle))
         .await
-        .expect("a process asked to drain must not wait forever to become ready");
+        .expect("a process asked to drain must not wait forever to become healthy");
 }
 
 /// A check that never passes.
-struct NeverReady;
+struct NeverHealthy;
 
-impl toolbox_server::lifecycle::ReadinessCheck for NeverReady {
+impl toolbox_server::lifecycle::HealthCheck for NeverHealthy {
     fn name(&self) -> &'static str {
-        "never-ready"
+        "never-healthy"
     }
-    fn is_ready(&self) -> bool {
+    fn is_healthy(&self) -> bool {
         false
     }
 }

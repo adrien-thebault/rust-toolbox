@@ -6,30 +6,30 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use toolbox_server::lifecycle::{Health, LifecycleHandle, ReadinessCheck, Shutdown};
+use toolbox_server::lifecycle::{Health, HealthCheck, LifecycleHandle, Shutdown};
 
 /// A check flipped by the test, shared with the handle via an `Arc` so both
 /// sides see the same flag.
 struct Toggle(Arc<AtomicBool>);
 
-impl ReadinessCheck for Toggle {
+impl HealthCheck for Toggle {
     fn name(&self) -> &'static str {
         "toggle"
     }
-    fn is_ready(&self) -> bool {
+    fn is_healthy(&self) -> bool {
         self.0.load(Ordering::SeqCst)
     }
 }
 
-fn toggle(ready: bool) -> (Arc<AtomicBool>, Box<dyn ReadinessCheck>) {
-    let flag = Arc::new(AtomicBool::new(ready));
+fn toggle(healthy: bool) -> (Arc<AtomicBool>, Box<dyn HealthCheck>) {
+    let flag = Arc::new(AtomicBool::new(healthy));
     (Arc::clone(&flag), Box::new(Toggle(flag)))
 }
 
 #[test]
-fn with_no_checks_a_fresh_handle_is_ready_at_once() {
+fn with_no_checks_a_fresh_handle_is_healthy_at_once() {
     let handle = LifecycleHandle::new(Shutdown::new());
-    assert_eq!(handle.current(), Health::Ready);
+    assert_eq!(handle.current(), Health::Healthy);
 }
 
 #[test]
@@ -46,33 +46,33 @@ fn a_check_that_fails_after_passing_once_reads_as_degraded() {
 
     assert_eq!(
         handle.current(),
-        Health::Ready,
+        Health::Healthy,
         "passes once, so it latches"
     );
     flag.store(false, Ordering::SeqCst);
     assert_eq!(
         handle.current(),
         Health::Degraded,
-        "was ready before, so a later failure is a regression, not a cold start"
+        "was healthy before, so a later failure is a regression, not a cold start"
     );
     flag.store(true, Ordering::SeqCst);
-    assert_eq!(handle.current(), Health::Ready);
+    assert_eq!(handle.current(), Health::Healthy);
 }
 
 #[test]
 fn shutdown_wins_over_every_check() {
     let shutdown = Shutdown::new();
     let handle = LifecycleHandle::new(shutdown.clone());
-    assert_eq!(handle.current(), Health::Ready);
+    assert_eq!(handle.current(), Health::Healthy);
 
     shutdown.begin();
     assert_eq!(handle.current(), Health::ShuttingDown);
 }
 
 #[test]
-fn is_ready_is_true_for_ready_alone() {
-    assert!(Health::Ready.is_ready());
-    assert!(!Health::Starting.is_ready());
-    assert!(!Health::Degraded.is_ready());
-    assert!(!Health::ShuttingDown.is_ready());
+fn is_healthy_is_true_for_healthy_alone() {
+    assert!(Health::Healthy.is_healthy());
+    assert!(!Health::Starting.is_healthy());
+    assert!(!Health::Degraded.is_healthy());
+    assert!(!Health::ShuttingDown.is_healthy());
 }

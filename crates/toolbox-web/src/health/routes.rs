@@ -18,12 +18,12 @@ pub struct HealthResponse {
     pub status: &'static str,
     /// One entry per registered check.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub checks: Vec<CheckResult>,
+    pub checks: Vec<HealthCheckResult>,
 }
 
 /// One dependency's result.
 #[derive(Debug, Serialize)]
-pub struct CheckResult {
+pub struct HealthCheckResult {
     /// The check's name.
     pub name: &'static str,
     /// `pass` or `fail`.
@@ -62,17 +62,17 @@ async fn health() -> (StatusCode, Json<HealthResponse>) {
 ///   checks, combined into the one reading this route reports.
 #[allow(clippy::unused_async)]
 async fn ready(State(state): State<HealthState>) -> (StatusCode, Json<HealthResponse>) {
-    let checks: Vec<CheckResult> = state
+    let checks: Vec<HealthCheckResult> = state
         .lifecycle
         .checks()
         .iter()
-        .map(|c| CheckResult {
+        .map(|c| HealthCheckResult {
             name: c.name(),
-            status: if c.is_ready() { "pass" } else { "fail" },
+            status: if c.is_healthy() { "pass" } else { "fail" },
         })
         .collect();
 
-    let ok = state.lifecycle.current().is_ready();
+    let ok = state.lifecycle.current().is_healthy();
     let status = if ok {
         StatusCode::OK
     } else {

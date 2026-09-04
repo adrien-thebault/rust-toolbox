@@ -1,14 +1,14 @@
-//! Boot, readiness and drain, as one state rather than three loosely related
+//! Boot, health and drain, as one state rather than three loosely related
 //! flags.
 //!
-//! A process is starting, ready, degraded or draining, in that order except
-//! that degraded can only follow ready. The three submodules each own one
-//! mechanism - [`shutdown`] the drain sequence, [`ready`] the dependency
-//! contract, [`startup`] the bind config and waiting for the first pass -
-//! and this module is where they combine into the one [`Health`] a caller
-//! actually wants to read.
+//! A process is starting, healthy, degraded or draining, in that order except
+//! that degraded can only follow healthy. The three submodules each own one
+//! mechanism - [`shutdown`] the drain sequence, [`health`] the dependency
+//! contract, [`startup`] the bind config and waiting for the first healthy
+//! pass - and this module is where they combine into the one [`Health`] a
+//! caller actually wants to read.
 
-pub mod ready;
+pub mod health;
 pub mod shutdown;
 pub mod startup;
 
@@ -17,37 +17,12 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-pub use ready::ReadinessCheck;
+pub use health::{Health, HealthCheck};
 pub use shutdown::{Shutdown, ShutdownConfig, shutdown_signal};
-pub use startup::{StartupConfig, StartupError, wait_until_ready};
-
-/// Where the process is in its boot-to-drain lifecycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Health {
-    /// Up, but has not yet passed every readiness check once.
-    Starting,
-    /// Passing every readiness check, and not draining.
-    Ready,
-    /// Passed every readiness check before; at least one is failing now.
-    ///
-    /// A distinction [`Self::Starting`] cannot make on its own: a brand-new
-    /// replica still warming up is not the same event as an established one
-    /// whose dependency just died, and the two want different alerting.
-    Degraded,
-    /// The drain sequence has begun.
-    ShuttingDown,
-}
-
-impl Health {
-    /// Whether this process should receive new traffic.
-    #[must_use]
-    pub fn is_ready(&self) -> bool {
-        matches!(self, Self::Ready)
-    }
-}
+pub use startup::{StartupConfig, StartupError, wait_until_healthy};
 
 /// Reads the process's current [`Health`]: the drain state, plus every
-/// registered [`ReadinessCheck`].
+/// registered [`HealthCheck`].
 ///
 /// The one place this computation is written. `toolbox-web`'s `/ready` route
 /// and `toolbox-grpc`'s health poller both read it rather than each
@@ -58,9 +33,9 @@ pub struct LifecycleHandle {
     shutdown: Shutdown,
     /// Latched the first time every check has passed, so a later failure
     /// reads as [`Health::Degraded`] rather than [`Health::Starting`] again.
-    ever_ready: Arc<AtomicBool>,
-    /// The dependencies readiness consults.
-    checks: Arc<Vec<Box<dyn ReadinessCheck>>>,
+    ever_healthy: Arc<AtomicBool>,
+    /// The dependencies health consults.
+    checks: Arc<Vec<Box<dyn HealthCheck>>>,
 }
 
 impl std::fmt::Debug for LifecycleHandle {
@@ -72,7 +47,7 @@ impl std::fmt::Debug for LifecycleHandle {
 }
 
 impl LifecycleHandle {
-    /// A handle over `shutdown`, with no readiness checks yet.
+    /// A handle over `shutdown`, with no health checks yet.
     ///
     /// # Arguments
     ///
@@ -82,12 +57,12 @@ impl LifecycleHandle {
     pub fn new(shutdown: Shutdown) -> Self {
         Self {
             shutdown,
-            ever_ready: Arc::new(AtomicBool::new(false)),
+            ever_healthy: Arc::new(AtomicBool::new(false)),
             checks: Arc::new(Vec::new()),
         }
     }
 
-    /// Register the dependencies readiness consults.
+    /// Register the dependencies health consults.
     ///
     /// # Arguments
     ///
@@ -95,7 +70,7 @@ impl LifecycleHandle {
     ///   because a database outage that failed liveness would restart every
     ///   replica.
     #[must_use]
-    pub fn with_checks(mut self, checks: Vec<Box<dyn ReadinessCheck>>) -> Self {
+    pub fn with_checks(mut self, checks: Vec<Box<dyn HealthCheck>>) -> Self {
         self.checks = Arc::new(checks);
         self
     }
@@ -108,14 +83,14 @@ impl LifecycleHandle {
     ///
     /// * `checks` - The dependencies to consult, already shared.
     #[must_use]
-    pub fn with_shared_checks(mut self, checks: Arc<Vec<Box<dyn ReadinessCheck>>>) -> Self {
+    pub fn with_shared_checks(mut self, checks: Arc<Vec<Box<dyn HealthCheck>>>) -> Self {
         self.checks = checks;
         self
     }
 
     /// The registered checks, for a caller building its own report.
     #[must_use]
-    pub fn checks(&self) -> &[Box<dyn ReadinessCheck>] {
+    pub fn checks(&self) -> &[Box<dyn HealthCheck>] {
         &self.checks
     }
 
@@ -135,11 +110,11 @@ impl LifecycleHandle {
         if self.shutdown.is_shutting_down() {
             return Health::ShuttingDown;
         }
-        if self.checks.iter().all(|c| c.is_ready()) {
-            self.ever_ready.store(true, Ordering::SeqCst);
-            return Health::Ready;
+        if self.checks.iter().all(|c| c.is_healthy()) {
+            self.ever_healthy.store(true, Ordering::SeqCst);
+            return Health::Healthy;
         }
-        if self.ever_ready.load(Ordering::SeqCst) {
+        if self.ever_healthy.load(Ordering::SeqCst) {
             Health::Degraded
         } else {
             Health::Starting

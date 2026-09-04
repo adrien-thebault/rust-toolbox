@@ -4,7 +4,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use super::{Health, LifecycleHandle, Shutdown, ShutdownConfig};
 
-/// How often to re-check while waiting for first readiness.
+/// How often to re-check while waiting for first health.
 const POLL: Duration = Duration::from_millis(200);
 
 /// Everything `serve_*` needs that is not the application itself.
@@ -69,7 +69,7 @@ pub enum StartupError {
     Io(#[from] std::io::Error),
 }
 
-/// Wait until `handle` first reports [`Health::Ready`], or shutdown begins
+/// Wait until `handle` first reports [`Health::Healthy`], or shutdown begins
 /// first.
 ///
 /// For a `main` that wants to log `"started"`, or open some other startup
@@ -79,11 +79,11 @@ pub enum StartupError {
 /// # Arguments
 ///
 /// * `handle` - The lifecycle handle to poll.
-pub async fn wait_until_ready(handle: &LifecycleHandle) {
+pub async fn wait_until_healthy(handle: &LifecycleHandle) {
     let mut ticker = tokio::time::interval(POLL);
     loop {
         match handle.current() {
-            Health::Ready | Health::ShuttingDown => return,
+            Health::Healthy | Health::ShuttingDown => return,
             Health::Starting | Health::Degraded => {
                 ticker.tick().await;
             }

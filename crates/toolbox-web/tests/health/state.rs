@@ -1,12 +1,12 @@
 use toolbox_server::lifecycle::Shutdown;
-use toolbox_web::health::{HealthState, ReadinessCheck};
+use toolbox_web::health::{HealthCheck, HealthState};
 
 struct Always(&'static str);
-impl ReadinessCheck for Always {
+impl HealthCheck for Always {
     fn name(&self) -> &'static str {
         self.0
     }
-    fn is_ready(&self) -> bool {
+    fn is_healthy(&self) -> bool {
         true
     }
 }

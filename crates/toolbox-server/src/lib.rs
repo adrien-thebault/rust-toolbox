@@ -14,8 +14,8 @@ pub mod trace_context;
 
 pub use deadline::{DEADLINE, DeadlineLayer, current_deadline, time_remaining};
 pub use lifecycle::{
-    Health, LifecycleHandle, ReadinessCheck, Shutdown, ShutdownConfig, StartupConfig, StartupError,
-    shutdown_signal, wait_until_ready,
+    Health, HealthCheck, LifecycleHandle, Shutdown, ShutdownConfig, StartupConfig, StartupError,
+    shutdown_signal, wait_until_healthy,
 };
 pub use stack::{
     GrpcStack, HttpStack, RealtimeStack, StackConfig, grpc_stack, http_stack, realtime_stack,

@@ -10,7 +10,7 @@ use std::{
 };
 
 use toolbox_grpc::{RoutesBuilder, ServerConfig, serve};
-use toolbox_server::{StartupConfig, lifecycle::ReadinessCheck};
+use toolbox_server::{StartupConfig, lifecycle::HealthCheck};
 
 /// `serve` binds the listener and runs the tonic serve loop until it is
 /// cancelled - it must not return on its own.
@@ -31,23 +31,23 @@ async fn serve_binds_and_stays_up() {
     }
 }
 
-/// A readiness check flipped by the test.
+/// A health check flipped by the test.
 struct Toggle(Arc<AtomicBool>);
 
-impl ReadinessCheck for Toggle {
+impl HealthCheck for Toggle {
     fn name(&self) -> &'static str {
         "toggle"
     }
-    fn is_ready(&self) -> bool {
+    fn is_healthy(&self) -> bool {
         self.0.load(Ordering::SeqCst)
     }
 }
 
-/// The gRPC health probe for the empty service name tracks the readiness
+/// The gRPC health probe for the empty service name tracks the health
 /// checks, so a backend whose dependency is down is pulled from rotation the
 /// same way the axum `/ready` route does it.
 #[tokio::test]
-async fn the_health_probe_follows_the_readiness_checks() {
+async fn the_health_probe_follows_the_health_checks() {
     let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = probe.local_addr().unwrap();
     drop(probe);

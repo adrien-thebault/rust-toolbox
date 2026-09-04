@@ -1,7 +1,7 @@
 //! The state `health_router` reads: the process lifecycle, plus any extra
 //! dependency checks `/ready` must also pass.
 
-pub use toolbox_server::lifecycle::ReadinessCheck;
+pub use toolbox_server::lifecycle::HealthCheck;
 use toolbox_server::lifecycle::{LifecycleHandle, Shutdown};
 
 /// The state `health_router` needs.
@@ -41,7 +41,7 @@ impl HealthState {
     /// * `checks` - The dependencies readiness consults. Liveness never does,
     ///   because a database outage that fails liveness restarts every replica.
     #[must_use]
-    pub fn with_checks(mut self, checks: Vec<Box<dyn ReadinessCheck>>) -> Self {
+    pub fn with_checks(mut self, checks: Vec<Box<dyn HealthCheck>>) -> Self {
         self.lifecycle = self.lifecycle.with_checks(checks);
         self
     }

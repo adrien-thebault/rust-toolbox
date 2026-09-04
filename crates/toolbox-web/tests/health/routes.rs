@@ -1,21 +1,21 @@
 use axum::Router;
 use http::StatusCode;
 use toolbox_server::lifecycle::Shutdown;
-use toolbox_web::health::{HealthState, ReadinessCheck, health_router};
+use toolbox_web::health::{HealthCheck, HealthState, health_router};
 
 use crate::{call, get};
 
 struct Db(bool);
-impl ReadinessCheck for Db {
+impl HealthCheck for Db {
     fn name(&self) -> &'static str {
         "database"
     }
-    fn is_ready(&self) -> bool {
+    fn is_healthy(&self) -> bool {
         self.0
     }
 }
 
-fn app(shutdown: &Shutdown, checks: Vec<Box<dyn ReadinessCheck>>) -> Router {
+fn app(shutdown: &Shutdown, checks: Vec<Box<dyn HealthCheck>>) -> Router {
     let state = HealthState::new(shutdown.clone()).with_checks(checks);
     health_router().with_state(state)
 }

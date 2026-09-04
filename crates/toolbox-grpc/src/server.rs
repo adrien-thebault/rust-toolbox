@@ -15,7 +15,7 @@ pub use tonic::service::RoutesBuilder;
 use tonic::transport::Server;
 use toolbox_server::{
     bind,
-    lifecycle::{LifecycleHandle, ReadinessCheck, StartupConfig, StartupError, shutdown_signal},
+    lifecycle::{HealthCheck, LifecycleHandle, StartupConfig, StartupError, shutdown_signal},
     stack::{StackConfig, grpc_stack},
 };
 use tracing::warn;
@@ -61,7 +61,7 @@ pub struct ServerConfig {
     pub reflection: Option<&'static [u8]>,
     /// Dependencies the gRPC readiness probe consults, alongside the drain
     /// state. Empty means "ready whenever the process is up and not draining".
-    pub readiness: Arc<Vec<Box<dyn ReadinessCheck>>>,
+    pub readiness: Arc<Vec<Box<dyn HealthCheck>>>,
 }
 
 impl std::fmt::Debug for ServerConfig {
@@ -122,7 +122,7 @@ impl ServerConfig {
     ///   the empty service name then reports `NOT_SERVING` while any of them is
     ///   unusable, the same signal the axum side's `/ready` gives.
     #[must_use]
-    pub fn readiness_checks(mut self, checks: Vec<Box<dyn ReadinessCheck>>) -> Self {
+    pub fn readiness_checks(mut self, checks: Vec<Box<dyn HealthCheck>>) -> Self {
         self.readiness = Arc::new(checks);
         self
     }
@@ -237,7 +237,7 @@ async fn poll_readiness(
     let mut on_shutdown = lifecycle.shutdown_watch();
     let mut ticker = tokio::time::interval(READINESS_POLL);
     loop {
-        let status = if lifecycle.current().is_ready() {
+        let status = if lifecycle.current().is_healthy() {
             tonic_health::ServingStatus::Serving
         } else {
             tonic_health::ServingStatus::NotServing

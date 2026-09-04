@@ -39,7 +39,7 @@ pub use error::{ApiError, status_for};
 #[cfg(feature = "auth-router")]
 pub use extract::QueryAuthenticated;
 pub use extract::{Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson};
-pub use health::{CheckResult, HealthResponse, HealthState, ReadinessCheck, health_router};
+pub use health::{HealthCheck, HealthCheckResult, HealthResponse, HealthState, health_router};
 #[cfg(feature = "idempotency")]
 pub use idempotency::{Idempotency, IdempotencyOutcome, StoredResponse, in_flight_error};
 #[cfg(feature = "openapi")]
