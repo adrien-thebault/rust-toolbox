@@ -36,6 +36,8 @@ pub use auth::{AuthState, auth_router, session_layer};
 pub use client_ip::{ClientIpTrustPolicy, client_ip, resolve_client_ip};
 pub use cors::{cors, cors_localhost};
 pub use error::{ApiError, status_for};
+#[cfg(feature = "auth-router")]
+pub use extract::QueryAuthenticated;
 pub use extract::{Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson};
 pub use health::{CheckResult, HealthResponse, HealthState, ReadinessCheck, health_router};
 #[cfg(feature = "idempotency")]

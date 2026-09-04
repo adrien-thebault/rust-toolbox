@@ -103,3 +103,82 @@ fn role_checks_work_dynamically_too() {
     assert!(p.require_role("OWNER").is_err());
     assert!(p.has::<Admin>());
 }
+
+#[cfg(feature = "auth-router")]
+mod query_authenticated {
+    use std::time::Duration;
+
+    use secrecy::SecretString;
+    use toolbox_auth::{JwtIdentityProvider, ProviderRegistry};
+    use toolbox_web::{auth::AuthState, extract::QueryAuthenticated};
+
+    use super::*;
+
+    #[derive(Clone)]
+    struct State {
+        providers: std::sync::Arc<ProviderRegistry>,
+        issuer: std::sync::Arc<JwtIdentityProvider>,
+    }
+
+    impl AuthState for State {
+        fn providers(&self) -> &ProviderRegistry {
+            &self.providers
+        }
+        fn session_issuer(&self) -> &JwtIdentityProvider {
+            &self.issuer
+        }
+    }
+
+    fn state() -> State {
+        let issuer = std::sync::Arc::new(
+            JwtIdentityProvider::hmac(&SecretString::from("a".repeat(32)), "toolbox-test").unwrap(),
+        );
+        State {
+            providers: std::sync::Arc::new(ProviderRegistry::new().with_arc(issuer.clone())),
+            issuer,
+        }
+    }
+
+    fn app() -> Router<State> {
+        Router::new().route(
+            "/connect",
+            get(|a: QueryAuthenticated| async move { a.0.subject }),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_token_in_the_query_string_authenticates_the_connection() {
+        let state = state();
+        let token = state
+            .issuer
+            .issue_with_ttl(
+                &Principal::new("u1", "toolbox-test"),
+                Duration::from_secs(30),
+            )
+            .unwrap();
+
+        let (res, body) = call(
+            app().with_state(state),
+            get_req(&format!("/connect?token={token}")),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(body, "u1");
+    }
+
+    #[tokio::test]
+    async fn no_token_is_401_not_a_500() {
+        let (res, _) = call(app().with_state(state()), get_req("/connect")).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn a_garbage_token_is_401() {
+        let (res, _) = call(
+            app().with_state(state()),
+            get_req("/connect?token=not-a-jwt"),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+}

@@ -34,7 +34,7 @@ auth-router = ["rate-limit", "dep:secrecy"]
 captcha = ["dep:reqwest", "dep:secrecy", "dep:async-trait"]
 # Replaying the response for a repeated Idempotency-Key.
 idempotency = ["dep:toolbox-cluster"]
-# Server-sent events with a fan-out hub and ticket auth.
+# Server-sent events with a fan-out hub.
 realtime = ["dep:toolbox-cluster", "dep:cloudevents-sdk", "dep:futures-core", "dep:futures-util", "axum/macros"]
 
 [dependencies]
@@ -54,7 +54,6 @@ serde          = { workspace = true, features = ["derive"] }
 serde_json     = { workspace = true }
 garde          = { workspace = true, features = ["derive"] }
 thiserror      = { workspace = true }
-getrandom       = { workspace = true }
 tracing        = { workspace = true }
 tower_governor = { workspace = true, optional = true }
 governor       = { workspace = true, optional = true }

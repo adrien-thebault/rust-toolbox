@@ -2,4 +2,3 @@
 
 mod hub;
 mod sse;
-mod ticket;

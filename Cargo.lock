@@ -3777,7 +3777,6 @@ dependencies = [
  "futures-executor",
  "futures-util",
  "garde",
- "getrandom 0.3.4",
  "governor",
  "http",
  "http-body-util",
