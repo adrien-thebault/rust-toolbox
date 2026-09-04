@@ -187,3 +187,10 @@ Do not helpfully reintroduce these:
   planned. `#[derive(Entity)]`'s timestamp autofill calls `chrono` directly
   now; the swap, if it ever happens, is a `toolbox-macros` change, not a
   consumer-facing one.
+- `EventBusCapabilities`, `KvStoreCapabilities`, `LockManagerCapabilities`,
+  `Delivery`, `BusOrdering`, `MissingCapability`, `StartPosition` - capability
+  negotiation for traits with one real adapter each. Atomic `add`/`take` on
+  `KvStore` and a lease on `LockManager` are now hard contract requirements, not
+  a flag a caller checks at runtime; `EventBus::subscribe` always starts from
+  the tail. A capability struct comes back the day a second adapter's
+  guarantees genuinely differ from the first's.
