@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use moka::{Expiry, future::Cache};
 
 use super::{KvStore, KvStoreCapabilities, KvStoreError};
-use crate::deployment::{Adapter, Scope};
 
 /// An entry, carrying its own expiry so the cache can honour per-key TTLs.
 #[derive(Debug, Clone)]
@@ -185,22 +184,5 @@ impl KvStore for InMemoryKvStore {
     async fn delete(&self, key: &str) -> Result<(), KvStoreError> {
         self.cache.invalidate(key).await;
         Ok(())
-    }
-}
-
-impl Adapter for InMemoryKvStore {
-    fn name(&self) -> &'static str {
-        "InMemoryKvStore"
-    }
-
-    fn scope(&self) -> Scope {
-        Scope::LocalDegraded {
-            note: "entries are per-process, so a value written on one replica is \
-                   invisible to the others",
-        }
-    }
-
-    fn remedy(&self) -> Option<&'static str> {
-        Some("set KV_STORE to a shared adapter (postgres) if values must be seen by every replica")
     }
 }

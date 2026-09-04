@@ -15,7 +15,7 @@ Shared by axum and tonic; depends on neither.
 | `shutdown` | the five-step drain |
 | `startup` | the deployment check and the bind |
 | `telemetry` | `-v`/`-q`, `LOG_FORMAT`, `RUST_LOG` |
-| `args` | `ServerArgs` and `DeploymentArgs` |
+| `args` | `ServerArgs` |
 
 `realtime_stack` has no timeout and no body limit, and that is the entire
 reason it exists: a 30-second request timeout kills every SSE and WebSocket

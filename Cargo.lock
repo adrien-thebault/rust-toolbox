@@ -729,7 +729,6 @@ dependencies = [
  "percent-encoding",
  "pq-sys",
  "r2d2",
- "serde_json",
  "sqlite-wasm-rs",
  "time",
  "url",
@@ -3638,26 +3637,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "toolbox-core",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "toolbox-cluster-postgres"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "chrono",
- "cloudevents-sdk",
- "diesel",
- "diesel_migrations",
- "futures-core",
- "serde_json",
- "tokio",
- "tokio-stream",
- "toolbox-cluster",
- "toolbox-core",
- "toolbox-db",
  "tracing",
  "uuid",
 ]

@@ -13,14 +13,13 @@ use super::{
     BusOrdering, CloudEvent, Delivery, EventBus, EventBusCapabilities, EventBusError, EventStream,
     StartPosition, Topic,
 };
-use crate::deployment::{Adapter, Scope};
 
 /// The default bus: a tokio broadcast channel per topic.
 ///
 /// **Single replica only.** Events published on this instance never reach a
-/// subscriber on another, so under `DEPLOYMENT=clustered` a subscriber misses
-/// most of the stream. That is why it declares [`Scope::Local`] and the
-/// startup guard refuses to run it clustered.
+/// subscriber on another, so under more than one replica a subscriber misses
+/// most of the stream. Use a shared adapter once you are running more than
+/// one.
 pub struct InProcessEventBus {
     /// One broadcast sender per topic, created on first use.
     topics: Mutex<HashMap<Topic, broadcast::Sender<CloudEvent>>>,
@@ -104,19 +103,5 @@ impl EventBus for InProcessEventBus {
         let stream =
             tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(std::result::Result::ok);
         Ok(Box::pin(stream))
-    }
-}
-
-impl Adapter for InProcessEventBus {
-    fn name(&self) -> &'static str {
-        "InProcessEventBus"
-    }
-
-    fn scope(&self) -> Scope {
-        Scope::Local
-    }
-
-    fn remedy(&self) -> Option<&'static str> {
-        Some("set EVENT_BUS to a shared adapter (postgres), or run one replica")
     }
 }

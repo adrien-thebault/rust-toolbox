@@ -1,8 +1,8 @@
 //! Serving an axum router.
 //!
-//! `toolbox-server` owns the deployment check, the bind and the drain
-//! sequence; this adds the axum-specific serve loop, because naming
-//! `axum::Router` in `toolbox-server` would mean depending on axum there.
+//! `toolbox-server` owns the bind and the drain sequence; this adds the
+//! axum-specific serve loop, because naming `axum::Router` in `toolbox-server`
+//! would mean depending on axum there.
 
 use std::net::SocketAddr;
 
@@ -27,16 +27,14 @@ use tracing::info;
 ///
 /// # Arguments
 ///
-/// * `cfg` - Where to listen, plus the adapters and deployment the guard checks
-///   first.
+/// * `cfg` - Where to listen.
 /// * `app` - The router, with its layers already applied. This does not apply
 ///   `http_stack` for you, because a router with realtime routes needs a
 ///   different stack on those.
 ///
 /// # Errors
-/// [`StartupError::Deployment`] when a single-replica adapter is running
-/// clustered, or [`StartupError::Io`] when the address cannot be bound.
-pub async fn serve(cfg: StartupConfig<'_>, app: Router) -> Result<(), StartupError> {
+/// [`StartupError::Io`] when the address cannot be bound.
+pub async fn serve(cfg: StartupConfig, app: Router) -> Result<(), StartupError> {
     let listener = bind(&cfg).await?;
     let shutdown = cfg.shutdown_handle.clone();
     let drain = cfg.shutdown;

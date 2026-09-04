@@ -9,7 +9,6 @@ use std::{
 use async_trait::async_trait;
 
 use super::{LockGuard, LockManager, LockManagerCapabilities, LockManagerError, LockRelease};
-use crate::deployment::{Adapter, Scope};
 
 /// Who holds a lock, and until when.
 #[derive(Debug, Clone)]
@@ -23,7 +22,7 @@ struct Lease {
 /// Locks held in this process only.
 ///
 /// **Single replica only.** Two replicas each take the "same" lock and both run
-/// the work, so it declares [`Scope::Local`].
+/// the work.
 #[derive(Debug, Default)]
 pub struct InProcessLockManager {
     /// Every currently held lock, by key.
@@ -98,19 +97,5 @@ impl LockManager for InProcessLockManager {
                 held: Arc::clone(&self.held),
             }),
         )))
-    }
-}
-
-impl Adapter for InProcessLockManager {
-    fn name(&self) -> &'static str {
-        "InProcessLockManager"
-    }
-
-    fn scope(&self) -> Scope {
-        Scope::Local
-    }
-
-    fn remedy(&self) -> Option<&'static str> {
-        Some("set LOCK_MANAGER to a shared adapter (postgres), or run one replica")
     }
 }

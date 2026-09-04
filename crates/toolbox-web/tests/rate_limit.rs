@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use axum::{Router, routing::get};
 use http::StatusCode;
-use toolbox_cluster::deployment::{Adapter, Scope};
 use toolbox_web::{
     ClientIpTrust,
-    rate_limit::{ForwardedForKeyExtractor, RateLimit, RateLimitAdapter, error_response_handler},
+    rate_limit::{ForwardedForKeyExtractor, RateLimit, error_response_handler},
 };
 use tower_governor::{GovernorError, key_extractor::KeyExtractor};
 
@@ -62,17 +61,6 @@ fn a_rejection_becomes_a_problem_document_with_retry_after() {
 fn an_unidentifiable_client_is_a_400_not_a_429() {
     let res = error_response_handler(GovernorError::UnableToExtractKey);
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-}
-
-/// Per-process limiting degrades under replicas rather than breaking, so the
-/// adapter declares `LocalDegraded` and the guard warns rather than refusing.
-#[test]
-fn the_adapter_declares_itself_degraded_under_clustering() {
-    assert!(matches!(
-        RateLimitAdapter.scope(),
-        Scope::LocalDegraded { .. }
-    ));
-    assert_eq!(RateLimitAdapter.name(), "tower_governor");
 }
 
 /// The layer `auth_router` and any other throttled route are built from: after

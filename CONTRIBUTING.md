@@ -33,8 +33,7 @@ does **not** fit, write why in the doc comment.
 
 Then it is a **trait with adapters**, not a struct: a local adapter, at least
 one shared adapter, capabilities declared rather than assumed, and unsupported
-operations failing at *wiring* time rather than at runtime. And it declares a
-`Scope` so the deployment guard can refuse to start the process.
+operations failing at *wiring* time rather than at runtime.
 
 ### Then write the answer down
 

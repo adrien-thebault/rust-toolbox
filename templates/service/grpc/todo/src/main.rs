@@ -4,11 +4,7 @@ use clap::Parser;
 use {{crate_name}}_todo::{Connection, MIGRATIONS, TodoService, proto};
 use toolbox_db::args::DatabaseArgs;
 use toolbox_grpc::{RoutesBuilder, ServerConfig, serve};
-use toolbox_server::{
-    args::{DeploymentArgs, ServerArgs},
-    startup::StartupConfig,
-    telemetry::TelemetryArgs,
-};
+use toolbox_server::{args::ServerArgs, startup::StartupConfig, telemetry::TelemetryArgs};
 
 /// Command-line arguments.
 #[derive(Parser)]
@@ -20,9 +16,6 @@ struct Args {
     /// Listen address.
     #[command(flatten)]
     server: ServerArgs,
-    /// `single` or `clustered`.
-    #[command(flatten)]
-    deployment: DeploymentArgs,
     /// The database URL and pool settings.
     #[command(flatten)]
     database: DatabaseArgs,
@@ -37,13 +30,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Locked, so three replicas starting together do not race.
     db.migrate(MIGRATIONS).await?;
 
-    let deployment = args.deployment.resolve()?;
-    let cfg = StartupConfig::new(args.server.listen_addr, &deployment);
+    let cfg = StartupConfig::new(args.server.listen_addr);
 
-    // Graceful shutdown, health, reflection, the standard stack and the
-    // deployment check all come from serve; none of it is written here. A
-    // second domain is one more `add_service` if it shares this process, or its
-    // own binary if not.
+    // Graceful shutdown, health, reflection and the standard stack all come
+    // from serve; none of it is written here. A second domain is one more
+    // `add_service` if it shares this process, or its own binary if not.
     let mut routes = RoutesBuilder::default();
     routes.add_service(TodoService::new(db).into_server());
     serve(

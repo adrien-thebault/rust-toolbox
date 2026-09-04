@@ -11,8 +11,6 @@ the rust-toolbox template.
 - a request timeout and a body size limit
 - W3C trace context, so every log line and every error body carries a request id
 - RFC 9457 error responses, with 5xx detail redacted
-- a deployment guard that refuses to start a single-replica adapter under
-  `DEPLOYMENT=clustered`
 - gRPC health and reflection, so `grpcurl` works with no protos to hand
 - locked migrations, so replicas starting together do not race
 {% if gateway %}- login, refresh, logout and `/auth/me`, with the login rate

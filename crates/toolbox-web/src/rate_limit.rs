@@ -12,9 +12,8 @@
 //! same thing in all four.
 //!
 //! **This limiter is per-process.** Three replicas means three times the
-//! intended allowance. That is degradation rather than breakage, so
-//! [`RateLimitAdapter`] declares `LocalDegraded` and the startup guard warns
-//! rather than refusing.
+//! intended allowance - acceptable for login throttling, not for quota
+//! enforcement.
 
 use std::{net::IpAddr, sync::Arc, time::Duration};
 
@@ -23,7 +22,6 @@ use governor::{
     clock::QuantaInstant,
     middleware::{NoOpMiddleware, RateLimitingMiddleware},
 };
-use toolbox_cluster::deployment::{Adapter, Scope};
 use tower_governor::{
     GovernorError, GovernorLayer,
     governor::{GovernorConfig, GovernorConfigBuilder},
@@ -173,26 +171,6 @@ pub fn error_response_handler(err: GovernorError) -> Response {
             .with_code("RATE_LIMITER_ERROR")
             .with_detail(msg.unwrap_or_default())
             .into_response(),
-    }
-}
-
-/// Declares the limiter to the deployment guard.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RateLimitAdapter;
-
-impl Adapter for RateLimitAdapter {
-    fn name(&self) -> &'static str {
-        "tower_governor"
-    }
-
-    fn scope(&self) -> Scope {
-        Scope::LocalDegraded {
-            note: "rate limiting is per-process, so N replicas enforce N times the allowance",
-        }
-    }
-
-    fn remedy(&self) -> Option<&'static str> {
-        Some("acceptable for login throttling; not for quota enforcement")
     }
 }
 

@@ -30,8 +30,7 @@ Each has its own README explaining what its modules do.
 | [`toolbox-core`](crates/toolbox-core/README.md) | `ErrorKind`, `ServiceError`, RFC 9457 `Problem`, `Page`/`Sort` |
 | [`toolbox-macros`](crates/toolbox-macros/README.md) | `#[derive(Entity)]` |
 | [`toolbox-db`](crates/toolbox-db/README.md) | `Db<C>`, pagination, locks, migrations, pragmas |
-| [`toolbox-cluster`](crates/toolbox-cluster/README.md) | the cluster traits, their local adapters, the deployment guard |
-| [`toolbox-cluster-postgres`](crates/toolbox-cluster-postgres/README.md) | the shared adapters: outbox, key-value, leases |
+| [`toolbox-cluster`](crates/toolbox-cluster/README.md) | the cluster traits and their local adapters |
 | [`toolbox-schedule`](crates/toolbox-schedule/README.md) | scheduled tasks that run once per cluster, plus the `Clock` port |
 | [`toolbox-server`](crates/toolbox-server/README.md) | trace context, layer stacks, deadlines, graceful drain |
 | [`toolbox-auth`](crates/toolbox-auth/README.md) | principals, roles, identity providers, `PrincipalMapping`, JWT sessions with stateless refresh |
@@ -72,9 +71,8 @@ project passes its own checks.
 You get, without writing any of it: graceful shutdown with the drain delay that
 stops a rolling deploy dropping requests, `/health` and `/ready`, a request
 timeout and body limit, W3C trace context on every log line and error body, RFC
-9457 errors with 5xx detail redacted, a startup guard that refuses a
-single-replica adapter under `DEPLOYMENT=clustered`, gRPC health and reflection,
-and locked migrations.
+9457 errors with 5xx detail redacted, gRPC health and reflection, and locked
+migrations.
 
 `examples/grpc-cluster` is the same thing as two crates you can deploy
 separately - `grpc/todo` owns the database, `web` owns authentication. It is
@@ -94,14 +92,6 @@ pub type Backend = diesel::sqlite::Sqlite;
 Swapping to PostgreSQL is that line plus the connection URL. `toolbox-db`
 declares no backend feature, which is why `--all-features` works and why one
 process can hold a PostgreSQL pool and a SQLite pool at once.
-
-## Deployment modes
-
-Set `DEPLOYMENT=single` or `DEPLOYMENT=clustered`. Every stateful adapter
-declares whether its state is shared, and each transport's `serve` checks at
-startup: an adapter that would be **incorrect** on several replicas refuses to
-start and names the variable to change; one that would merely be **degraded**
-warns.
 
 ## Semver policy
 

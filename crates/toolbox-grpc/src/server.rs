@@ -137,18 +137,16 @@ impl ServerConfig {
 ///
 /// # Arguments
 ///
-/// * `cfg` - Where to listen, plus the adapters and deployment the guard checks
-///   first.
+/// * `cfg` - Where to listen.
 /// * `server` - What the server does beyond routing: the stack, health,
 ///   reflection, message limits and the readiness checks.
 /// * `routes` - The services to serve. Health and reflection are added onto it
 ///   here, from `server`.
 ///
 /// # Errors
-/// [`StartupError::Deployment`] when a single-replica adapter is running
-/// clustered, or [`StartupError::Io`] when the address cannot be bound.
+/// [`StartupError::Io`] when the address cannot be bound.
 pub async fn serve(
-    cfg: StartupConfig<'_>,
+    cfg: StartupConfig,
     server: ServerConfig,
     mut routes: RoutesBuilder,
 ) -> Result<(), StartupError> {

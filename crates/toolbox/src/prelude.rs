@@ -6,7 +6,7 @@
 #[cfg(feature = "auth")]
 pub use toolbox_auth::{Principal, Role};
 #[cfg(feature = "cluster")]
-pub use toolbox_cluster::{CloudEvent, Deployment};
+pub use toolbox_cluster::CloudEvent;
 #[cfg(feature = "core")]
 pub use toolbox_core::{ErrorKind, Page, PageRequest, Problem, ServiceError, Sort};
 #[cfg(feature = "db")]

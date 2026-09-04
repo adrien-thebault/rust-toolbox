@@ -10,10 +10,9 @@ use example_web::{
     auth::{self, AuthConfig},
     routes::router,
 };
-use toolbox_cluster::Adapter;
 use toolbox_grpc::{ClientConfig, client};
 use toolbox_server::{
-    args::{DeploymentArgs, ServerArgs},
+    args::ServerArgs,
     stack::{StackConfig, http_stack},
     startup::StartupConfig,
     telemetry::TelemetryArgs,
@@ -21,7 +20,7 @@ use toolbox_server::{
 use toolbox_web::{
     ClientIpTrust,
     health::{HealthState, health_router},
-    rate_limit::{RateLimit, RateLimitAdapter},
+    rate_limit::RateLimit,
     serve,
 };
 
@@ -35,9 +34,6 @@ struct Args {
     /// Listen address.
     #[command(flatten)]
     server: ServerArgs,
-    /// `single` or `clustered`.
-    #[command(flatten)]
-    deployment: DeploymentArgs,
 
     /// Where the todo backend is.
     #[arg(long, env = "TODO_BACKEND", default_value = "http://127.0.0.1:50051")]
@@ -70,13 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ClientIpTrust::hops(args.trusted_hops),
     );
 
-    let deployment = args.deployment.resolve()?;
-    let limiter = RateLimitAdapter;
-    // Every stateful adapter this process built, so the guard can flag a
-    // single-replica one under DEPLOYMENT=clustered.
-    let adapters: Vec<&dyn Adapter> = vec![&limiter];
-
-    let cfg = StartupConfig::new(args.server.listen_addr, &deployment).adapters(&adapters);
+    let cfg = StartupConfig::new(args.server.listen_addr);
     let health = HealthState::new(cfg.shutdown_handle.readiness());
 
     // The stack is applied here, not by serve: a router with realtime

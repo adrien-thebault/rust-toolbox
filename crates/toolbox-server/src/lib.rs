@@ -13,7 +13,6 @@ pub mod startup;
 pub mod telemetry;
 pub mod trace_context;
 
-pub use args::ArgsError;
 pub use deadline::{DEADLINE, DeadlineLayer, current_deadline, time_remaining};
 pub use shutdown::{ReadinessCheck, ReadinessHandle, Shutdown, ShutdownConfig, shutdown_signal};
 pub use stack::{

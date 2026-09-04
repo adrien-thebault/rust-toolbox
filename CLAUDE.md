@@ -29,10 +29,9 @@ core -> db -> cluster -> server -> {web, grpc}
 | `toolbox-core` | `ErrorKind`, `ServiceError`, `ErrorInfo`, RFC 9457 `Problem`, `Page`/`PageRequest`/`Sort`. serde and thiserror only |
 | `toolbox-macros` | `#[derive(Entity)]`. Proc-macro crate, so necessarily separate |
 | `toolbox-db` | `Db<C>`, `DbError`, `Entity`, `Paginate`, locked `migrate()`, `SqlitePragmas`, `DatabaseArgs` |
-| `toolbox-cluster` | `CloudEvent`; the `EventBus`/`KvStore`/`LockManager` traits, their local adapters, and the deployment guard |
-| `toolbox-cluster-postgres` | the shared adapters: outbox, key-value, leased locks |
+| `toolbox-cluster` | `CloudEvent`; the `EventBus`/`KvStore`/`LockManager` traits and their local adapters |
 | `toolbox-schedule` | scheduled tasks that run once per cluster, plus the `Clock` port (`system`/`manual`) |
-| `toolbox-server` | trace context, `http_stack`/`grpc_stack`/`realtime_stack`, deadlines, shutdown, telemetry, `ServerArgs`/`DeploymentArgs`, `bind` |
+| `toolbox-server` | trace context, `http_stack`/`grpc_stack`/`realtime_stack`, deadlines, shutdown, telemetry, `ServerArgs`, `bind` |
 | `toolbox-auth` | `Principal`, `Role`, `IdentityProvider`/`ProviderRegistry`, `PrincipalMapping`, `JwtIdentityProvider` (mints HS256 sessions + stateless refresh, verifies a bearer - its own, JWKS or a public key). Depends only on `toolbox-core`, so a backend validates a token without compiling axum or the cluster traits. No OIDC redirect flow, no identity federation |
 | `toolbox-web` | `ApiError`, `Authenticated<R>`, `ValidJson`, `PageQuery`, `Idempotent`, health, CORS, rate limiting, `client_ip`, OpenAPI, SSE, `serve` |
 | `toolbox-grpc` | `to_status`/`from_status`, `client()`, `pagination.proto`, `shared_secret_layer`/`identity_layer`, health, reflection, `serve` |
