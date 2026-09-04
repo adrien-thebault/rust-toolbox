@@ -194,3 +194,9 @@ Do not helpfully reintroduce these:
   a flag a caller checks at runtime; `EventBus::subscribe` always starts from
   the tail. A capability struct comes back the day a second adapter's
   guarantees genuinely differ from the first's.
+- `toolbox-web`'s KV-backed `Ticket`/`TicketStore` - a bespoke single-use
+  token needing `KvStore` for a property (single-use) that a leaked one's own
+  short TTL already covers, the same tradeoff this workspace already accepts
+  for a stateless refresh token. Replaced by
+  `JwtIdentityProvider::issue_with_ttl` plus `extract::QueryAuthenticated`: an
+  ordinary access token, just shorter-lived, verified the same way.
