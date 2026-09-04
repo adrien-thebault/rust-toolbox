@@ -60,9 +60,9 @@ cargo +nightly fmt --all           # group_imports is nightly-only
 cargo hack --feature-powerset --depth 2 check -p toolbox-db -p toolbox-web -p toolbox-auth -p toolbox
 cargo deny check
 ./scripts/changelog.sh
-./scripts/example.sh                 # the gRPC cluster example, end to end
-./scripts/openapi.sh                 # regenerate the example's committed spec
 ./scripts/hash-password.sh           # an argon2 hash in PHC format
+cargo test -p example-todo -p example-web           # the gRPC cluster example, end to end
+./examples/grpc-cluster/openapi.sh                  # regenerate the example's committed spec
 ```
 
 Needs `protoc`, and `libpq` + `libmysqlclient` for `toolbox-db`'s

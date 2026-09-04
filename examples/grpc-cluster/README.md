@@ -14,7 +14,8 @@ that deploys it.
 cp .env.example .env
 docker compose up                     # both services, port 8080
 docker compose run --rm test          # the end-to-end proof, no toolchain needed
-./scripts/example.sh                  # the same proof on the host
+cargo test -p example-todo -p example-web   # the same proof on the host
+./openapi.sh                          # regenerate the committed openapi.json
 ```
 
 On the host, `cargo run -p example-todo` and `cargo run -p example-web` take the

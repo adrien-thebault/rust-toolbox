@@ -18,6 +18,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: arduino/setup-protoc@v3
-      - run: cargo run -p example-web --example dump-openapi > examples/grpc-cluster/web/openapi.json
-      - name: The committed spec is out of date - run the command above and commit the result
+      - run: ./examples/grpc-cluster/openapi.sh
+      - name: The committed spec is out of date - run examples/grpc-cluster/openapi.sh and commit the result
         run: git diff --exit-code examples/grpc-cluster/web/openapi.json

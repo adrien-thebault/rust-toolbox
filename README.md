@@ -79,8 +79,8 @@ and locked migrations.
 `examples/grpc-cluster` is the same thing as two crates you can deploy
 separately - `grpc/todo` owns the database, `web` owns authentication. It is
 what the template generates, so the two cannot drift: `docker compose up` in
-that directory runs both services, `./scripts/example.sh` runs the end-to-end
-test, and CI runs that test on every commit.
+that directory runs both services, `cargo test -p example-todo -p example-web`
+runs the end-to-end test, and CI runs that test on every commit.
 
 ## Choosing a database backend
 
