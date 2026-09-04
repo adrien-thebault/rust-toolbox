@@ -24,12 +24,12 @@ struct Lease {
 /// **Single replica only.** Two replicas each take the "same" lock and both run
 /// the work.
 #[derive(Debug, Default)]
-pub struct InProcessLockManager {
+pub struct InMemoryLockManager {
     /// Every currently held lock, by key.
     held: Arc<Mutex<HashMap<String, Lease>>>,
 }
 
-impl InProcessLockManager {
+impl InMemoryLockManager {
     /// A fresh lock table.
     #[must_use]
     pub fn new() -> Self {
@@ -38,12 +38,12 @@ impl InProcessLockManager {
 }
 
 /// The drop-time release hook a [`LockGuard`] calls, sharing the lock table.
-struct InProcessRelease {
-    /// The same table [`InProcessLockManager`] holds.
+struct InMemoryRelease {
+    /// The same table [`InMemoryLockManager`] holds.
     held: Arc<Mutex<HashMap<String, Lease>>>,
 }
 
-impl LockRelease for InProcessRelease {
+impl LockRelease for InMemoryRelease {
     fn release(&self, key: &str, owner: &str) {
         let mut held = self
             .held
@@ -58,7 +58,7 @@ impl LockRelease for InProcessRelease {
 }
 
 #[async_trait]
-impl LockManager for InProcessLockManager {
+impl LockManager for InMemoryLockManager {
     async fn try_lock(
         &self,
         key: &str,
@@ -86,7 +86,7 @@ impl LockManager for InProcessLockManager {
         Ok(Some(LockGuard::new(
             key,
             owner,
-            Arc::new(InProcessRelease {
+            Arc::new(InMemoryRelease {
                 held: Arc::clone(&self.held),
             }),
         )))

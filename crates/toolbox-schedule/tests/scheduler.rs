@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use toolbox_cluster::{InProcessLockManager, LockManager};
+use toolbox_cluster::{InMemoryLockManager, LockManager};
 use toolbox_schedule::{
     JobOutcome, ManualClock, Overlap, RunMode, ScheduleError, Scheduler, Trigger, lock_key,
 };
@@ -28,7 +28,7 @@ fn counting(counter: Arc<AtomicUsize>) -> impl Fn() -> toolbox_schedule::JobFutu
 /// lock manager, each ticked once: the job runs exactly once, not three times.
 #[tokio::test]
 async fn three_schedulers_sharing_a_lock_manager_run_a_job_exactly_once() {
-    let locks: Arc<dyn LockManager> = Arc::new(InProcessLockManager::new());
+    let locks: Arc<dyn LockManager> = Arc::new(InMemoryLockManager::new());
     let counter = Arc::new(AtomicUsize::new(0));
     let clock = Arc::new(ManualClock::new());
 
@@ -71,7 +71,7 @@ async fn three_schedulers_sharing_a_lock_manager_run_a_job_exactly_once() {
 /// wrong for anything that writes.
 #[tokio::test]
 async fn a_local_job_runs_on_every_replica() {
-    let locks: Arc<dyn LockManager> = Arc::new(InProcessLockManager::new());
+    let locks: Arc<dyn LockManager> = Arc::new(InMemoryLockManager::new());
     let counter = Arc::new(AtomicUsize::new(0));
     let clock = Arc::new(ManualClock::new());
 
@@ -104,7 +104,7 @@ async fn a_local_job_runs_on_every_replica() {
 async fn a_job_does_not_run_before_it_is_due() {
     let counter = Arc::new(AtomicUsize::new(0));
     let clock = Arc::new(ManualClock::new());
-    let mut scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let mut scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(clock.clone())
         .job(
             "later",
@@ -130,7 +130,7 @@ async fn a_job_does_not_run_before_it_is_due() {
 #[tokio::test(start_paused = true)]
 async fn a_job_that_overruns_its_timeout_is_abandoned() {
     let clock = Arc::new(ManualClock::new());
-    let mut scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let mut scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(clock.clone())
         .job(
             "hangs",
@@ -155,7 +155,7 @@ async fn a_job_that_overruns_its_timeout_is_abandoned() {
 #[tokio::test]
 async fn a_failing_job_is_reported_rather_than_swallowed() {
     let clock = Arc::new(ManualClock::new());
-    let mut scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let mut scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(clock.clone())
         .job(
             "fails",
@@ -187,7 +187,7 @@ async fn an_overrunning_job_does_not_start_a_second_run_by_default() {
     let started = Arc::new(AtomicUsize::new(0));
 
     let (g, s) = (Arc::clone(&gate), Arc::clone(&started));
-    let mut scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let mut scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(clock.clone())
         .job(
             "slow",
@@ -240,7 +240,7 @@ async fn an_overrunning_job_does_not_start_a_second_run_by_default() {
 #[tokio::test]
 async fn a_job_can_be_run_on_demand_even_when_not_due() {
     let counter = Arc::new(AtomicUsize::new(0));
-    let scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(Arc::new(ManualClock::new()))
         .job(
             "nightly",
@@ -261,7 +261,7 @@ async fn a_job_can_be_run_on_demand_even_when_not_due() {
 
 #[tokio::test]
 async fn running_an_unknown_job_names_it() {
-    let scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(Arc::new(ManualClock::new()))
         .build()
         .unwrap();
@@ -274,7 +274,7 @@ async fn running_an_unknown_job_names_it() {
 /// logs of a process that just started.
 #[tokio::test]
 async fn the_schedule_is_inspectable() {
-    let scheduler = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(Arc::new(ManualClock::new()))
         .job(
             "nightly",
@@ -308,7 +308,7 @@ fn lock_keys_are_namespaced() {
 /// three-scheduler test fail with a count of three.
 #[tokio::test]
 async fn an_exclusive_lease_outlives_the_run_it_guarded() {
-    let locks: Arc<dyn LockManager> = Arc::new(InProcessLockManager::new());
+    let locks: Arc<dyn LockManager> = Arc::new(InMemoryLockManager::new());
     let counter = Arc::new(AtomicUsize::new(0));
     let clock = Arc::new(ManualClock::new());
 

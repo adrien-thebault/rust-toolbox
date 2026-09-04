@@ -1,13 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
-use toolbox_cluster::InProcessLockManager;
+use toolbox_cluster::InMemoryLockManager;
 use toolbox_schedule::{ScheduleError, Scheduler, Trigger};
 
 /// Two jobs sharing a name would share a lock key and silently exclude each
 /// other, which is the worst kind of bug: everything looks scheduled.
 #[tokio::test]
 async fn two_jobs_cannot_share_a_name() {
-    let builder = Scheduler::builder(Arc::new(InProcessLockManager::new()))
+    let builder = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .job(
             "dup",
             Trigger::fixed_rate(Duration::from_secs(60)),

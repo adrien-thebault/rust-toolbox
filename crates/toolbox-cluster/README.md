@@ -11,9 +11,9 @@ live.
 
 | Module | The contract | Adapters |
 |---|---|---|
-| `event` | `CloudEvent` + constructors; `EventBus` | `in_process` |
+| `event` | `CloudEvent` + constructors; `EventBus` | `in_memory` |
 | `kv` | `KvStore`, including an **atomic** `take` | `in_memory` |
-| `lock` | `LockManager`, `LockGuard` | `in_process` |
+| `lock` | `LockManager`, `LockGuard` | `in_memory` |
 
 The clock lives in `toolbox-schedule`, its only consumer: it is a determinism
 seam, not a replication one.

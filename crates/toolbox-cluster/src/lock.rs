@@ -4,12 +4,12 @@
 //! without releasing must not block the work forever, which is the failure mode
 //! that makes a scheduled job silently never run again.
 
-mod in_process;
+mod in_memory;
 
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-pub use in_process::InProcessLockManager;
+pub use in_memory::InMemoryLockManager;
 
 /// Why a lock operation failed.
 #[derive(Debug, thiserror::Error)]

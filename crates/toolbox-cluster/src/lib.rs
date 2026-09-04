@@ -16,8 +16,8 @@ pub mod kv;
 pub mod lock;
 
 pub use event::{
-    CloudEvent, EventBus, EventBusError, EventError, EventStream, InProcessEventBus, Topic, event,
+    CloudEvent, EventBus, EventBusError, EventError, EventStream, InMemoryEventBus, Topic, event,
     payload, signal,
 };
 pub use kv::{InMemoryKvStore, KvStore, KvStoreError};
-pub use lock::{InProcessLockManager, LockGuard, LockManager, LockManagerError};
+pub use lock::{InMemoryLockManager, LockGuard, LockManager, LockManagerError};

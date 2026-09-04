@@ -3,7 +3,7 @@
 use cloudevents::AttributesReader as _;
 use toolbox_cluster::{Topic, event, payload, signal};
 
-mod in_process;
+mod in_memory;
 
 #[test]
 fn an_event_serializes_as_cloudevents_1_0() {

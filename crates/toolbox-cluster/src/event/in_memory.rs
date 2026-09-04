@@ -21,28 +21,28 @@ use super::{CloudEvent, EventBus, EventBusError, EventStream, Topic};
 /// **At-most-once, and not durable.** A subscriber that falls behind `buffer`
 /// events loses the ones it missed rather than blocking the publisher; there
 /// is no history to replay once it is gone.
-pub struct InProcessEventBus {
+pub struct InMemoryEventBus {
     /// One broadcast sender per topic, created on first use.
     topics: Mutex<HashMap<Topic, broadcast::Sender<CloudEvent>>>,
     /// Per-topic channel capacity; a slow subscriber past this lags.
     buffer: usize,
 }
 
-impl std::fmt::Debug for InProcessEventBus {
+impl std::fmt::Debug for InMemoryEventBus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InProcessEventBus")
+        f.debug_struct("InMemoryEventBus")
             .field("buffer", &self.buffer)
             .finish_non_exhaustive()
     }
 }
 
-impl Default for InProcessEventBus {
+impl Default for InMemoryEventBus {
     fn default() -> Self {
         Self::new(1024)
     }
 }
 
-impl InProcessEventBus {
+impl InMemoryEventBus {
     /// A bus buffering `buffer` events per topic for slow subscribers.
     ///
     /// # Arguments
@@ -74,7 +74,7 @@ impl InProcessEventBus {
 }
 
 #[async_trait]
-impl EventBus for InProcessEventBus {
+impl EventBus for InMemoryEventBus {
     async fn publish(&self, topic: &Topic, event: CloudEvent) -> Result<(), EventBusError> {
         // An error here means nobody is subscribed, which is not a failure.
         let _ = self.sender(topic).send(event);

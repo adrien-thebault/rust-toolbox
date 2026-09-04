@@ -6,7 +6,7 @@ fn every_enabled_crate_is_reachable_under_its_short_name() {
     // If a feature stops wiring its crate through, these stop compiling.
     let _ = toolbox::core::ErrorKind::NotFound;
     let _ = toolbox::db::DbError::Conflict;
-    let _ = toolbox::cluster::InProcessEventBus::default();
+    let _ = toolbox::cluster::InMemoryEventBus::default();
     let _: toolbox::server::StackConfig = toolbox::server::StackConfig::default();
     let _ = toolbox::auth::Principal::new("u", "local");
     let _ = toolbox::web::status_for(toolbox::core::ErrorKind::NotFound);

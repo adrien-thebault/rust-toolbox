@@ -1,3 +1,3 @@
-//! The `LockManager` contract, exercised through its in-process adapter.
+//! The `LockManager` contract, exercised through its in-memory adapter.
 
-mod in_process;
+mod in_memory;

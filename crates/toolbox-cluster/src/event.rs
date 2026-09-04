@@ -14,14 +14,14 @@
 //! trait with a local adapter and at least one shared adapter; the payload is
 //! always a [`CloudEvent`].
 
-mod in_process;
+mod in_memory;
 
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use cloudevents::{EventBuilder, EventBuilderV10, event::Data};
 use futures_core::Stream;
-pub use in_process::InProcessEventBus;
+pub use in_memory::InMemoryEventBus;
 use serde::Serialize;
 
 /// A CloudEvents 1.0 event.
@@ -165,7 +165,7 @@ pub type EventStream = Pin<Box<dyn Stream<Item = CloudEvent> + Send>>;
 /// subscribing live; a bus with replay is a future adapter's addition, not a
 /// contract every adapter carries today. Delivery and durability genuinely
 /// differ per adapter and belong in its own doc comment, not a negotiated
-/// capability: [`InProcessEventBus`] is at-most-once and drops on lag, and a
+/// capability: [`InMemoryEventBus`] is at-most-once and drops on lag, and a
 /// shared adapter would document its own guarantee the same way.
 #[async_trait]
 pub trait EventBus: Send + Sync {
