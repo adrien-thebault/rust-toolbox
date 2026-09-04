@@ -48,8 +48,8 @@ Two boundaries that are easy to break by accident:
 - **`toolbox-db` declares no backend feature.** It is generic over
   `C: R2D2Connection`, and the entity names the backend as a *type*.
 
-Anything with a domain of its own goes in `incubator/`, which is outside the
-workspace and has its own README. That is where `toolbox-files` went.
+Anything with a domain of its own does not belong in this repo at all. That is
+why `toolbox-files` was moved out.
 
 ## Commands
 

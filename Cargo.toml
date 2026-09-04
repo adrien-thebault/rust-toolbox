@@ -2,9 +2,6 @@
 resolver = "3"
 # `examples/*/grpc/*` because a domain is a crate and `grpc/` only groups them.
 members  = ["crates/*", "examples/*/grpc/*", "examples/*/web"]
-# `incubator/` is deliberately absent: those crates carry their own
-# `[workspace]` table, so they are not built, tested or linted here.
-# See incubator/README.md.
 
 [workspace.package]
 version      = "0.2.0"
