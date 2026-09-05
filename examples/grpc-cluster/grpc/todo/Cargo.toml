@@ -15,9 +15,12 @@ name = "example_todo"
 path = "src/lib.rs"
 
 [dependencies]
+toolbox-auth    = { workspace = true }
+toolbox-cluster = { workspace = true }
 toolbox-core    = { workspace = true }
 toolbox-db      = { workspace = true, features = ["clap"] }
 toolbox-grpc    = { workspace = true }
+toolbox-schedule = { workspace = true }
 toolbox-server  = { workspace = true, features = ["clap"] }
 
 diesel     = { workspace = true, features = ["r2d2", "sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
@@ -28,8 +31,10 @@ clap       = { workspace = true, features = ["derive", "env"] }
 prost      = { workspace = true }
 tonic-prost = { workspace = true }
 thiserror  = { workspace = true }
-tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net"] }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
 tonic      = { workspace = true }
+tower      = { workspace = true }
+tracing    = { workspace = true }
 
 [build-dependencies]
 tonic-prost-build = { workspace = true }

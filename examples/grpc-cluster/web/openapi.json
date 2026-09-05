@@ -91,7 +91,7 @@
   "paths": {
     "/api/todos": {
       "get": {
-        "description": "# Arguments\n\n* `state` - The gateway's state, for the backend channel.\n* `page` - The window and sort, already validated against the maximum limit.",
+        "description": "# Arguments\n\n* `state` - The gateway's state, for the backend channel.\n* `principal` - The caller, attached to the backend call if there is one.\n* `page` - The window and sort, already validated against the maximum limit.",
         "operationId": "list",
         "parameters": [
           {
@@ -181,7 +181,7 @@
         ]
       },
       "post": {
-        "description": "# Arguments\n\n* `state` - The gateway's state, for the backend channel.\n* `body` - The new todo, rejected here if invalid so no hop is made.",
+        "description": "A repeated `Idempotency-Key` replays the first response rather than\ncreating a second todo - the point of sending one at all.\n\n# Arguments\n\n* `state` - The gateway's state, for the backend channel.\n* `principal` - The caller, attached to the backend call if there is one.\n* `key` - The idempotency key, if the caller sent one.\n* `body` - The new todo, rejected here if invalid so no hop is made.",
         "operationId": "create",
         "requestBody": {
           "content": {
@@ -255,7 +255,7 @@
     },
     "/api/todos/{id}": {
       "delete": {
-        "description": "# Arguments\n\n* `_` - The extractor that enforces the role. An anonymous caller is a 401\n  and never reaches the backend.\n* `state` - The gateway's state, for the backend channel.\n* `id` - Which todo.",
+        "description": "The gateway's own gate is not the only one: `TodoService::delete_todo`\nchecks the asserted principal again, because a caller that reached the\nbackend some other way never passed through this handler at all.\n\n# Arguments\n\n* `caller` - The extractor that enforces the role. An anonymous caller is a\n  401 and never reaches the backend.\n* `state` - The gateway's state, for the backend channel.\n* `id` - Which todo.",
         "operationId": "remove",
         "parameters": [
           {
@@ -326,7 +326,7 @@
         ]
       },
       "get": {
-        "description": "# Arguments\n\n* `state` - The gateway's state, for the backend channel.\n* `id` - Which todo. A miss is the backend's `TODO_NOT_FOUND`, relayed with\n  its code intact.",
+        "description": "# Arguments\n\n* `state` - The gateway's state, for the backend channel.\n* `principal` - The caller, attached to the backend call if there is one.\n* `id` - Which todo. A miss is the backend's `TODO_NOT_FOUND`, relayed with\n  its code intact.",
         "operationId": "fetch",
         "parameters": [
           {

@@ -9,6 +9,7 @@
 //! Nothing in here knows that an HTTP gateway exists, which is what lets the
 //! two be deployed and scaled independently.
 
+pub mod auth;
 pub mod model;
 pub mod schema;
 pub mod service;

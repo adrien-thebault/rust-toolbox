@@ -9,9 +9,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use secrecy::SecretString;
 use toolbox_auth::{
-    AuthError, JwtIdentityProvider, PasswordIdentityProvider, ProviderRegistry, Role, StoredUser,
-    UserStore,
+    AuthError, ForwardedIdentityProvider, JwtIdentityProvider, PasswordIdentityProvider,
+    ProviderRegistry, Role, StoredUser, UserStore,
 };
+use toolbox_cluster::{EventBus, InMemoryEventBus, InMemoryKvStore};
+use toolbox_web::{idempotency::Idempotency, realtime::Hub};
 
 use crate::state::AppState;
 
@@ -135,11 +137,22 @@ impl UserStore for SeededAdmin {
 /// * `config` - Read for the seeded account.
 /// * `issuer` - The session codec, registered first so a bearer token on a
 ///   normal request is verified before the password provider is consulted.
+///
+/// # Panics
+/// Never in practice: the trusted-peer list is a fixed, non-empty literal.
 #[must_use]
 pub fn providers(config: &AuthConfig, issuer: Arc<JwtIdentityProvider>) -> ProviderRegistry {
     ProviderRegistry::new()
         .with_arc(issuer)
         .with(PasswordIdentityProvider::new(SeededAdmin::new(config)))
+        // Illustrative: trusts an authenticating reverse proxy running on the
+        // same host (a sidecar, or oauth2-proxy in front on localhost). A real
+        // deployment behind an actual proxy would name its real peers, or use
+        // `trusting_secret` when the peer address is not reliable.
+        .with(
+            ForwardedIdentityProvider::trusting_peers(&["127.0.0.1/32", "::1/128"])
+                .expect("the trusted-peer list is a fixed, non-empty literal"),
+        )
 }
 
 /// The codec that signs and verifies this gateway's sessions.
@@ -177,5 +190,35 @@ pub fn state(
         issuer,
         users: SeededAdmin::new(config),
         session_secret: config.session_secret.clone(),
+        idempotency: Arc::new(Idempotency::new(Arc::new(InMemoryKvStore::default()))),
+        events: Arc::new(InMemoryEventBus::default()),
+        hub: Arc::new(Hub::new(toolbox_web::realtime::HubConfig::new(
+            64,
+            toolbox_web::realtime::SlowConsumer::DropOldest,
+        ))),
     })
+}
+
+/// Forward every event on `events` into `hub`, so every SSE connection sees it
+/// without each one opening its own subscription.
+///
+/// Runs for the life of the process; a subscription that ends (the bus was
+/// dropped) ends the loop.
+///
+/// # Arguments
+///
+/// * `events` - The upstream to read from.
+/// * `hub` - Where to fan it out.
+pub async fn forward_events(events: Arc<dyn EventBus>, hub: Arc<Hub<toolbox_cluster::CloudEvent>>) {
+    use futures_util::StreamExt as _;
+
+    let Ok(mut stream) = events
+        .subscribe(&toolbox_cluster::Topic::from(crate::state::TODOS_TOPIC))
+        .await
+    else {
+        return;
+    };
+    while let Some(event) = stream.next().await {
+        hub.publish(crate::state::TODOS_TOPIC, event);
+    }
 }

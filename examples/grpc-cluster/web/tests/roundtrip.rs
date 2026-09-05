@@ -1,16 +1,25 @@
 use std::{sync::Arc, time::Duration};
 
+use cloudevents::AttributesReader as _;
 use diesel::connection::SimpleConnection;
 use example_todo::{Connection, MIGRATIONS, TodoService};
 use example_web::{auth::AuthConfig, routes::router};
 use secrecy::SecretString;
-use toolbox_grpc::{ClientConfig, client};
+use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
+use toolbox_grpc::{
+    ClientConfig, client,
+    server::{identity, shared_secret::shared_secret_layer},
+};
 use toolbox_test::{TestCluster, TestGateway, assert_problem, temp_db};
 use toolbox_web::{ClientIpTrustPolicy, rate_limit::RateLimitConfig};
+use tower::Layer as _;
 
 /// The seeded account's password. Hashed at test time rather than committed,
 /// so the fixture cannot drift from the argon2 parameters the crate uses.
 const PASSWORD: &str = "correct horse battery staple";
+
+/// The shared secret this test's gateway and backend agree on.
+const SERVICE_SECRET: &str = "test-shared-secret";
 
 /// The gateway's configuration, with the one account the example seeds.
 fn config() -> AuthConfig {
@@ -40,17 +49,29 @@ async fn cluster_with(
     let (db, guard) = temp_db::<Connection>();
     db.migrate(MIGRATIONS).await.expect("migrations");
 
+    // The same shared-secret-then-identity chain `main.rs` wires, so a test
+    // that only exercised the unwrapped `TodoService` could not tell the
+    // backend's own admin check from the gateway's.
     let service_db = db.clone();
     let cluster = TestCluster::new()
         .service("todo", move |routes| {
-            routes.add_service(TodoService::new(service_db).into_server());
+            let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
+            routes.add_service(
+                shared_secret_layer(SERVICE_SECRET).layer(
+                    identity::identity_layer(registry)
+                        .extracting(identity::asserted_principal)
+                        .layer(TodoService::new(service_db).into_server()),
+                ),
+            );
         })
         .await
         .expect("the todo backend came up");
 
     let channel = client(
         "todo",
-        &ClientConfig::new(&cluster.backend_uri("todo")).expect("a valid uri"),
+        &ClientConfig::new(&cluster.backend_uri("todo"))
+            .expect("a valid uri")
+            .service_secret(SERVICE_SECRET),
     );
 
     let state = example_web::auth::state(channel, &config()).expect("the gateway configured");
@@ -264,6 +285,151 @@ async fn an_admin_can_delete_and_the_row_soft_deletes() {
     assert_eq!(listed["total"], 0);
 }
 
+/// A repeated `Idempotency-Key` replays the first response rather than
+/// creating a second todo - the point of sending one at all.
+#[tokio::test]
+async fn a_repeated_idempotency_key_replays_the_first_response() {
+    let (app, _cluster, _guard) = cluster().await;
+    let body = serde_json::json!({"title": "only once"});
+
+    let first = app
+        .server()
+        .post("/api/todos")
+        .add_header("idempotency-key", "abc-123")
+        .json(&body)
+        .await;
+    assert_eq!(first.status_code(), 200, "{}", first.text());
+
+    let second = app
+        .server()
+        .post("/api/todos")
+        .add_header("idempotency-key", "abc-123")
+        .json(&body)
+        .await;
+    assert_eq!(second.status_code(), 200, "{}", second.text());
+    assert_eq!(
+        second.json::<serde_json::Value>(),
+        first.json::<serde_json::Value>(),
+        "replayed the first response rather than creating a second todo"
+    );
+
+    let listed: serde_json::Value = app.get("/api/todos").await.json();
+    assert_eq!(listed["total"], 1, "only one todo actually exists");
+}
+
+/// This is the regression test for the actual security hole the gateway's
+/// architecture used to leave open: `shared_secret_layer` and `identity_layer`
+/// closed it, but only a test that calls the backend directly, bypassing the
+/// gateway entirely, can prove that.
+#[tokio::test]
+async fn bypassing_the_gateway_and_calling_the_backend_directly_is_refused() {
+    let (db, _guard) = temp_db::<Connection>();
+    db.migrate(MIGRATIONS).await.expect("migrations");
+
+    let cluster = TestCluster::new()
+        .service("todo", move |routes| {
+            let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
+            routes.add_service(
+                shared_secret_layer(SERVICE_SECRET).layer(
+                    identity::identity_layer(registry)
+                        .extracting(identity::asserted_principal)
+                        .layer(TodoService::new(db).into_server()),
+                ),
+            );
+        })
+        .await
+        .expect("the backend came up");
+
+    // No `.service_secret(..)` here: this is exactly what reaching the
+    // backend some other way than through the gateway looks like.
+    let channel = client(
+        "todo",
+        &ClientConfig::new(&cluster.backend_uri("todo")).expect("a valid uri"),
+    );
+    let mut raw =
+        example_todo::proto::todo_service_client::TodoServiceClient::new(channel.channel());
+    let refused = raw
+        .list_todos(example_todo::proto::ListTodosRequest {
+            page: None,
+            title_contains: String::new(),
+        })
+        .await;
+    assert_eq!(
+        refused.unwrap_err().code(),
+        tonic::Code::Unauthenticated,
+        "a caller with no shared secret must be refused before TodoService sees the request"
+    );
+}
+
+/// Defense in depth: even a caller that presents the shared secret *and* a
+/// validly asserted principal still cannot delete without the admin role -
+/// the backend does not trust the gateway's own `Authenticated<Admin>` gate to
+/// be the only one.
+#[tokio::test]
+async fn an_asserted_non_admin_principal_still_cannot_delete() {
+    let (_app, cluster, _guard) = cluster().await;
+
+    let channel = client(
+        "todo",
+        &ClientConfig::new(&cluster.backend_uri("todo"))
+            .expect("a valid uri")
+            .service_secret(SERVICE_SECRET),
+    );
+    let mut raw =
+        example_todo::proto::todo_service_client::TodoServiceClient::new(channel.channel());
+
+    let encoded =
+        toolbox_auth::AssertedPrincipal::from(&toolbox_auth::Principal::new("mallory", "test"))
+            .encode();
+    let mut request = tonic::Request::new(example_todo::proto::DeleteTodoRequest { id: 1 });
+    request
+        .metadata_mut()
+        .insert(toolbox_grpc::X_ASSERTED_PRINCIPAL, encoded.parse().unwrap());
+
+    let refused = raw.delete_todo(request).await;
+    assert_eq!(
+        refused.unwrap_err().code(),
+        tonic::Code::PermissionDenied,
+        "a real, resolved principal without the admin role is still refused"
+    );
+}
+
+/// `create`, `complete` and `remove` each publish a signal on success; this is
+/// the regression test for `forward_events` actually relaying the bus into the
+/// hub every SSE connection subscribes to, rather than the two sitting there
+/// disconnected.
+#[tokio::test]
+async fn a_mutation_is_announced_to_every_hub_subscriber() {
+    // `forward_events` is what `main.rs` spawns over `auth::state`'s bus and
+    // hub; this exercises the same wiring directly.
+    let events: std::sync::Arc<dyn toolbox_cluster::EventBus> =
+        std::sync::Arc::new(toolbox_cluster::InMemoryEventBus::default());
+    let hub = std::sync::Arc::new(toolbox_web::realtime::Hub::new(
+        toolbox_web::realtime::HubConfig::new(8, toolbox_web::realtime::SlowConsumer::DropOldest),
+    ));
+    tokio::spawn(example_web::auth::forward_events(
+        events.clone(),
+        hub.clone(),
+    ));
+    // Give the subscribe a moment to attach before anything is published.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let mut rx = hub.subscribe("todos");
+    events
+        .publish(
+            &toolbox_cluster::Topic::from("todos"),
+            toolbox_cluster::signal("todo.created", "/api/todos").unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let received = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("the hub relayed the event before the timeout")
+        .expect("the channel is still open");
+    assert_eq!(received.ty(), "todo.created");
+}
+
 /// A refresh token is a stateless JWT: it redeems for a fresh, usable session,
 /// and the rolled token is itself redeemable. Revocation is a credential
 /// change, not server-side consumption.
@@ -385,7 +551,7 @@ async fn the_schema_the_migration_creates_matches_the_entity() {
 /// The deadline has to reach the backend, or a gateway that times out leaves
 /// it working on a request nobody is waiting for.
 ///
-/// This is the regression test for a real defect: `DeadlinePropagationLayer`
+/// This is the regression test for a real defect: `toolbox_server::deadline`
 /// was written, exported and documented, and attached to nothing.
 #[tokio::test]
 async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {

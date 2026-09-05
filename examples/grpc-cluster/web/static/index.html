@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Todo gateway tester</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f2;
+    --panel: #ffffff;
+    --ink: #1f2320;
+    --muted: #6b6f6a;
+    --line: #e2e0da;
+    --accent: #3f6b4f;
+    --accent-ink: #ffffff;
+    --danger: #a3402f;
+    --ok: #3f6b4f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181a;
+      --panel: #1f2224;
+      --ink: #e9e8e4;
+      --muted: #9a9d97;
+      --line: #33362f;
+      --accent: #6fae86;
+      --accent-ink: #0d130f;
+      --danger: #e08268;
+      --ok: #6fae86;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 4rem;
+  }
+  h1 {
+    font-size: 1.25rem;
+    margin: 0 0 0.25rem;
+  }
+  p.lede {
+    color: var(--muted);
+    margin: 0 0 1.5rem;
+    font-size: 0.9rem;
+  }
+  section.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+  }
+  section.panel h2 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 0.75rem;
+  }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 0.2rem;
+  }
+  input[type="text"], input[type="password"], input[type="url"] {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink);
+    font-size: 0.9rem;
+  }
+  .row {
+    display: flex;
+    gap: 0.6rem;
+    align-items: end;
+  }
+  .row > div { flex: 1; }
+  button {
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.ghost {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--line);
+  }
+  button.danger {
+    background: transparent;
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  form { margin: 0; }
+  .status {
+    font-size: 0.82rem;
+    margin-top: 0.6rem;
+    color: var(--muted);
+  }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--ok); }
+  ul.todos {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  ul.todos li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  ul.todos li:last-child { border-bottom: none; }
+  ul.todos li .title {
+    flex: 1;
+    word-break: break-word;
+  }
+  ul.todos li.done .title {
+    text-decoration: line-through;
+    color: var(--muted);
+  }
+  .empty {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 0.5rem 0;
+  }
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  .badge.live { border-color: var(--ok); color: var(--ok); }
+  .newtodo { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
+  .newtodo input { flex: 1; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Todo gateway tester</h1>
+  <p class="lede">
+    A plain HTML page against the running example gateway - no build step, no
+    framework. Point it at the gateway, log in if you want to delete
+    something, and use the API the way a real client would.
+  </p>
+
+  <section class="panel">
+    <h2>Gateway</h2>
+    <label for="base-url">Base URL</label>
+    <div class="row">
+      <div><input type="url" id="base-url" value="http://localhost:8080" /></div>
+      <button id="connect" class="ghost">Connect</button>
+    </div>
+    <div id="connect-status" class="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Session</h2>
+    <div id="logged-out">
+      <div class="row">
+        <div>
+          <label for="username">Username</label>
+          <input type="text" id="username" value="admin" autocomplete="username" />
+        </div>
+        <div>
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="current-password" />
+        </div>
+        <button id="login">Log in</button>
+      </div>
+    </div>
+    <div id="logged-in" hidden>
+      Signed in as <strong id="whoami"></strong>.
+      <button id="logout" class="ghost">Log out</button>
+    </div>
+    <div id="auth-status" class="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Todos <span id="live-badge" class="badge">live: connecting&hellip;</span></h2>
+    <ul class="todos" id="todo-list"></ul>
+    <p class="empty" id="empty-state" hidden>No todos yet.</p>
+    <form class="newtodo" id="new-todo-form">
+      <input type="text" id="new-title" placeholder="What needs doing?" />
+      <button type="submit">Add</button>
+    </form>
+    <div id="todo-status" class="status"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const baseUrlInput = $("base-url");
+  const connectStatus = $("connect-status");
+  const authStatus = $("auth-status");
+  const todoStatus = $("todo-status");
+  const todoList = $("todo-list");
+  const emptyState = $("empty-state");
+  const liveBadge = $("live-badge");
+
+  let accessToken = null;
+  let subject = null;
+  let eventSource = null;
+
+  function baseUrl() {
+    return baseUrlInput.value.replace(/\/+$/, "");
+  }
+
+  function setStatus(el, text, kind) {
+    el.textContent = text;
+    el.className = "status" + (kind ? " " + kind : "");
+  }
+
+  // A thin wrapper around fetch, not a client library: this page exists to
+  // show the plain HTTP contract, not to hide it.
+  async function api(path, options = {}) {
+    const headers = Object.assign({}, options.headers);
+    if (options.body) headers["content-type"] = "application/json";
+    if (accessToken) headers["authorization"] = "Bearer " + accessToken;
+
+    const res = await fetch(baseUrl() + path, Object.assign({}, options, { headers }));
+    if (res.status === 204) return null;
+
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+
+    if (!res.ok) {
+      const detail = body && (body.detail || body.title) ? (body.detail || body.title) : res.statusText;
+      const err = new Error(`${res.status} ${detail}`);
+      err.status = res.status;
+      err.body = body;
+      throw err;
+    }
+    return body;
+  }
+
+  function setSignedIn(name) {
+    subject = name;
+    $("logged-out").hidden = true;
+    $("logged-in").hidden = false;
+    $("whoami").textContent = name;
+  }
+
+  function setSignedOut() {
+    subject = null;
+    accessToken = null;
+    $("logged-out").hidden = false;
+    $("logged-in").hidden = true;
+  }
+
+  async function login() {
+    setStatus(authStatus, "Signing in…");
+    try {
+      const body = await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          username: $("username").value,
+          password: $("password").value,
+        }),
+      });
+      accessToken = body.access_token;
+      setSignedIn($("username").value);
+      setStatus(authStatus, "Signed in.", "ok");
+    } catch (e) {
+      setStatus(authStatus, e.message, "error");
+    }
+  }
+
+  function logout() {
+    setSignedOut();
+    setStatus(authStatus, "Signed out.");
+  }
+
+  function renderTodos(items) {
+    todoList.innerHTML = "";
+    emptyState.hidden = items.length > 0;
+    for (const todo of items) {
+      const li = document.createElement("li");
+      li.className = todo.done ? "done" : "";
+
+      const title = document.createElement("span");
+      title.className = "title";
+      title.textContent = todo.title;
+      li.append(title);
+
+      if (!todo.done) {
+        const complete = document.createElement("button");
+        complete.className = "ghost";
+        complete.textContent = "Complete";
+        complete.onclick = () => completeTodo(todo);
+        li.append(complete);
+      }
+
+      const remove = document.createElement("button");
+      remove.className = "danger";
+      remove.textContent = "Delete";
+      remove.title = subject ? "" : "Log in as the admin to delete";
+      remove.disabled = !subject;
+      remove.onclick = () => removeTodo(todo);
+      li.append(remove);
+
+      todoList.append(li);
+    }
+  }
+
+  async function loadTodos() {
+    try {
+      const page = await api("/api/todos?limit=50");
+      renderTodos(page.items);
+      setStatus(todoStatus, "", "");
+    } catch (e) {
+      setStatus(todoStatus, e.message, "error");
+    }
+  }
+
+  async function createTodo(ev) {
+    ev.preventDefault();
+    const title = $("new-title").value.trim();
+    if (!title) return;
+    try {
+      await api("/api/todos", { method: "POST", body: JSON.stringify({ title }) });
+      $("new-title").value = "";
+      await loadTodos();
+    } catch (e) {
+      setStatus(todoStatus, e.message, "error");
+    }
+  }
+
+  async function completeTodo(todo) {
+    try {
+      await api(`/api/todos/${todo.id}/complete`, {
+        method: "POST",
+        body: JSON.stringify({ version: todo.version }),
+      });
+      await loadTodos();
+    } catch (e) {
+      // A 409 here means someone else changed it first - reload either way,
+      // so the list always reflects the row's real state.
+      setStatus(todoStatus, e.message, "error");
+      await loadTodos();
+    }
+  }
+
+  async function removeTodo(todo) {
+    try {
+      await api(`/api/todos/${todo.id}`, { method: "DELETE" });
+      await loadTodos();
+    } catch (e) {
+      setStatus(todoStatus, e.message, "error");
+    }
+  }
+
+  function connectEvents() {
+    if (eventSource) eventSource.close();
+    liveBadge.textContent = "live: connecting…";
+    liveBadge.className = "badge";
+
+    eventSource = new EventSource(baseUrl() + "/api/todos/events");
+    eventSource.onopen = () => {
+      liveBadge.textContent = "live";
+      liveBadge.className = "badge live";
+    };
+    eventSource.onerror = () => {
+      liveBadge.textContent = "live: reconnecting…";
+      liveBadge.className = "badge";
+    };
+    // The event carries no payload, only a type: re-fetch rather than trust a
+    // stale snapshot the event itself might be describing incompletely.
+    eventSource.onmessage = () => loadTodos();
+  }
+
+  function connect() {
+    setStatus(connectStatus, "Checking " + baseUrl() + "/health …");
+    fetch(baseUrl() + "/health")
+      .then((res) => {
+        if (!res.ok) throw new Error("responded " + res.status);
+        setStatus(connectStatus, "Connected.", "ok");
+      })
+      .catch((e) => setStatus(connectStatus, "Could not reach the gateway: " + e.message, "error"));
+    connectEvents();
+    loadTodos();
+  }
+
+  $("connect").addEventListener("click", connect);
+  $("login").addEventListener("click", login);
+  $("logout").addEventListener("click", logout);
+  $("new-todo-form").addEventListener("submit", createTodo);
+
+  connect();
+})();
+</script>
+</body>
+</html>

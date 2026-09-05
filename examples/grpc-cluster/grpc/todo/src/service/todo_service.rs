@@ -8,10 +8,11 @@ use std::collections::BTreeMap;
 use tonic::{Request, Response};
 use toolbox_core::{ErrorKind, ServiceError};
 use toolbox_db::{Db, DbError};
-use toolbox_grpc::GrpcResult;
+use toolbox_grpc::{GrpcResult, server::identity};
 
 use crate::{
     Connection,
+    auth::Admin,
     model::Todo,
     proto,
     proto::{
@@ -133,6 +134,12 @@ impl todo_service_server::TodoService for TodoService {
         &self,
         request: Request<DeleteTodoRequest>,
     ) -> GrpcResult<DeleteTodoResponse> {
+        // Checked here too, not just at the gateway: `identity_layer` resolves
+        // whoever `shared_secret_layer` let through, but only this handler
+        // knows that *delete* is the operation that needs the admin role.
+        if !identity::require(&request)?.has::<Admin>() {
+            return Err(TodoServiceError::Forbidden.into());
+        }
         let id = request.into_inner().id;
         let deleted = self
             .db
@@ -162,6 +169,9 @@ pub enum TodoServiceError {
     /// The title was empty.
     #[error("a todo needs a title")]
     EmptyTitle,
+    /// The caller is not the admin.
+    #[error("the admin role is required")]
+    Forbidden,
     /// Anything the database refused.
     #[error(transparent)]
     Db(#[from] DbError),
@@ -176,6 +186,7 @@ impl ServiceError for TodoServiceError {
             Self::NotFound(_) => "TODO_NOT_FOUND",
             Self::Conflict(_) => "TODO_CONFLICT",
             Self::EmptyTitle => "TODO_EMPTY_TITLE",
+            Self::Forbidden => "TODO_FORBIDDEN",
             Self::Db(e) => e.code(),
             Self::Query(_) => "TODO_QUERY_FAILED",
         }
@@ -190,6 +201,7 @@ impl ServiceError for TodoServiceError {
             Self::NotFound(_) => ErrorKind::NotFound,
             Self::Conflict(_) => ErrorKind::Conflict,
             Self::EmptyTitle => ErrorKind::InvalidArgument,
+            Self::Forbidden => ErrorKind::PermissionDenied,
             Self::Db(e) => e.kind(),
             Self::Query(_) => ErrorKind::Internal,
         }

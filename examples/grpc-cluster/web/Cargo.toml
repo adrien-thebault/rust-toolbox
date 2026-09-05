@@ -29,7 +29,7 @@ path = "tests/integration.rs"
 toolbox-core    = { workspace = true }
 toolbox-cluster = { workspace = true }
 toolbox-auth    = { workspace = true, features = ["password"] }
-toolbox-web     = { workspace = true, features = ["rate-limit", "openapi", "auth-router"] }
+toolbox-web     = { workspace = true, features = ["rate-limit", "openapi", "auth-router", "idempotency", "realtime"] }
 toolbox-grpc    = { workspace = true }
 toolbox-server  = { workspace = true, features = ["clap"] }
 example-todo    = { path = "../grpc/todo" }
@@ -37,17 +37,23 @@ example-todo    = { path = "../grpc/todo" }
 async-trait = { workspace = true }
 axum       = { workspace = true }
 clap       = { workspace = true, features = ["derive", "env"] }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
 garde      = { workspace = true, features = ["derive"] }
 secrecy    = { workspace = true }
 utoipa     = { workspace = true, features = ["axum_extras", "macros"] }
 serde      = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror  = { workspace = true }
-tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net"] }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
+tokio-stream = { workspace = true }
 tonic      = { workspace = true }
+tower      = { workspace = true }
+tracing    = { workspace = true }
 
 [dev-dependencies]
 toolbox-test   = { workspace = true, features = ["db", "web", "grpc"] }
+cloudevents-sdk = { workspace = true }
 diesel       = { workspace = true, features = ["r2d2", "sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
 tempfile     = { workspace = true }
 tokio        = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

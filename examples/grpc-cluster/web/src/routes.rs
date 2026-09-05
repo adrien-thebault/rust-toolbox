@@ -51,9 +51,9 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 ///   the API is not, which is why the limiter goes inside `auth_router` rather
 ///   than over the whole gateway.
 pub fn router(state: AppState, login: &RateLimitConfig) -> Router {
-    // A forwarded-identity fallback: harmless with no `ForwardedIdentityProvider`
-    // in the registry, and one `.with(...)` in `auth::providers` away from being
-    // live. `session_layer` is the outer layer, so a real bearer token wins.
+    // A forwarded-identity fallback for a proxy on the same host - see
+    // `auth::providers`, which is what makes this live rather than harmless.
+    // `session_layer` is the outer layer, so a real bearer token wins.
     let forwarded = ForwardedConfig::new().trust(login.trust.clone());
     Router::new()
         .merge(todo::router())
@@ -67,6 +67,17 @@ pub fn router(state: AppState, login: &RateLimitConfig) -> Router {
             session_layer::<AppState>,
         ))
         .with_state(state)
+}
+
+/// The realtime routes, meant to be layered with `realtime_stack` rather than
+/// `http_stack`: no timeout and no body limit, because an SSE connection is
+/// long-lived by design.
+///
+/// # Arguments
+///
+/// * `state` - What the SSE handler reads: the fan-out hub.
+pub fn realtime_router(state: AppState) -> Router {
+    todo::realtime_router().with_state(state)
 }
 
 /// Turn a backend's `Status` into the gateway's own problem document.
