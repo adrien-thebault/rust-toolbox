@@ -1,3 +1,4 @@
+mod health;
 mod shutdown;
 mod startup;
 
@@ -67,12 +68,4 @@ fn shutdown_wins_over_every_check() {
 
     shutdown.begin();
     assert_eq!(handle.current(), Health::ShuttingDown);
-}
-
-#[test]
-fn is_healthy_is_true_for_healthy_alone() {
-    assert!(Health::Healthy.is_healthy());
-    assert!(!Health::Starting.is_healthy());
-    assert!(!Health::Degraded.is_healthy());
-    assert!(!Health::ShuttingDown.is_healthy());
 }
