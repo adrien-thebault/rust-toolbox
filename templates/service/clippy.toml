@@ -4,6 +4,6 @@
 doc-valid-idents = [
   "..DEFAULT..",
   "SQLite", "PostgreSQL", "MySQL",
-  "OpenAPI", "OIDC", "Keycloak", "Kubernetes",
+  "OpenAPI", "OIDC", "Keycloak", "Kubernetes", "CloudEvents",
   "IPv4", "IPv6", "KiB", "MiB", "GiB",
 ]

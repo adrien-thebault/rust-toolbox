@@ -11,9 +11,12 @@ name = "{{project-name}}"
 path = "src/main.rs"
 
 [dependencies]
+toolbox-auth    = { workspace = true }
+toolbox-cluster = { workspace = true }
 toolbox-core   = { workspace = true }
 toolbox-db     = { workspace = true }
 toolbox-grpc   = { workspace = true }
+toolbox-schedule = { workspace = true }
 toolbox-server = { workspace = true }
 
 chrono     = { workspace = true }
@@ -25,6 +28,7 @@ thiserror  = { workspace = true }
 tokio      = { workspace = true }
 tonic      = { workspace = true }
 tonic-prost = { workspace = true }
+tower      = { workspace = true }
 tracing    = { workspace = true }
 
 [build-dependencies]

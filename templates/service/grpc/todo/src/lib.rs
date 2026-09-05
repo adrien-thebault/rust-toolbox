@@ -5,6 +5,7 @@
 //! they share one schema, one migration set and one pool. A second domain is a
 //! sibling directory under `grpc/`, which the workspace picks up with no edit.
 
+pub mod auth;
 pub mod model;
 pub mod schema;
 pub mod service;
@@ -26,9 +27,6 @@ pub type Connection = diesel::pg::PgConnection;
 pub type Connection = diesel::sqlite::SqliteConnection;
 {% endif %}
 /// The timestamp type, named **once** for the whole crate.
-///
-/// The eventual chrono-to-jiff move is this line plus an impl of
-/// `toolbox_db::Now`, rather than every entity in the tree.
 pub type Timestamp = chrono::NaiveDateTime;
 
 /// This domain's migrations, applied by the binary at startup.

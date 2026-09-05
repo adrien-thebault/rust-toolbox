@@ -27,13 +27,17 @@ toolbox-web     = { workspace = true }
 async-trait = { workspace = true }
 axum        = { workspace = true }
 clap        = { workspace = true }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
 garde       = { workspace = true }
 secrecy     = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 thiserror   = { workspace = true }
 tokio       = { workspace = true }
+tokio-stream = { workspace = true }
 tonic       = { workspace = true }
+tower       = { workspace = true }
 tracing     = { workspace = true }
 utoipa      = { workspace = true }
 

@@ -16,10 +16,13 @@ publish = false
 toolbox-core    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
 toolbox-db      = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["clap"] }
 toolbox-cluster = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
+toolbox-schedule = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
 toolbox-server  = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["clap"] }
 toolbox-grpc    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
-{% if gateway %}toolbox-auth    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["password"] }
-toolbox-web     = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["rate-limit", "auth-router", "openapi"] }
+# Not behind `gateway`: `AssertedPrincipal` is what a gRPC service checks on
+# its own caller, whether or not that caller is this template's own gateway.
+toolbox-auth    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["password"] }
+{% if gateway %}toolbox-web     = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["rate-limit", "auth-router", "openapi", "idempotency", "realtime"] }
 {% endif %}
 # Declared directly, not through toolbox::deps: their derives emit absolute
 # `diesel::` and `serde::` paths.
@@ -30,8 +33,11 @@ diesel_migrations = "2.3"
 
 {% if gateway %}async-trait = "0.1"
 axum        = "0.8"
+futures-core = "0.3"
+futures-util = "0.3"
 garde       = { version = "0.23", features = ["derive"] }
 secrecy     = "0.10"
+tokio-stream = "0.1"
 utoipa      = { version = "5.5", features = ["axum_extras", "macros"] }
 {% endif %}chrono      = { version = "0.4", features = ["clock", "std"] }
 clap        = { version = "4", features = ["derive", "env"] }
@@ -39,10 +45,11 @@ prost       = "0.14"
 serde       = { version = "1.0", features = ["derive"] }
 serde_json  = "1.0"
 thiserror   = "2.0"
-tokio       = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+tokio       = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
 tonic       = "0.14"
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
+tower       = "0.5"
 tracing     = "0.1"
 
 [workspace.lints.rust]

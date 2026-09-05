@@ -8,14 +8,17 @@ use std::collections::BTreeMap;
 use tonic::{Request, Response};
 use toolbox_core::{ErrorKind, ServiceError};
 use toolbox_db::{Db, DbError};
-use toolbox_grpc::GrpcResult;
-
+{% if gateway %}use toolbox_grpc::{GrpcResult, server::identity};
+{% else %}use toolbox_grpc::GrpcResult;
+{% endif %}
 use crate::{
     Connection,
-    model::Todo,
+{% if gateway %}    auth::Admin,
+{% endif %}    model::Todo,
     proto,
     proto::{
-        CreateTodoRequest, GetTodoRequest, ListTodosRequest, ListTodosResponse, todo_service_server,
+        CompleteTodoRequest, CreateTodoRequest, DeleteTodoRequest, DeleteTodoResponse,
+        GetTodoRequest, ListTodosRequest, ListTodosResponse, todo_service_server,
     },
 };
 
@@ -62,17 +65,22 @@ impl todo_service_server::TodoService for TodoService {
         &self,
         request: Request<ListTodosRequest>,
     ) -> GrpcResult<ListTodosResponse> {
+        let request = request.into_inner();
         let page_request = request
-            .into_inner()
             .page
             .unwrap_or_default()
             .to_domain()
             .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
+        let needle = request.title_contains;
 
         let page = self
             .db
             .run_named("list_todos", move |c: &mut Connection| {
-                Todo::page(c, &page_request).map_err(TodoServiceError::from)
+                if needle.is_empty() {
+                    Todo::page(c, &page_request).map_err(TodoServiceError::from)
+                } else {
+                    Todo::search(c, &needle, &page_request).map_err(TodoServiceError::from)
+                }
             })
             .await?;
 
@@ -99,6 +107,52 @@ impl todo_service_server::TodoService for TodoService {
             .await?;
         Ok(Response::new(todo.into()))
     }
+
+    async fn complete_todo(
+        &self,
+        request: Request<CompleteTodoRequest>,
+    ) -> GrpcResult<proto::Todo> {
+        let CompleteTodoRequest { id, version } = request.into_inner();
+
+        let todo = self
+            .db
+            .transaction(move |c: &mut Connection| {
+                let mut todo = Todo::find_by_id(c, &id)?.ok_or(TodoServiceError::NotFound(id))?;
+                todo.done = true;
+                todo.version = version;
+                todo.save(c).map_err(|e| match e {
+                    // The derive returns Conflict when the version check
+                    // matched no rows; the service says which todo.
+                    DbError::Conflict => TodoServiceError::Conflict(id),
+                    other => TodoServiceError::Db(other),
+                })
+            })
+            .await?;
+        Ok(Response::new(todo.into()))
+    }
+
+    async fn delete_todo(
+        &self,
+        request: Request<DeleteTodoRequest>,
+    ) -> GrpcResult<DeleteTodoResponse> {
+{% if gateway %}        // Checked here too, not just at the gateway: `identity_layer` resolves
+        // whoever `shared_secret_layer` let through, but only this handler
+        // knows that *delete* is the operation that needs the admin role.
+        if !identity::require(&request)?.has::<Admin>() {
+            return Err(TodoServiceError::Forbidden.into());
+        }
+{% endif %}        let id = request.into_inner().id;
+        let deleted = self
+            .db
+            .run_named("delete_todo", move |c: &mut Connection| {
+                Todo::delete_by_id(c, &id).map_err(TodoServiceError::from)
+            })
+            .await?;
+
+        Ok(Response::new(DeleteTodoResponse {
+            deleted: i32::try_from(deleted).unwrap_or(i32::MAX),
+        }))
+    }
 }
 
 /// What this service can fail with.
@@ -116,6 +170,9 @@ pub enum TodoServiceError {
     /// The title was empty.
     #[error("a todo needs a title")]
     EmptyTitle,
+    /// The caller is not the admin.
+    #[error("the admin role is required")]
+    Forbidden,
     /// Anything the database refused.
     #[error(transparent)]
     Db(#[from] DbError),
@@ -130,6 +187,7 @@ impl ServiceError for TodoServiceError {
             Self::NotFound(_) => "TODO_NOT_FOUND",
             Self::Conflict(_) => "TODO_CONFLICT",
             Self::EmptyTitle => "TODO_EMPTY_TITLE",
+            Self::Forbidden => "TODO_FORBIDDEN",
             Self::Db(e) => e.code(),
             Self::Query(_) => "TODO_QUERY_FAILED",
         }
@@ -144,6 +202,7 @@ impl ServiceError for TodoServiceError {
             Self::NotFound(_) => ErrorKind::NotFound,
             Self::Conflict(_) => ErrorKind::Conflict,
             Self::EmptyTitle => ErrorKind::InvalidArgument,
+            Self::Forbidden => ErrorKind::PermissionDenied,
             Self::Db(e) => e.kind(),
             Self::Query(_) => ErrorKind::Internal,
         }

@@ -13,8 +13,18 @@ the rust-toolbox template.
 - RFC 9457 error responses, with 5xx detail redacted
 - gRPC health and reflection, so `grpcurl` works with no protos to hand
 - locked migrations, so replicas starting together do not race
+- a `HealthCheck` polling the database in the background, so `/ready` reflects
+  a real dependency rather than "the process is up"
+- an exclusive, cluster-safe scheduled job (`toolbox-schedule`) sweeping
+  completed todos nobody has touched in a month
 {% if gateway %}- login, refresh, logout and `/auth/me`, with the login rate
   limit already attached
+- the gateway's calls to the service carry an asserted, verified principal
+  (`shared_secret_layer` + `identity_layer`), so bypassing the gateway and
+  calling the service directly does not bypass authorization too
+- a repeated `Idempotency-Key` on the create route replays the first response
+  instead of creating a second row
+- an SSE route and a plain HTML page (`web/static/index.html`) that uses it
 - an OpenAPI spec generated from the routes, with a CI check that the committed
   `web/openapi.json` stays in sync
 {% endif %}
@@ -22,12 +32,17 @@ the rust-toolbox template.
 ## Running it
 
 ```sh
-cp .env.example .env      # then set {% if gateway %}SESSION_SECRET and ADMIN_PASSWORD_HASH{% else %}DATABASE_URL{% endif %}
+cp .env.example .env      # then set {% if gateway %}SESSION_SECRET, SERVICE_SECRET and ADMIN_PASSWORD_HASH{% else %}DATABASE_URL{% endif %}
 cargo fmt --all           # imports sort by crate name, and yours is new
 cargo build               # writes Cargo.lock - commit it, see below
 {% if gateway %}./openapi.sh              # writes web/openapi.json - commit it too
 {% endif %}docker compose up --build
 ```
+{% if gateway %}
+Once it is up, open `web/static/index.html` from a plain local static server
+(`python3 -m http.server`, say) - not `file://`, which sends no `Origin` header
+`cors_localhost` can match - and point it at `http://localhost:8080`.
+{% endif %}
 
 `cargo fmt` first because a crate's own name sorts into its import blocks, and
 the template cannot know it in advance. One run and `cargo fmt --check` in the
@@ -69,6 +84,7 @@ grpc/                 a grouping directory, not a crate
     src/
       main.rs         the process that serves this domain
       lib.rs          Backend, Connection, Timestamp, MIGRATIONS, proto
+      auth.rs         the Admin role this domain checks on its own caller
       schema.rs
       model.rs
       model/
@@ -81,11 +97,14 @@ web/
   src/
     main.rs           the gateway process
     lib.rs
-    state.rs          AppState, and the AuthState impl that mounts /auth/*
-    auth.rs           who may log in, and the roles this project has
+    state.rs          AppState: the service channel, idempotency, the event bus
+    auth.rs           who may log in, the roles this project has, and the
+                       event bus -> hub wiring behind the SSE route
     routes.rs         the router, the OpenAPI doc, the Status -> ApiError seam
     routes/
-      todo.rs         the DTOs and the todo routes
+      todo.rs         the DTOs, the todo routes and the SSE route
+  static/
+    index.html        a plain HTML client against the running gateway
   examples/
     dump_openapi.rs   prints the spec; ./openapi.sh redirects it into openapi.json
   openapi.json        the committed spec, checked for drift in CI
