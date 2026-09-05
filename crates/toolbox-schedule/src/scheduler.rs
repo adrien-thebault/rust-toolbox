@@ -73,14 +73,14 @@ impl std::fmt::Debug for Scheduler {
 impl Scheduler {
     /// Start building over a lock manager.
     ///
-    /// The lock manager is what makes `Exclusive` mean anything. Under
-    /// `DEPLOYMENT=clustered` it must be a shared one, and the deployment guard
-    /// is what checks that.
+    /// The lock manager is what makes `Exclusive` mean anything: across more
+    /// than one replica it must be a shared adapter, or every replica takes
+    /// its "own" lock and runs the job anyway.
     ///
     /// # Arguments
     ///
     /// * `locks` - The lock manager. It is what makes [`RunMode::Exclusive`]
-    ///   mean anything, so under `DEPLOYMENT=clustered` it must be a shared
+    ///   mean anything, so across more than one replica it must be a shared
     ///   adapter.
     #[must_use]
     pub fn builder(locks: Arc<dyn LockManager>) -> SchedulerBuilder {
