@@ -386,9 +386,14 @@
       liveBadge.textContent = "live: reconnecting…";
       liveBadge.className = "badge";
     };
-    // The event carries no payload, only a type: re-fetch rather than trust a
-    // stale snapshot the event itself might be describing incompletely.
-    eventSource.onmessage = () => loadTodos();
+    // The event carries no payload, only a type - and it is a *named* SSE
+    // event (`event: todo.created`), so the browser's default `onmessage`
+    // never fires for it; that only fires for an unnamed "message" event.
+    // Re-fetch rather than trust a stale snapshot the event might be
+    // describing incompletely.
+    for (const type of ["todo.created", "todo.completed", "todo.deleted"]) {
+      eventSource.addEventListener(type, () => loadTodos());
+    }
   }
 
   function connect() {
