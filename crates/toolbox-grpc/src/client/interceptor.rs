@@ -102,3 +102,68 @@ impl Interceptor for ClientInterceptor {
         Ok(request)
     }
 }
+
+// `ClientInterceptor::new` is `pub(super)`, so an external `tests/` crate
+// cannot build one - these live here instead, alongside the other
+// crate-private constructs this crate unit-tests inline (see `migrate.rs` in
+// `toolbox-db` for the same pattern).
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use toolbox_server::DEADLINE;
+
+    use super::*;
+
+    fn request() -> tonic::Request<()> {
+        tonic::Request::new(())
+    }
+
+    #[test]
+    fn with_nothing_configured_or_in_scope_nothing_is_attached() {
+        let mut interceptor = ClientInterceptor::new(None);
+        let req = interceptor.call(request()).unwrap();
+        assert!(req.metadata().get("grpc-timeout").is_none());
+        assert!(req.metadata().get(X_SHARED_SECRET).is_none());
+        assert!(req.metadata().get(X_ASSERTED_PRINCIPAL).is_none());
+    }
+
+    #[test]
+    fn a_configured_secret_is_attached() {
+        let mut interceptor = ClientInterceptor::new(Some(&SecretString::from("s3cr3t")));
+        let req = interceptor.call(request()).unwrap();
+        assert_eq!(req.metadata().get(X_SHARED_SECRET).unwrap(), "s3cr3t");
+    }
+
+    /// A newline is illegal in a header value; the doc on `new` promises this
+    /// is dropped rather than failing every call.
+    #[test]
+    fn a_secret_that_is_not_a_legal_header_value_is_dropped() {
+        let mut interceptor = ClientInterceptor::new(Some(&SecretString::from("bad\nvalue")));
+        let req = interceptor.call(request()).unwrap();
+        assert!(req.metadata().get(X_SHARED_SECRET).is_none());
+    }
+
+    #[test]
+    fn a_scoped_deadline_becomes_a_grpc_timeout() {
+        let mut interceptor = ClientInterceptor::new(None);
+        let req = DEADLINE.sync_scope(Instant::now() + Duration::from_secs(5), || {
+            interceptor.call(request())
+        });
+        assert!(req.unwrap().metadata().get("grpc-timeout").is_some());
+    }
+
+    #[tokio::test]
+    async fn an_asserting_scope_attaches_the_encoded_principal() {
+        let mut interceptor = ClientInterceptor::new(None);
+        let req = asserting("the-encoded-principal".to_owned(), async {
+            interceptor.call(request())
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            req.metadata().get(X_ASSERTED_PRINCIPAL).unwrap(),
+            "the-encoded-principal"
+        );
+    }
+}
