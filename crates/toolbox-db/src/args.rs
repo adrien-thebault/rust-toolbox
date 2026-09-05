@@ -26,16 +26,4 @@ impl DatabaseArgs {
     pub fn builder<C: R2D2Connection + 'static>(&self) -> crate::db::DbBuilder<C> {
         crate::db::Db::builder(self.database_url.clone()).max_size(self.database_max_connections)
     }
-
-    /// Whether the URL names a SQLite database.
-    ///
-    /// The deployment guard uses this: SQLite plus `DEPLOYMENT=clustered` is a
-    /// startup error, because replicas cannot share a local file.
-    #[must_use]
-    pub fn is_sqlite(&self) -> bool {
-        let lower = self.database_url.to_ascii_lowercase();
-        !(lower.starts_with("postgres://")
-            || lower.starts_with("postgresql://")
-            || lower.starts_with("mysql://"))
-    }
 }

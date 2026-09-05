@@ -9,3 +9,4 @@ mod entity;
 mod error;
 mod generic_backend;
 mod pagination;
+mod sqlite;
