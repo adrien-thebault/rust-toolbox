@@ -8,5 +8,6 @@ mod db;
 mod entity;
 mod error;
 mod generic_backend;
+mod migrate;
 mod pagination;
 mod sqlite;

@@ -1,10 +1,13 @@
-use axum::{Router, routing::post};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use garde::Validate;
 use http::StatusCode;
 use serde::Deserialize;
-use toolbox_web::extract::ValidJson;
+use toolbox_web::extract::{ValidJson, ValidQuery};
 
-use crate::{call, post_json};
+use crate::{call, get as get_req, post_json};
 
 #[derive(Debug, Deserialize, Validate)]
 struct Address {
@@ -89,4 +92,44 @@ async fn a_body_missing_a_field_is_a_400_problem() {
     assert_eq!(res.headers()["content-type"], toolbox_core::PROBLEM_JSON);
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["code"], "MALFORMED_BODY");
+}
+
+#[derive(Debug, Deserialize, Validate)]
+struct Filters {
+    #[garde(range(min = 1, max = 100))]
+    limit: u8,
+}
+
+fn query_app() -> Router {
+    Router::new().route(
+        "/items",
+        get(|ValidQuery(f): ValidQuery<Filters>| async move { f.limit.to_string() }),
+    )
+}
+
+#[tokio::test]
+async fn a_valid_query_reaches_the_handler() {
+    let (res, text) = call(query_app(), get_req("/items?limit=20")).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(text, "20");
+}
+
+/// A query that does not parse and one that parses but fails validation are
+/// different client mistakes, and the code is what lets a client tell them
+/// apart.
+#[tokio::test]
+async fn a_query_that_does_not_parse_is_distinct_from_one_that_fails_validation() {
+    let (res, text) = call(query_app(), get_req("/items?limit=notanumber")).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["code"], "MALFORMED_QUERY");
+
+    let (res, text) = call(query_app(), get_req("/items?limit=200")).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["code"], "VALIDATION_FAILED");
+    assert!(
+        v["metadata"].as_object().unwrap().contains_key("limit"),
+        "the failing field is named: {text}"
+    );
 }

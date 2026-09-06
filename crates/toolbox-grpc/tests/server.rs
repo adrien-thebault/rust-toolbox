@@ -43,6 +43,25 @@ impl HealthCheck for Toggle {
     }
 }
 
+/// A descriptor set that does not decode disables reflection with a warning
+/// rather than failing startup: a broken reflection blob must not be able to
+/// take the whole server down.
+#[tokio::test]
+async fn a_bad_reflection_descriptor_does_not_stop_the_server() {
+    let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = probe.local_addr().unwrap();
+    drop(probe);
+
+    let server = ServerConfig::default().reflection(b"not a descriptor set");
+
+    tokio::select! {
+        result = serve(StartupConfig::new(addr), server, RoutesBuilder::default()) => {
+            panic!("serve exited early: {result:?}")
+        }
+        () = tokio::time::sleep(Duration::from_millis(100)) => {}
+    }
+}
+
 /// The gRPC health probe for the empty service name tracks the health
 /// checks, so a backend whose dependency is down is pulled from rotation the
 /// same way the axum `/ready` route does it.

@@ -41,6 +41,31 @@ fn the_kind_matches_what_the_failure_actually_is() {
     );
 }
 
+/// The code is the stable identifier a client branches on, one per variant,
+/// all under the `schedule` domain.
+#[test]
+fn each_variant_has_its_own_code_in_the_schedule_domain() {
+    let cases = [
+        (
+            ScheduleError::Cron {
+                expr: "x".to_owned(),
+                reason: "y".to_owned(),
+            },
+            "INVALID_CRON",
+        ),
+        (
+            ScheduleError::DuplicateName("x".to_owned()),
+            "DUPLICATE_JOB",
+        ),
+        (ScheduleError::NotFound("x".to_owned()), "JOB_NOT_FOUND"),
+        (ScheduleError::Lock("x".to_owned()), "LOCK_FAILED"),
+    ];
+    for (err, code) in cases {
+        assert_eq!(err.code(), code);
+        assert_eq!(err.domain(), "schedule");
+    }
+}
+
 #[test]
 fn the_job_name_is_carried_as_metadata_where_there_is_one() {
     let meta = ScheduleError::NotFound("nightly".to_owned()).metadata();

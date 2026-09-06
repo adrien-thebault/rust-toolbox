@@ -37,6 +37,46 @@ fn every_variant_has_a_stable_code() {
     assert_eq!(DbError::Conflict.domain(), "db");
 }
 
+/// The internal-fault variants share one `ErrorKind` but keep distinct codes,
+/// so a log line still says which layer failed even though the caller only
+/// ever sees a 500.
+#[test]
+fn each_internal_fault_variant_keeps_its_own_code() {
+    let query: DbError = diesel::result::Error::RollbackTransaction.into();
+    let connection: DbError = diesel::ConnectionError::BadConnection("down".to_owned()).into();
+
+    assert_eq!(query.code(), "DB_QUERY_FAILED");
+    assert_eq!(connection.code(), "DB_CONNECTION_FAILED");
+    assert_eq!(
+        DbError::Migration("boom".to_owned()).code(),
+        "DB_MIGRATION_FAILED"
+    );
+    assert_eq!(
+        DbError::Interact("panicked".to_owned()).code(),
+        "DB_TASK_FAILED"
+    );
+    assert_eq!(DbError::VersionOverflow.code(), "DB_VERSION_OVERFLOW");
+
+    for e in [
+        query,
+        connection,
+        DbError::Migration("x".to_owned()),
+        DbError::VersionOverflow,
+    ] {
+        assert_eq!(e.kind(), ErrorKind::Internal);
+        assert!(e.metadata().is_empty());
+    }
+}
+
+/// r2d2 surfaces its own error type during migration setup; it must land on the
+/// migration variant rather than a bare pool error.
+#[test]
+fn an_r2d2_error_maps_to_a_migration_failure() {
+    let e: DbError =
+        diesel::r2d2::Error::QueryError(diesel::result::Error::RollbackTransaction).into();
+    assert_eq!(e.code(), "DB_MIGRATION_FAILED");
+}
+
 /// A rejected sort names what was asked for and the allowlist, so the caller
 /// can fix the request rather than guess.
 #[test]

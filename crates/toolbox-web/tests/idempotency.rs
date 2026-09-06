@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use toolbox_cluster::InMemoryKvStore;
+use toolbox_cluster::{InMemoryKvStore, KvStore, KvStoreError};
 use toolbox_web::{
     extract::IdempotencyKey,
     idempotency::{Idempotency, IdempotencyOutcome, StoredResponse, in_flight_error},
@@ -102,6 +102,58 @@ async fn releasing_a_failed_request_lets_the_caller_retry() {
         idem.claim(&key("abc"), "/pay").await.unwrap(),
         IdempotencyOutcome::Fresh
     ));
+}
+
+/// A record we cannot deserialise is one we cannot honour: run the handler
+/// rather than fail the retry the key was sent to enable.
+#[tokio::test]
+async fn an_undecodable_record_falls_through_to_running_the_handler() {
+    let kv = Arc::new(InMemoryKvStore::default());
+    let idem = Idempotency::new(kv.clone());
+    kv.set("toolbox:idem:/pay:abc", b"this is not json".to_vec(), None)
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        idem.claim(&key("abc"), "/pay").await.unwrap(),
+        IdempotencyOutcome::Fresh
+    ));
+}
+
+/// A store failure and a conflict lead a client to opposite behaviours, so the
+/// store failure has to be a distinct, retryable 503.
+#[tokio::test]
+async fn a_store_failure_is_a_distinct_retryable_error() {
+    let idem = Idempotency::new(Arc::new(AlwaysFails));
+    let err = idem.claim(&key("abc"), "/pay").await.unwrap_err();
+
+    assert_eq!(err.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        err.problem().code.as_deref(),
+        Some("IDEMPOTENCY_STORE_UNAVAILABLE")
+    );
+}
+
+/// A key-value store whose every operation reports a backend failure.
+struct AlwaysFails;
+
+#[async_trait::async_trait]
+impl KvStore for AlwaysFails {
+    async fn get(&self, _: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
+        Err(KvStoreError::Backend("down".to_owned()))
+    }
+    async fn set(&self, _: &str, _: Vec<u8>, _: Option<Duration>) -> Result<(), KvStoreError> {
+        Err(KvStoreError::Backend("down".to_owned()))
+    }
+    async fn add(&self, _: &str, _: Vec<u8>, _: Option<Duration>) -> Result<bool, KvStoreError> {
+        Err(KvStoreError::Backend("down".to_owned()))
+    }
+    async fn take(&self, _: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
+        Err(KvStoreError::Backend("down".to_owned()))
+    }
+    async fn delete(&self, _: &str) -> Result<(), KvStoreError> {
+        Err(KvStoreError::Backend("down".to_owned()))
+    }
 }
 
 #[tokio::test]

@@ -60,6 +60,7 @@ cargo hack --feature-powerset --depth 2 check -p toolbox-db -p toolbox-web -p to
 cargo deny check
 ./scripts/changelog.sh
 ./scripts/hash-password.sh           # an argon2 hash in PHC format
+./scripts/coverage.sh                # workspace line coverage, opens the HTML report
 cargo test -p example-todo -p example-web           # the gRPC cluster example, end to end
 ./examples/grpc-cluster/openapi.sh                  # regenerate the example's committed spec
 ```

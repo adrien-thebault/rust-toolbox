@@ -1,7 +1,10 @@
 use std::net::{IpAddr, SocketAddr};
 
-use http::HeaderMap;
-use toolbox_web::client_ip::{ClientIpTrustPolicy, IpNet, bucket, resolve_client_ip};
+use axum::extract::ConnectInfo;
+use http::{HeaderMap, Request};
+use toolbox_web::client_ip::{
+    ClientIpTrustPolicy, IpNet, bucket, client_ip, client_ip_of, resolve_client_ip,
+};
 
 fn headers(pairs: &[&str]) -> HeaderMap {
     let mut h = HeaderMap::new();
@@ -201,4 +204,38 @@ fn ipv6_is_bucketed_by_its_64_prefix() {
 #[test]
 fn ipv4_is_kept_whole() {
     assert_eq!(bucket(ip("198.51.100.7")), ip("198.51.100.7"));
+}
+
+/// A tower layer sees a whole `Request`, so the peer fallback has to come out
+/// of the `ConnectInfo` extension axum stores rather than a `SocketAddr`
+/// argument. Wrong extension key and the fallback silently returns `None`.
+#[test]
+fn the_from_pieces_form_reads_the_peer_from_the_connect_info_extension() {
+    let mut ext = http::Extensions::new();
+    ext.insert(ConnectInfo(
+        "203.0.113.9:4444".parse::<SocketAddr>().unwrap(),
+    ));
+    assert_eq!(
+        client_ip_of(&HeaderMap::new(), &ext, &ClientIpTrustPolicy::hops(1)),
+        Some(ip("203.0.113.9"))
+    );
+    assert_eq!(
+        client_ip_of(
+            &HeaderMap::new(),
+            &http::Extensions::new(),
+            &ClientIpTrustPolicy::hops(1)
+        ),
+        None,
+        "no connect info means no peer to fall back to"
+    );
+}
+
+#[test]
+fn the_from_parts_form_resolves_the_same_way() {
+    let (mut parts, ()) = Request::builder().uri("/").body(()).unwrap().into_parts();
+    parts.headers = headers(&["198.51.100.7"]);
+    assert_eq!(
+        client_ip(&parts, &ClientIpTrustPolicy::hops(1)),
+        Some(ip("198.51.100.7"))
+    );
 }

@@ -160,6 +160,58 @@ fn every_kind_maps_to_the_documented_status() {
     );
 }
 
+/// The shorthand constructors are what handlers actually call. Each must land
+/// on its documented status, a 4xx keeps its detail, and `internal` carries
+/// the cause without ever serialising it.
+#[tokio::test]
+async fn the_shorthand_constructors_map_to_their_status() {
+    let app = Router::new()
+        .route(
+            "/401",
+            get(|| async { Err::<(), ApiError>(ApiError::unauthenticated()) }),
+        )
+        .route(
+            "/403",
+            get(|| async { Err::<(), ApiError>(ApiError::forbidden("not your row")) }),
+        )
+        .route(
+            "/500",
+            get(|| async { Err::<(), ApiError>(ApiError::internal(DbExploded)) }),
+        );
+
+    let (res, _) = call(app.clone(), get_req("/401")).await;
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    let (res, body) = call(app.clone(), get_req("/403")).await;
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert!(
+        body.contains("not your row"),
+        "a 403 keeps its detail: {body}"
+    );
+
+    let (res, body) = call(app, get_req("/500")).await;
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        !body.contains("hunter2"),
+        "the cause is logged, never sent: {body}"
+    );
+}
+
+/// `ApiError` is a `std::error::Error`: anything that boxes it - a middleware,
+/// a `?` outside a handler - depends on `Display` and `source`.
+#[test]
+fn it_behaves_as_a_std_error() {
+    let err = ApiError::internal(DbExploded);
+    assert_eq!(err.to_string(), "500 Internal Server Error");
+    let source = std::error::Error::source(&err).expect("the cause is reachable");
+    assert!(source.to_string().contains("connection refused"));
+
+    assert!(
+        std::error::Error::source(&ApiError::not_found("x")).is_none(),
+        "a plain 404 has no underlying cause"
+    );
+}
+
 #[tokio::test]
 async fn an_error_info_from_grpc_becomes_the_same_problem_shape() {
     use toolbox_core::ErrorInfo;

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use toolbox_core::{ErrorKind, PROBLEM_JSON, Problem, ServiceError};
+use toolbox_core::{ErrorKind, PROBLEM_JSON, Problem, ServiceError, problem::title_for};
 
 #[derive(Debug, thiserror::Error)]
 #[error("the database exploded: connection refused to 10.0.0.4:5432")]
@@ -75,6 +75,27 @@ fn redact_removes_everything_a_5xx_must_not_disclose() {
         json.contains("DB_UNAVAILABLE"),
         "the stable code stays: {json}"
     );
+}
+
+/// The title is the client-visible half of the contract: a given kind must
+/// always read the same way, so pin every arm rather than the handful that
+/// other tests happen to exercise.
+#[test]
+fn every_kind_has_a_stable_title() {
+    assert_eq!(title_for(ErrorKind::NotFound), "Not Found");
+    assert_eq!(title_for(ErrorKind::InvalidArgument), "Invalid Argument");
+    assert_eq!(title_for(ErrorKind::Unauthenticated), "Unauthenticated");
+    assert_eq!(title_for(ErrorKind::PermissionDenied), "Permission Denied");
+    assert_eq!(title_for(ErrorKind::Conflict), "Conflict");
+    assert_eq!(title_for(ErrorKind::ResourceExhausted), "Too Many Requests");
+    assert_eq!(
+        title_for(ErrorKind::FailedPrecondition),
+        "Precondition Failed"
+    );
+    assert_eq!(title_for(ErrorKind::Unimplemented), "Not Implemented");
+    assert_eq!(title_for(ErrorKind::Unavailable), "Service Unavailable");
+    assert_eq!(title_for(ErrorKind::Timeout), "Gateway Timeout");
+    assert_eq!(title_for(ErrorKind::Internal), "Internal Server Error");
 }
 
 #[test]

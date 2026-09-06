@@ -55,6 +55,18 @@ async fn cors_localhost_reflects_any_loopback_port() {
     }
 }
 
+/// A dev frontend bound to IPv6 loopback sends a bracketed authority; the host
+/// has to be pulled from inside the brackets or the port splitter mangles it.
+#[tokio::test]
+async fn cors_localhost_reflects_a_bracketed_ipv6_loopback_origin() {
+    let app = app(cors_localhost(&[]));
+    let (res, _) = call(app, with_origin("http://[::1]:5173")).await;
+    assert_eq!(
+        res.headers()["access-control-allow-origin"],
+        "http://[::1]:5173"
+    );
+}
+
 #[tokio::test]
 async fn cors_localhost_still_refuses_a_public_origin() {
     let app = app(cors_localhost(&[]));

@@ -4,7 +4,8 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use secrecy::SecretString;
 use serde_json::json;
 use toolbox_auth::{
-    AuthError, Claims, JwtIdentityProvider, Principal, PrincipalMapping, RefreshInfo, TokenUse,
+    AuthError, Claims, JwtIdentityProvider, MappingPath, Principal, PrincipalMapping, RefreshInfo,
+    TokenUse,
 };
 
 fn codec() -> JwtIdentityProvider {
@@ -121,6 +122,31 @@ async fn an_audience_is_required_once_configured() {
 
     let good = expecting.issue(&principal()).unwrap();
     assert!(expecting.verify(&good).await.is_ok());
+}
+
+/// The leeway is the clock-skew tolerance between replicas. A token a little
+/// past `exp` verifies when leeway covers the gap and is `Expired` when it
+/// does not.
+#[tokio::test]
+async fn leeway_is_the_clock_skew_the_verifier_tolerates_on_exp() {
+    let mut claims = Claims::for_access(&principal(), "toolbox-test", Duration::from_secs(0), None);
+    // Expired 120s ago: past the default 60s leeway, inside a 300s one.
+    claims.exp = claims.iat.saturating_sub(120);
+    let token = jsonwebtoken::encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(&"a".repeat(32).into_bytes()),
+    )
+    .unwrap();
+
+    assert!(
+        matches!(codec().verify(&token).await, Err(AuthError::Expired)),
+        "the default 60s leeway does not cover a 120s gap"
+    );
+    assert!(
+        codec().leeway(300).verify(&token).await.is_ok(),
+        "a 300s leeway does"
+    );
 }
 
 #[tokio::test]
@@ -310,6 +336,47 @@ async fn a_public_key_verifier_maps_an_external_token_to_a_principal() {
     assert_eq!(principal.issuer, "https://idp.example");
     assert!(principal.has_role("ADMINS"));
     assert_eq!(principal.display_name.as_deref(), Some("ada"));
+}
+
+/// A validly signed token that just lacks the mapped subject claim is a
+/// different failure from a bad signature: there is no stable identity to build
+/// a principal from, and the message names the claim that was missing.
+#[tokio::test]
+async fn a_token_without_the_mapped_subject_claim_is_malformed() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    // `sub` is present so JWT validation passes; the mapping reads elsewhere.
+    let external = json!({
+        "sub": "ext-1",
+        "iss": "https://idp.example",
+        "exp": now + 3600,
+        "iat": now,
+    });
+    let signed = jsonwebtoken::encode(
+        &Header::new(Algorithm::EdDSA),
+        &external,
+        &EncodingKey::from_ed_pem(ED_PRIVATE_PEM).unwrap(),
+    )
+    .unwrap();
+
+    let mapping = PrincipalMapping {
+        subject: MappingPath::new("user_id"),
+        ..PrincipalMapping::default()
+    };
+    let verifier = JwtIdentityProvider::public_key(
+        ED_PUBLIC_PEM,
+        Algorithm::EdDSA,
+        "https://idp.example",
+        mapping,
+    )
+    .unwrap();
+
+    match verifier.verify(&signed).await {
+        Err(AuthError::Malformed(msg)) => assert!(msg.contains("user_id"), "{msg}"),
+        other => panic!("expected Malformed naming the claim, got {other:?}"),
+    }
 }
 
 #[test]
