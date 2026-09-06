@@ -67,9 +67,12 @@ jobs:
       - name: The generated project passes its own checks
         run: |
           cd /tmp/generated/svc
+          # rust-toolchain@nightly ran last, so it is the default here; fmt
+          # wants nightly (group_imports), clippy and build want the stable
+          # toolchain that carries the clippy component.
           cargo +nightly fmt --all --check
-          cargo clippy --workspace --all-targets -- -D warnings
-          cargo build --workspace
+          cargo +stable clippy --workspace --all-targets -- -D warnings
+          cargo +stable build --workspace
           # The Dockerfile does `COPY Cargo.lock` with --locked, so the README
           # tells you to build once and commit the result. Assert that works.
           test -f Cargo.lock
