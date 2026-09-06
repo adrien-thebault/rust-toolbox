@@ -21,6 +21,18 @@ async fn run_returns_the_closures_own_error_type_unchanged() {
 }
 
 #[tokio::test]
+async fn ping_succeeds_against_a_working_pool() {
+    let (db, _dir) = temp_db();
+    db.ping().await.unwrap();
+}
+
+#[tokio::test]
+async fn is_live_is_true_for_a_working_pool() {
+    let (db, _dir) = temp_db();
+    assert!(db.is_live().await);
+}
+
+#[tokio::test]
 async fn run_hands_out_a_working_connection() {
     let (db, _dir) = temp_db();
     let n = db

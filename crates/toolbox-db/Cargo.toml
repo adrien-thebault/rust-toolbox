@@ -39,7 +39,7 @@ diesel   = { workspace = true, features = [
 ] }
 chrono   = { workspace = true, features = ["clock", "std"] }
 toolbox-core = { workspace = true }
-tokio    = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio    = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }
 tempfile = { workspace = true }
 
 [lints]

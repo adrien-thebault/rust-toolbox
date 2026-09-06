@@ -160,6 +160,26 @@ impl<C: R2D2Connection + 'static> Db<C> {
         self.query(f).await
     }
 
+    /// A cheap round trip through the pool, for a liveness probe.
+    ///
+    /// `R2D2Connection::ping` already has the right query per backend, so
+    /// there is nothing backend-specific to write here.
+    ///
+    /// # Errors
+    /// [`DbError::Query`] or [`DbError::Pool`]/[`DbError::Interact`], as
+    /// [`Db::run`].
+    pub async fn ping(&self) -> DbResult<()> {
+        self.query(R2D2Connection::ping).await
+    }
+
+    /// Whether the pool can hand out a working connection right now.
+    ///
+    /// [`Db::ping`] reduced to a `bool`, shaped to pass straight to
+    /// `toolbox_server::lifecycle::poll_check` without a wrapping closure.
+    pub async fn is_live(self) -> bool {
+        self.ping().await.is_ok()
+    }
+
     /// Run a closure inside a transaction.
     ///
     /// Rollback semantics are diesel's: `f` returning `Err` rolls back, and a
