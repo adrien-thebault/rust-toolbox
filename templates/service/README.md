@@ -94,8 +94,8 @@ places the database backend and the timestamp type are named.
 
 The derive generates `find_by_id`, `find_by_ids`, `exists`, `count`, `page`,
 `save`, `save_all`, `delete_by_id`, `delete_by_ids`, `truncate` and `query()`
-as inherent methods. The `title_contains` filter in `service/todo_service.rs`
-is the worked example of `query()` composed with pagination.
+as inherent methods. `Todo::search` in `model/todo.rs` is the worked example
+of `query()` composed with pagination.
 {% if gateway %}
 ## Replacing the seeded account
 

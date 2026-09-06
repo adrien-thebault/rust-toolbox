@@ -6,11 +6,10 @@
 use std::{collections::BTreeMap, pin::Pin, sync::Arc};
 
 use cloudevents::AttributesReader as _;
-use diesel::prelude::*;
 use tokio_stream::{Stream, StreamExt as _};
 use tonic::{Request, Response, Status};
 use toolbox_cluster::{EventBus, Topic, event, payload};
-use toolbox_core::{ErrorKind, Page, PageRequest, ServiceError};
+use toolbox_core::{ErrorKind, ServiceError};
 use toolbox_db::{Db, DbError};
 use toolbox_grpc::{GrpcResult, server::identity};
 use tracing::{info, trace, warn};
@@ -25,7 +24,6 @@ use crate::{
         GetTodoRequest, ListTodosRequest, ListTodosResponse, TodoEvent, WatchTodosRequest,
         todo_service_server,
     },
-    schema::todos,
 };
 
 /// The todo service.
@@ -82,45 +80,11 @@ impl TodoService {
         }
     }
 
-    /// Todos whose title contains `needle`, paged.
-    ///
-    /// Here rather than on `Todo` for the same reason as `purge_completed`:
-    /// `list_todos` is its only caller, and a `LIKE` filter composed with the
-    /// toolbox's pagination is one step of a service operation, not a query
-    /// another caller reuses. It doubles as the worked example of the derived
-    /// `query()` composing with `paginate`.
-    ///
-    /// # Arguments
-    ///
-    /// * `conn` - The connection to load on.
-    /// * `needle` - Matched with `LIKE %needle%`.
-    /// * `request` - The window and sort to apply.
-    ///
-    /// # Errors
-    /// [`TodoServiceError::Db`] when the query fails or the sort names an
-    /// undeclared field.
-    fn search(
-        conn: &mut Connection,
-        needle: &str,
-        request: &PageRequest,
-    ) -> Result<Page<Todo>, TodoServiceError> {
-        use toolbox_db::Paginate as _;
-
-        toolbox_db::pagination::validate(request.sort(), Todo::sortable_fields())?;
-        Todo::query()
-            .filter(todos::title.like(format!("%{needle}%")))
-            .select(Todo::as_select())
-            .paginate(request)
-            .load_page::<Todo, Connection>(conn)
-            .map_err(TodoServiceError::from)
-    }
-
     /// Soft-delete every completed todo last touched before `cutoff`, emitting
     /// a `todo.deleted` for each row. Driven by the scheduler in `main.rs`.
     ///
-    /// The bulk `UPDATE ... RETURNING id` lives here rather than on `Todo`
-    /// because it is one step of a service operation - delete, then announce
-    /// each id - not a query another caller reuses.
+    /// The sweep itself is [`Todo::purge_completed_before`]; it returns the
+    /// purged ids and this announces them, the half only the service can do.
     ///
     /// # Arguments
     ///
@@ -130,19 +94,10 @@ impl TodoService {
     /// # Errors
     /// [`TodoServiceError::Db`] when the sweep query fails.
     pub async fn purge_completed(&self, cutoff: Timestamp) -> Result<u64, TodoServiceError> {
-        let ids: Vec<i32> = self
+        let ids = self
             .db
             .run_named("purge_completed", move |c: &mut Connection| {
-                diesel::update(
-                    todos::table
-                        .filter(todos::done.eq(true))
-                        .filter(todos::updated_at.lt(cutoff))
-                        .filter(todos::deleted_at.is_null()),
-                )
-                .set(todos::deleted_at.eq(chrono::Utc::now().naive_utc()))
-                .returning(todos::id)
-                .get_results::<i32>(c)
-                .map_err(|e| TodoServiceError::Db(DbError::from(e)))
+                Todo::purge_completed_before(c, cutoff).map_err(TodoServiceError::from)
             })
             .await?;
 
@@ -190,7 +145,7 @@ impl todo_service_server::TodoService for TodoService {
                 if needle.is_empty() {
                     Todo::page(c, &page_request).map_err(TodoServiceError::from)
                 } else {
-                    Self::search(c, &needle, &page_request)
+                    Todo::search(c, &needle, &page_request).map_err(TodoServiceError::from)
                 }
             })
             .await?;
