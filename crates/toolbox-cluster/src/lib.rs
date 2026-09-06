@@ -1,9 +1,9 @@
 //! The multi-replica seam.
 //!
-//! [`event`], [`kv`] and [`lock`] each hold state across requests, so each is a
-//! trait with adapters - a local one, at least one shared one. The CloudEvents
-//! envelope rides along in [`event`] because `toolbox-core` takes no
-//! dependencies and it has nowhere smaller to live.
+//! [`mod@event`], [`kv`] and [`lock`] each hold state across requests, so each
+//! is a trait with adapters - a local one, at least one shared one. The
+//! CloudEvents envelope rides along in [`mod@event`] because `toolbox-core`
+//! takes no dependencies and it has nowhere smaller to live.
 //!
 //! Two things are deliberately absent. There is no `RateLimitStore`: with the
 //! local limiter staying in `toolbox-web`, that trait would have zero

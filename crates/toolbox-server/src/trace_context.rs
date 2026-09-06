@@ -419,8 +419,8 @@ impl<B> MakeSpan<B> for MakeTracedSpan {
 /// `time.busy`/`time.idle` (from `FmtSpan::CLOSE`), which count a `.await` on
 /// real I/O (every DB-backed request here) as idle rather than busy, and so
 /// understate it. Recorded unconditionally: it is known here even when
-/// [`response_status`] is not yet (a gRPC call still awaiting its trailers),
-/// and [`OnEos`] below only ever corrects `status`, never this.
+/// `response_status` is not yet (a gRPC call still awaiting its trailers), and
+/// [`OnEos`] below only ever corrects `status`, never this.
 impl<B> OnResponse<B> for MakeTracedSpan {
     fn on_response(self, response: &Response<B>, latency: Duration, span: &Span) {
         span.record("latency_ms", latency.as_millis());
