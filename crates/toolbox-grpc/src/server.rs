@@ -11,6 +11,8 @@ pub mod shared_secret;
 
 use std::{sync::Arc, time::Duration};
 
+use secrecy::{ExposeSecret as _, SecretString};
+use tokio_stream::wrappers::TcpListenerStream;
 pub use tonic::service::RoutesBuilder;
 use tonic::transport::Server;
 use toolbox_server::{
@@ -18,6 +20,7 @@ use toolbox_server::{
     lifecycle::{HealthCheck, LifecycleHandle, StartupConfig, StartupError, shutdown_signal},
     stack::{StackConfig, grpc_stack},
 };
+use tower::Layer as _;
 use tracing::warn;
 
 use crate::limits::MessageLimits;
@@ -56,6 +59,16 @@ pub struct ServerConfig {
     pub stack: StackConfig,
     /// Whether to serve the standard health service.
     pub health: bool,
+    /// If set, the standard health service also requires this shared secret -
+    /// so a caller who presents it proves the secret is correctly configured,
+    /// not just that the process is up.
+    ///
+    /// `None` (the default) leaves health open, which is what a plain
+    /// orchestrator probe with no way to attach a header needs. Only set this
+    /// when the health service is consulted by another of your own services -
+    /// never when it is also what your orchestrator polls directly, or that
+    /// probe starts failing too.
+    pub health_secret: Option<SecretString>,
     /// Whether to serve server reflection, so `grpcurl` works without the protos
     /// to hand.
     pub reflection: Option<&'static [u8]>,
@@ -70,6 +83,7 @@ impl std::fmt::Debug for ServerConfig {
             .field("limits", &self.limits)
             .field("stack", &self.stack)
             .field("health", &self.health)
+            .field("health_secret", &self.health_secret.is_some())
             .field("reflection", &self.reflection.is_some())
             .field("readiness", &self.readiness.len())
             .finish()
@@ -82,6 +96,7 @@ impl Default for ServerConfig {
             limits: MessageLimits::default(),
             stack: StackConfig::default(),
             health: true,
+            health_secret: None,
             reflection: None,
             readiness: Arc::new(Vec::new()),
         }
@@ -126,6 +141,19 @@ impl ServerConfig {
         self.readiness = Arc::new(checks);
         self
     }
+
+    /// Require `secret` on the standard health service too. See
+    /// [`ServerConfig::health_secret`].
+    ///
+    /// # Arguments
+    ///
+    /// * `secret` - The shared secret a caller must present in
+    ///   `x-shared-secret` to reach the health service.
+    #[must_use]
+    pub fn health_secret(mut self, secret: impl Into<String>) -> Self {
+        self.health_secret = Some(SecretString::from(secret.into()));
+        self
+    }
 }
 
 /// Bind, serve, and drain gracefully on `SIGTERM`.
@@ -158,7 +186,13 @@ pub async fn serve(
         reporter
             .set_service_status("", tonic_health::ServingStatus::Serving)
             .await;
-        routes.add_service(health);
+        if let Some(secret) = &server.health_secret {
+            routes.add_service(
+                shared_secret::shared_secret_layer(secret.expose_secret()).layer(health),
+            );
+        } else {
+            routes.add_service(health);
+        }
         Some(reporter)
     } else {
         None
@@ -194,21 +228,18 @@ pub async fn serve(
     let serve = Server::builder()
         .layer(grpc_stack(server.stack))
         .add_routes(routes.routes())
-        .serve_with_incoming_shutdown(
-            tokio_stream::wrappers::TcpListenerStream::new(listener),
-            async move {
-                shutdown_signal().await;
-                // Fail the gRPC health probe the moment the signal lands, so a
-                // Kubernetes readiness check pulls this replica before the drain
-                // wait - the same contract the axum side's `/ready` honours.
-                if let Some(reporter) = drain_reporter {
-                    reporter
-                        .set_service_status("", tonic_health::ServingStatus::NotServing)
-                        .await;
-                }
-                shutdown.drain(drain).await;
-            },
-        );
+        .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
+            shutdown_signal().await;
+            // Fail the gRPC health probe the moment the signal lands, so a
+            // Kubernetes readiness check pulls this replica before the drain
+            // wait - the same contract the axum side's `/ready` honours.
+            if let Some(reporter) = drain_reporter {
+                reporter
+                    .set_service_status("", tonic_health::ServingStatus::NotServing)
+                    .await;
+            }
+            shutdown.drain(drain).await;
+        });
 
     let result = if let Some(poll) = poll {
         tokio::select! {

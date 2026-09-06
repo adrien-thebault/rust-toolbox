@@ -105,3 +105,53 @@ async fn probe_health_transitions(addr: std::net::SocketAddr, flag: &AtomicBool)
         "the check recovered, so the probe serves again"
     );
 }
+
+/// `ServerConfig::health_secret` gates the health service exactly like
+/// `shared_secret_layer` gates any other service - proven here rather than
+/// assumed, since the wiring inside `serve` is new.
+#[tokio::test]
+async fn health_secret_gates_the_health_service() {
+    let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = probe.local_addr().unwrap();
+    drop(probe);
+
+    let cfg = StartupConfig::new(addr);
+    let server = ServerConfig::default().health_secret("s3cr3t");
+
+    tokio::select! {
+        result = serve(cfg, server, RoutesBuilder::default()) => panic!("serve exited: {result:?}"),
+        () = assert_health_requires_the_secret(addr) => {}
+    }
+}
+
+/// Connect a raw health client - no `ClientChannel`, no interceptor - so the
+/// secret has to be attached by hand, proving the server checks it rather
+/// than trusting whoever happens to call.
+async fn assert_health_requires_the_secret(addr: std::net::SocketAddr) {
+    use tonic_health::pb::{HealthCheckRequest, health_client::HealthClient};
+
+    let channel = loop {
+        let endpoint = tonic::transport::Channel::from_shared(format!("http://{addr}")).unwrap();
+        match endpoint.connect().await {
+            Ok(channel) => break channel,
+            Err(_) => tokio::time::sleep(Duration::from_millis(20)).await,
+        }
+    };
+
+    let without_secret = HealthClient::new(channel.clone())
+        .check(HealthCheckRequest {
+            service: String::new(),
+        })
+        .await;
+    assert!(without_secret.is_err(), "no secret was presented");
+
+    let mut req = tonic::Request::new(HealthCheckRequest {
+        service: String::new(),
+    });
+    req.metadata_mut()
+        .insert(toolbox_grpc::X_SHARED_SECRET, "s3cr3t".parse().unwrap());
+    HealthClient::new(channel)
+        .check(req)
+        .await
+        .expect("the correct secret is accepted");
+}

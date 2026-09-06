@@ -7,6 +7,7 @@
 use tonic::{Code, Status};
 use tonic_types::{ErrorDetails, StatusExt as _};
 use toolbox_core::{ErrorInfo, ErrorKind, ServiceError};
+use tracing::error;
 
 /// What a gRPC handler returns.
 ///
@@ -104,6 +105,11 @@ pub fn to_status<E: ServiceError>(err: E) -> Status {
     );
 
     let message = if kind == ErrorKind::Internal {
+        // The real cause is redacted below and never crosses the wire - this
+        // is the only place it is still readable, inside the same request
+        // span the caller's own (redacted) failure log shares a trace id
+        // with.
+        error!(code = %info.code, domain = %info.domain, error = %err, "request failed");
         "internal error".to_owned()
     } else {
         err.to_string()

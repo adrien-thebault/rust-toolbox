@@ -15,7 +15,7 @@ use std::{
 use http::{Request, Response};
 use pin_project_lite::pin_project;
 use secrecy::{ExposeSecret as _, SecretString};
-use tonic::Status;
+use tonic::{Status, server::NamedService};
 use toolbox_auth::constant_time_eq;
 use tower::{Layer, Service};
 use tracing::warn;
@@ -104,7 +104,7 @@ where
     }
 }
 
-impl<S: tonic::server::NamedService> tonic::server::NamedService for SharedSecretService<S> {
+impl<S: NamedService> NamedService for SharedSecretService<S> {
     const NAME: &'static str = S::NAME;
 }
 

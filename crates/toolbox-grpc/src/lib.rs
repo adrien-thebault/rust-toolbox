@@ -28,7 +28,7 @@ pub const X_ASSERTED_PRINCIPAL: &str = "x-asserted-principal";
 
 pub use client::{
     BackoffConfig, ClientChannel, ClientConfig, ClientError, ClientInterceptor, ClientService,
-    RetryPolicy, asserting, client, is_retryable, with_retry,
+    RetryPolicy, asserting, client, is_retryable, poll_health, with_retry,
 };
 pub use limits::MessageLimits;
 pub use pagination::{PROTO_INCLUDE, PageInfo, PageRequestProto, split};

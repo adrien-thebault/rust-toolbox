@@ -11,12 +11,14 @@
 //! name that resolves to several addresses pins to whichever answered first.
 
 pub mod error;
+pub mod health;
 pub mod interceptor;
 pub mod retry;
 
 use std::time::Duration;
 
 pub use error::ClientError;
+pub use health::poll_health;
 pub use interceptor::{ClientInterceptor, asserting};
 pub use retry::{BackoffConfig, RetryPolicy, is_retryable, with_retry};
 use secrecy::SecretString;

@@ -1,4 +1,5 @@
 mod error;
+mod health;
 mod retry;
 
 use toolbox_grpc::{BackoffConfig, ClientConfig, MessageLimits, RetryPolicy};
