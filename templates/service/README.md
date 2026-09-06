@@ -3,68 +3,28 @@
 A gRPC service{% if gateway %} and an HTTP gateway{% endif %}, generated from
 the rust-toolbox template.
 
-## What you get without writing it
-
-- graceful shutdown on `SIGTERM`, with the drain delay that stops a rolling
-  deploy dropping requests
-- `/health` and `/ready`, wired into the compose healthcheck
-- a request timeout and a body size limit
-- W3C trace context, so every log line and every error body carries a request id
-- RFC 9457 error responses, with 5xx detail redacted
-- gRPC health and reflection, so `grpcurl` works with no protos to hand
-- locked migrations, so replicas starting together do not race
-- a `HealthCheck` polling the database in the background, so `/ready` reflects
-  a real dependency rather than "the process is up"
-- an exclusive, cluster-safe scheduled job (`toolbox-schedule`) sweeping
-  completed todos nobody has touched in a month
-{% if gateway %}- login, refresh, logout and `/auth/me`, with the login rate
-  limit already attached
-- the gateway's calls to the service carry an asserted, verified principal
-  (`shared_secret_layer` + `identity_layer`), so bypassing the gateway and
-  calling the service directly does not bypass authorization too
-- a repeated `Idempotency-Key` on the create route replays the first response
-  instead of creating a second row
-- an SSE route and a plain HTML page (`web/static/index.html`) that uses it
-- an OpenAPI spec generated from the routes, served live at `/openapi.json`
-  with a Scalar page at `/docs`, plus a CI check that the committed
-  `web/openapi.json` stays in sync
-{% endif %}
-
 ## Running it
 
 ```sh
 cp .env.example .env      # then set {% if gateway %}SESSION_SECRET, SERVICE_SECRET and ADMIN_PASSWORD_HASH{% else %}DATABASE_URL{% endif %}
-cargo fmt --all           # imports sort by crate name, and yours is new
-cargo build               # writes Cargo.lock - commit it, see below
+cargo fmt --all           # your crate name is new to the import sort order
+cargo build               # writes Cargo.lock - commit it
 {% if gateway %}./openapi.sh              # writes web/openapi.json - commit it too
 {% endif %}docker compose up --build
 ```
+
 {% if gateway %}
 Once it is up, open `web/static/index.html` from a plain local static server
-(`python3 -m http.server`, say) - not `file://`, which sends no `Origin` header
-`cors_localhost` can match - and point it at `http://localhost:8080`.
+(`python3 -m http.server`, say) - not `file://` - and point it at
+`http://localhost:8080`.
 {% endif %}
-
-`cargo fmt` first because a crate's own name sorts into its import blocks, and
-the template cannot know it in advance. One run and `cargo fmt --check` in the
-generated CI passes from then on.{% if gateway %} The same goes for `./openapi.sh`
-and the `openapi` CI job: run it once, commit `web/openapi.json`, and a diff
-afterwards means a route changed shape without the spec being regenerated.{% endif %}
-
-**Commit `Cargo.lock`.** This is an application, not a library, so the lockfile
-is what makes a build reproducible - and the `Dockerfile` does `COPY Cargo.lock`
-with `--locked`, so without it the image cannot build at all. `cargo generate`
-cannot ship one, because the resolved graph differs per database backend and
-per gateway choice.
+**Commit `Cargo.lock`.** The `Dockerfile` copies it with `--locked`, and
+`cargo generate` cannot ship one because the resolved graph differs per
+backend and per gateway choice.
 {% if gateway %}
-One account is seeded, from `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH`. Produce
-the hash with:
-
-```sh
-cargo run -p toolbox-auth --features password --example hash-password
-```
-
-Then log in and use the token:
+One account is seeded from `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH`. Produce
+the hash with `cargo run -p toolbox-auth --features password --example
+hash-password`, then:
 
 ```sh
 TOKEN=$(curl -s localhost:8080/auth/login \
@@ -73,11 +33,12 @@ TOKEN=$(curl -s localhost:8080/auth/login \
 curl localhost:8080/api/todos -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' -d '{"title":"write it down"}'
 ```
+
 {% endif %}
 
 ## Layout
 
-```
+````
 grpc/                 a grouping directory, not a crate
   todo/               one domain, one crate
     proto/todo/v1/
@@ -111,23 +72,18 @@ web/
   openapi.json        the committed spec, checked for drift in CI
 {% endif %}```
 
-Three units, and they are deliberately different sizes:
+Three units:
 
-- A **domain** is a crate. It owns a schema, a migration set and a pool, and
-  everything inside it can share them.
+- A **domain** is a crate. It owns a schema, a migration set and a pool. A
+  second domain is a new directory under `grpc/`, picked up by
+  `members = ["grpc/*"]`.
 - A **gRPC service** is a file under that crate's `service/`. Two services in
-  one domain read the same tables; giving each its own crate would buy no
-  isolation the module boundary did not already give you, at the cost of a
-  second build graph and a second deployment unit.
+  one domain read the same tables.
 - An **entity** is a file under `model/`. A `TodoList` regrouping several todos
-  is `model/todo_list.rs`, not a longer `model.rs`.
+  is `model/todo_list.rs`.
 
-Adding a second domain is a new directory under `grpc/`. `members = ["grpc/*"]`
-picks it up with no edit to the workspace manifest.
-
-`crate::Backend` and `crate::Timestamp` in `grpc/todo/src/lib.rs` are the
-**only** places the database backend and the timestamp type are named. Swapping
-either is a one-line change.
+`crate::Backend` and `crate::Timestamp` in `grpc/todo/src/lib.rs` are the only
+places the database backend and the timestamp type are named.
 
 ## Adding an entity
 
@@ -138,14 +94,12 @@ either is a one-line change.
 
 The derive generates `find_by_id`, `find_by_ids`, `exists`, `count`, `page`,
 `save`, `save_all`, `delete_by_id`, `delete_by_ids`, `truncate` and `query()`
-as inherent methods. `query()` is the escape hatch, and pagination composes
-onto whatever you build with it - the `title_contains` filter in
-`service/todo_service.rs` is the worked example.
+as inherent methods. The `title_contains` filter in `service/todo_service.rs`
+is the worked example of `query()` composed with pagination.
 {% if gateway %}
 ## Replacing the seeded account
 
 `SeededAdmin` in `web/src/auth.rs` is a `UserStore` over one hard-coded user. A
 real one is a `UserStore` over a `users` table and one line in `providers()`.
-The login route does not change, and neither does anything that reads a
-`Principal`.
 {% endif %}
+````

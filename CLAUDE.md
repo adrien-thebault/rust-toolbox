@@ -24,19 +24,19 @@ Dependency order, which is the thing to get right first:
 core -> db -> cluster -> server -> {web, grpc}
 ```
 
-| Crate | Owns |
-|---|---|
-| `toolbox-core` | `ErrorKind`, `ServiceError`, `ErrorInfo`, RFC 9457 `Problem`, `Page`/`PageRequest`/`Sort`. serde and thiserror only |
-| `toolbox-macros` | `#[derive(Entity)]`. Proc-macro crate, so necessarily separate |
-| `toolbox-db` | `Db<C>`, `DbError`, `Entity`, `Paginate`, locked `migrate()`, `SqlitePragmas`, `DatabaseArgs` |
-| `toolbox-cluster` | `CloudEvent`; the `EventBus`/`KvStore`/`LockManager` traits and their local adapters |
-| `toolbox-schedule` | scheduled tasks that run once per cluster, plus the `Clock` port (`system`/`manual`) |
-| `toolbox-server` | trace context, `http_stack`/`grpc_stack`/`realtime_stack`, deadlines, shutdown, telemetry, `ServerArgs`, `bind` |
-| `toolbox-auth` | `Principal`, `Role`, `IdentityProvider`/`ProviderRegistry`, `PrincipalMapping`, `JwtIdentityProvider` (mints HS256 sessions + stateless refresh, verifies a bearer - its own, JWKS or a public key). Depends only on `toolbox-core`, so a backend validates a token without compiling axum or the cluster traits. No OIDC redirect flow, no identity federation |
-| `toolbox-web` | `ApiError`, `Authenticated<R>`, `ValidJson`, `PageQuery`, `Idempotent`, health, CORS, rate limiting, `client_ip`, OpenAPI, SSE, `serve` |
-| `toolbox-grpc` | `to_status`/`from_status`, `client()`, `pagination.proto`, `shared_secret_layer`/`identity_layer`, health, reflection, `serve` |
-| `toolbox-test` | `temp_db`, `TestGateway`, `TestCluster`, `assert_problem!`. Dev-only |
-| `toolbox` | facade features, prelude, `toolbox::deps` |
+| Crate              | Owns                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toolbox-core`     | `ErrorKind`, `ServiceError`, `ErrorInfo`, RFC 9457 `Problem`, `Page`/`PageRequest`/`Sort`. serde and thiserror only                                                                                                                                                                                                                                             |
+| `toolbox-macros`   | `#[derive(Entity)]`. Proc-macro crate, so necessarily separate                                                                                                                                                                                                                                                                                                  |
+| `toolbox-db`       | `Db<C>`, `DbError`, `Entity`, `Paginate`, locked `migrate()`, `SqlitePragmas`, `DatabaseArgs`                                                                                                                                                                                                                                                                   |
+| `toolbox-cluster`  | `CloudEvent`; the `EventBus`/`KvStore`/`LockManager` traits and their local adapters                                                                                                                                                                                                                                                                            |
+| `toolbox-schedule` | scheduled tasks that run once per cluster, plus the `Clock` port (`system`/`manual`)                                                                                                                                                                                                                                                                            |
+| `toolbox-server`   | trace context, `http_stack`/`grpc_stack`/`realtime_stack`, deadlines, shutdown, telemetry, `ServerArgs`, `bind`                                                                                                                                                                                                                                                 |
+| `toolbox-auth`     | `Principal`, `Role`, `IdentityProvider`/`ProviderRegistry`, `PrincipalMapping`, `JwtIdentityProvider` (mints HS256 sessions + stateless refresh, verifies a bearer - its own, JWKS or a public key). Depends only on `toolbox-core`, so a backend validates a token without compiling axum or the cluster traits. No OIDC redirect flow, no identity federation |
+| `toolbox-web`      | `ApiError`, `Authenticated<R>`, `ValidJson`, `PageQuery`, `Idempotent`, health, CORS, rate limiting, `client_ip`, OpenAPI, SSE, `serve`                                                                                                                                                                                                                         |
+| `toolbox-grpc`     | `to_status`/`from_status`, `client()`, `pagination.proto`, `shared_secret_layer`/`identity_layer`, health, reflection, `serve`                                                                                                                                                                                                                                  |
+| `toolbox-test`     | `temp_db`, `TestGateway`, `TestCluster`, `assert_problem!`. Dev-only                                                                                                                                                                                                                                                                                            |
+| `toolbox`          | facade features, prelude, `toolbox::deps`                                                                                                                                                                                                                                                                                                                       |
 
 Two boundaries that are easy to break by accident:
 
@@ -45,7 +45,7 @@ Two boundaries that are easy to break by accident:
   `ErrorInfo -> ApiError`. There is no exception and no feature that adds one:
   code needing both transports belongs in the consumer, not here.
 - **`toolbox-db` declares no backend feature.** It is generic over
-  `C: R2D2Connection`, and the entity names the backend as a *type*.
+  `C: R2D2Connection`, and the entity names the backend as a _type_.
 
 Anything with a domain of its own does not belong in this repo at all. That is
 why `toolbox-files` was moved out.
@@ -87,7 +87,7 @@ README links them.
    boundary; it encodes a decision you would otherwise re-make wrong; it
    removes a trap the underlying crate makes easy; it bridges two crates that
    do not know about each other; or it is invoked identically in every project
-   *and* the underlying API needs more than ten lines of setup. If the answer
+   _and_ the underlying API needs more than ten lines of setup. If the answer
    is "it is nicer than calling X directly", **stop**.
 2. **Does a standard already define this?** For any format, header, envelope
    or wire contract. If one exists and fits, implement it even when bespoke
@@ -124,11 +124,17 @@ is named `blocking_conn()` so it shows up in review.
 one-line change.
 
 **Keep comments short.** One line saying what the item is, plus at most a
-sentence of *why* when the why is not obvious. No restating the signature in
-prose. Reasoning that needs a paragraph goes in the crate's README, not in
-a `//`. The
-two exceptions are the one-line "why this exists" and a note where getting it
-wrong is a bug.
+sentence of _why_ when the why is not obvious. No restating the signature in
+prose. Reasoning that needs a paragraph does not belong in a `//` - keep the
+one-line "why this exists" and let the commit message carry the rest. The two
+exceptions to brevity are that one-liner and a note where getting it wrong is a
+bug.
+
+**READMEs describe contents, not decisions.** A crate or repo README lists
+what the crate holds - its modules, its types, its feature flags - and the
+facts a consumer needs. It does not carry design rationale, history, or
+step-by-step instructions; those live in commit messages, `CONTRIBUTING.md`,
+or not at all.
 
 **Hyphens only.** Use `-`. Never an em dash (U+2014), an en dash (U+2013), a
 figure dash (U+2012) or a horizontal bar (U+2015) - in code, comments, error

@@ -1,28 +1,16 @@
 # toolbox-server
 
-The runtime half, for both transports.
+The transport-agnostic runtime half, shared by the axum and tonic crates and
+depending on neither.
 
-Shared by axum and tonic; depends on neither.
-
-| Module | What it holds |
-|---|---|
-| `trace_context` | W3C `traceparent` (minted when absent, `x-request-id` alias), the layer that scopes it, and the request span |
-| `stack` | `StackConfig`, shared by the three below |
-| `stack::http` | `http_stack`: catch-panic, trace context, span, deadline |
-| `stack::grpc` | `grpc_stack`: the same, classified by `grpc-status` |
-| `stack::realtime` | `realtime_stack`: no timeout, no body limit, on purpose |
-| `deadline` | the `DEADLINE` task-local, the gRPC timeout format, and the layer that enforces it |
-| `lifecycle` | `LifecycleHandle`; `lifecycle::health` the `Health` state and `HealthCheck` contract, `lifecycle::shutdown` the five-step drain, `lifecycle::startup` `StartupConfig`/`StartupError` and waiting for the first healthy pass |
-| `telemetry` | `-v`/`-q`, `LOG_FORMAT`, `RUST_LOG` |
-| `args` | `ServerArgs` |
-
-`bind` lives at the crate root, not its own module - it is the one thing every
-transport shares and nothing else in the crate needs to wrap it in.
-
-`realtime_stack` has no timeout and no body limit, and that is the entire
-reason it exists: a 30-second request timeout kills every SSE and WebSocket
-connection in production while working perfectly against a local client that
-reconnects instantly.
-
-The drain waits between failing readiness and closing the listener. That step
-is the one that stops a rolling deploy dropping requests.
+| Module            | What it is                                                                |
+| ----------------- | ------------------------------------------------------------------------- |
+| `trace_context`   | W3C trace context: minting it, scoping it, and the request span           |
+| `stack`           | the configuration the three middleware stacks share                       |
+| `stack::http`     | the HTTP middleware stack                                                 |
+| `stack::grpc`     | the gRPC middleware stack                                                 |
+| `stack::realtime` | the middleware stack for long-lived streams                               |
+| `deadline`        | request deadline propagation and enforcement                              |
+| `lifecycle`       | health state, dependency probes, the graceful-drain sequence, and startup |
+| `telemetry`       | log verbosity, format and filter                                          |
+| `args`            | the clap server arguments                                                 |
