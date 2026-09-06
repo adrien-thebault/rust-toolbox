@@ -8,7 +8,10 @@ use tonic::{
     metadata::{Ascii, MetadataValue},
     service::Interceptor,
 };
-use toolbox_server::deadline::{format_grpc_timeout, time_remaining};
+use toolbox_server::{
+    deadline::{format_grpc_timeout, time_remaining},
+    trace_context::current_trace_context,
+};
 
 use crate::{X_ASSERTED_PRINCIPAL, X_SHARED_SECRET};
 
@@ -43,8 +46,9 @@ pub async fn asserting<F: Future>(encoded: String, f: F) -> F::Output {
     ASSERTED_PRINCIPAL.scope(encoded, f).await
 }
 
-/// Attaches the caller's remaining deadline, the shared service secret, and any
-/// asserted principal to every outgoing request.
+/// Attaches the caller's remaining deadline, the current trace context, the
+/// shared service secret, and any asserted principal to every outgoing
+/// request.
 ///
 /// An interceptor rather than a tower layer, because tonic's `Channel` is a
 /// concrete type with no middleware hook: wrapping it in an `InterceptedService`
@@ -89,6 +93,14 @@ impl Interceptor for ClientInterceptor {
                 request.metadata_mut().insert("grpc-timeout", value);
             }
         }
+        // So the backend's own request span shares the gateway's trace id -
+        // without this, the two services' logs for one logical request are
+        // impossible to correlate.
+        if let Some(ctx) = current_trace_context()
+            && let Ok(value) = MetadataValue::try_from(ctx.to_string().as_str())
+        {
+            request.metadata_mut().insert("traceparent", value);
+        }
         if let Some(secret) = &self.secret {
             request
                 .metadata_mut()
@@ -111,7 +123,7 @@ impl Interceptor for ClientInterceptor {
 mod tests {
     use std::time::Instant;
 
-    use toolbox_server::DEADLINE;
+    use toolbox_server::{DEADLINE, trace_context::CURRENT_TRACE};
 
     use super::*;
 
@@ -126,6 +138,22 @@ mod tests {
         assert!(req.metadata().get("grpc-timeout").is_none());
         assert!(req.metadata().get(X_SHARED_SECRET).is_none());
         assert!(req.metadata().get(X_ASSERTED_PRINCIPAL).is_none());
+        assert!(req.metadata().get("traceparent").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_scoped_trace_context_becomes_a_traceparent_header() {
+        let ctx = toolbox_server::trace_context::TraceContext::new_root();
+        let expected = ctx.to_string();
+        let mut interceptor = ClientInterceptor::new(None);
+        let req = CURRENT_TRACE
+            .scope(ctx, async { interceptor.call(request()) })
+            .await
+            .unwrap();
+        assert_eq!(
+            req.metadata().get("traceparent").unwrap(),
+            expected.as_str()
+        );
     }
 
     #[test]
