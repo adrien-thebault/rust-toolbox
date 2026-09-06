@@ -6,7 +6,7 @@ use clap::Parser;
 use {{crate_name}}_web::{
     auth,
     auth::AuthConfig,
-    routes::{realtime_router, router},
+    routes::{openapi, realtime_router, router},
 };
 use toolbox_grpc::{BackoffConfig, ClientConfig, RetryPolicy, client, client::poll_health};
 use toolbox_server::{
@@ -16,8 +16,9 @@ use toolbox_server::{
     telemetry::TelemetryArgs,
 };
 use toolbox_web::{
-    ClientIpTrustPolicy, cors_localhost,
+    ClientIpTrustPolicy, OpenApiConfig, cors_localhost,
     health::{HealthState, health_router},
+    openapi_router,
     rate_limit::RateLimitConfig,
     serve,
 };
@@ -108,6 +109,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // while draining is classified as a failure and logged at ERROR on
         // every rolling deploy.
         .merge(health_router().with_state(health))
+        // The spec at /openapi.json and a Scalar page at /docs. Public and
+        // outside the stack, like health: a spec fetch is not a business call
+        // and wants neither the deadline nor the body limit. The committed
+        // web/openapi.json is the same document, produced offline by
+        // ./openapi.sh for the CI drift check.
+        .merge(openapi_router(openapi(), &OpenApiConfig::default()))
         // So `web/static/index.html`, served from a plain local static server,
         // can call this gateway across origins. Loopback only - see
         // `cors_localhost`'s own doc for why that never belongs in production.

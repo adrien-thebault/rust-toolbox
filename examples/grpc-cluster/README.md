@@ -27,6 +27,10 @@ header `cors_localhost` can match - and point it at `http://localhost:8080`.
 It logs in, lists, creates, completes and deletes todos, and updates live over
 the SSE stream: a real client against the real API, no build step.
 
+The gateway also serves its own spec at `http://localhost:8080/openapi.json`
+and a Scalar page at `/docs`. `./openapi.sh` writes the same document to the
+committed `web/openapi.json`, which CI checks for drift.
+
 ## Layout
 
 ```

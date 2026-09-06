@@ -1,7 +1,6 @@
 //! A todo.
 
-use diesel::{connection::LoadConnection, prelude::*};
-use toolbox_db::DbError;
+use diesel::prelude::*;
 
 use crate::{Backend, Timestamp, proto, schema::todos};
 
@@ -62,38 +61,6 @@ impl Todo {
             deleted_at: None,
             version: 0,
         }
-    }
-
-    /// Todos whose title contains `needle`, paged.
-    ///
-    /// A hand-written filter composing with the toolbox's pagination, which is
-    /// the case a naive repository could not do: the moment you needed
-    /// a `WHERE` clause you lost paging, sorting and error mapping.
-    ///
-    /// # Arguments
-    ///
-    /// * `conn` - The connection to load on.
-    /// * `needle` - Matched with `LIKE %needle%`.
-    /// * `request` - The window and sort to apply.
-    ///
-    /// # Errors
-    /// [`DbError`] when the query fails or the sort names an undeclared field.
-    pub fn search<C>(
-        conn: &mut C,
-        needle: &str,
-        request: &toolbox_core::PageRequest,
-    ) -> Result<toolbox_core::Page<Self>, DbError>
-    where
-        C: LoadConnection<Backend = Backend>,
-    {
-        use toolbox_db::Paginate as _;
-
-        toolbox_db::pagination::validate(request.sort(), Self::sortable_fields())?;
-        Self::query()
-            .filter(todos::title.like(format!("%{needle}%")))
-            .select(Self::as_select())
-            .paginate(request)
-            .load_page::<Self, C>(conn)
     }
 }
 

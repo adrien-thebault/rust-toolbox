@@ -25,7 +25,8 @@ the rust-toolbox template.
 - a repeated `Idempotency-Key` on the create route replays the first response
   instead of creating a second row
 - an SSE route and a plain HTML page (`web/static/index.html`) that uses it
-- an OpenAPI spec generated from the routes, with a CI check that the committed
+- an OpenAPI spec generated from the routes, served live at `/openapi.json`
+  with a Scalar page at `/docs`, plus a CI check that the committed
   `web/openapi.json` stays in sync
 {% endif %}
 
@@ -138,7 +139,8 @@ either is a one-line change.
 The derive generates `find_by_id`, `find_by_ids`, `exists`, `count`, `page`,
 `save`, `save_all`, `delete_by_id`, `delete_by_ids`, `truncate` and `query()`
 as inherent methods. `query()` is the escape hatch, and pagination composes
-onto whatever you build with it - `Todo::search` is the worked example.
+onto whatever you build with it - the `title_contains` filter in
+`service/todo_service.rs` is the worked example.
 {% if gateway %}
 ## Replacing the seeded account
 

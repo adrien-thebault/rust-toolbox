@@ -10,7 +10,7 @@ use diesel::prelude::*;
 use tokio_stream::{Stream, StreamExt as _};
 use tonic::{Request, Response, Status};
 use toolbox_cluster::{EventBus, Topic, event, payload};
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_core::{ErrorKind, Page, PageRequest, ServiceError};
 use toolbox_db::{Db, DbError};
 {% if gateway %}use toolbox_grpc::{GrpcResult, server::identity};
 {% else %}use toolbox_grpc::GrpcResult;
@@ -81,6 +81,39 @@ impl TodoService {
             },
             Err(e) => warn!(error = %e, ty, id, "could not build a todo event"),
         }
+    }
+
+    /// Todos whose title contains `needle`, paged.
+    ///
+    /// Here rather than on `Todo` for the same reason as `purge_completed`:
+    /// `list_todos` is its only caller, and a `LIKE` filter composed with the
+    /// toolbox's pagination is one step of a service operation, not a query
+    /// another caller reuses. It doubles as the worked example of the derived
+    /// `query()` composing with `paginate`.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn` - The connection to load on.
+    /// * `needle` - Matched with `LIKE %needle%`.
+    /// * `request` - The window and sort to apply.
+    ///
+    /// # Errors
+    /// [`TodoServiceError::Db`] when the query fails or the sort names an
+    /// undeclared field.
+    fn search(
+        conn: &mut Connection,
+        needle: &str,
+        request: &PageRequest,
+    ) -> Result<Page<Todo>, TodoServiceError> {
+        use toolbox_db::Paginate as _;
+
+        toolbox_db::pagination::validate(request.sort(), Todo::sortable_fields())?;
+        Todo::query()
+            .filter(todos::title.like(format!("%{needle}%")))
+            .select(Todo::as_select())
+            .paginate(request)
+            .load_page::<Todo, Connection>(conn)
+            .map_err(TodoServiceError::from)
     }
 
     /// Soft-delete every completed todo last touched before `cutoff`, emitting
@@ -155,7 +188,7 @@ impl todo_service_server::TodoService for TodoService {
                 if needle.is_empty() {
                     Todo::page(c, &page_request).map_err(TodoServiceError::from)
                 } else {
-                    Todo::search(c, &needle, &page_request).map_err(TodoServiceError::from)
+                    Self::search(c, &needle, &page_request)
                 }
             })
             .await?;
