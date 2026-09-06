@@ -13,6 +13,9 @@ service TodoService {
   rpc CreateTodo(CreateTodoRequest) returns (Todo);
   rpc CompleteTodo(CompleteTodoRequest) returns (Todo);
   rpc DeleteTodo(DeleteTodoRequest) returns (DeleteTodoResponse);
+  // Every todo mutation, including the scheduled purge. The gateway holds one
+  // of these open and fans it out to its SSE connections.
+  rpc WatchTodos(WatchTodosRequest) returns (stream TodoEvent);
 }
 
 message Todo {
@@ -54,4 +57,13 @@ message DeleteTodoRequest {
 
 message DeleteTodoResponse {
   int32 deleted = 1;
+}
+
+message WatchTodosRequest {}
+
+// One todo mutation. `type` is the CloudEvents type - "todo.created",
+// "todo.completed" or "todo.deleted" - and `id` is which todo it was.
+message TodoEvent {
+  string type = 1;
+  int32 id = 2;
 }

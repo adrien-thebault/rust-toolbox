@@ -38,7 +38,6 @@ async-trait = { workspace = true }
 axum       = { workspace = true }
 clap       = { workspace = true, features = ["derive", "env"] }
 futures-core = { workspace = true }
-futures-util = { workspace = true }
 garde      = { workspace = true, features = ["derive"] }
 secrecy    = { workspace = true }
 utoipa     = { workspace = true, features = ["axum_extras", "macros"] }

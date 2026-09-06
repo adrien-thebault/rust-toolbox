@@ -3,23 +3,16 @@
 //! It owns authentication, rate limiting and the RFC 9457 error shape; the
 //! backend owns the data.
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::time::Duration;
 
 use clap::Parser;
-use example_todo::proto::{ListTodosRequest, todo_service_client::TodoServiceClient};
 use example_web::{
     auth::{self, AuthConfig},
     routes::{realtime_router, router},
 };
-use toolbox_grpc::{BackoffConfig, ClientConfig, RetryPolicy, client};
+use toolbox_grpc::{BackoffConfig, ClientConfig, RetryPolicy, client, client::poll_health};
 use toolbox_server::{
-    HealthCheck, StartupConfig,
+    StartupConfig,
     args::ServerArgs,
     stack::{StackConfig, http_stack, realtime_stack},
     telemetry::TelemetryArgs,
@@ -59,41 +52,6 @@ struct Args {
     trusted_hops: usize,
 }
 
-/// Reports the backend as healthy once it has answered a real call - not just
-/// a TCP connect - and unhealthy again the moment one fails.
-struct BackendCheck(Arc<AtomicBool>);
-
-impl HealthCheck for BackendCheck {
-    fn name(&self) -> &'static str {
-        "todo-backend"
-    }
-    fn is_healthy(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
-
-/// Ping the backend every `interval` with a cheap, real call - the same path
-/// exercises the shared secret and the standard stack, not just the socket.
-async fn ping_backend(
-    channel: toolbox_grpc::ClientChannel,
-    healthy: Arc<AtomicBool>,
-    interval: Duration,
-) {
-    let mut client = TodoServiceClient::new(channel.channel());
-    let mut ticker = tokio::time::interval(interval);
-    loop {
-        ticker.tick().await;
-        let ok = client
-            .list_todos(ListTodosRequest {
-                page: None,
-                title_contains: String::new(),
-            })
-            .await
-            .is_ok();
-        healthy.store(ok, Ordering::Relaxed);
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -112,21 +70,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
     );
 
-    let backend_healthy = Arc::new(AtomicBool::new(false));
-    tokio::spawn(ping_backend(
-        todos.clone(),
-        Arc::clone(&backend_healthy),
-        Duration::from_secs(5),
-    ));
+    // The standard `grpc.health.v1.Health/Check` RPC, not a business call -
+    // cheap, and it still proves the shared secret is right, since the
+    // backend gates its health service on it too.
+    let (backend_check, backend_poll) =
+        poll_health(todos.clone(), "todo-backend", Duration::from_secs(5));
+    tokio::spawn(backend_poll);
 
     // Everything identity needs, read once at startup so a missing variable is
     // a refusal to start rather than a 500 on the first login.
     let config = AuthConfig::from_env()?;
     let state = auth::state(todos, &config)?;
-    tokio::spawn(auth::forward_events(
-        state.events.clone(),
-        state.hub.clone(),
-    ));
+    tokio::spawn(auth::forward_events(state.todos.clone(), state.hub.clone()));
 
     // A handful of attempts, then one back every few seconds: a typo goes
     // unnoticed, credential stuffing from one address does not.
@@ -137,8 +92,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let cfg = StartupConfig::new(args.server.listen_addr);
-    let health = HealthState::new(cfg.shutdown_handle.clone())
-        .with_checks(vec![Box::new(BackendCheck(backend_healthy))]);
+    let health =
+        HealthState::new(cfg.shutdown_handle.clone()).with_checks(vec![Box::new(backend_check)]);
 
     // The stack is applied here, not by serve: a router with realtime
     // routes needs realtime_stack on those and http_stack on the rest.

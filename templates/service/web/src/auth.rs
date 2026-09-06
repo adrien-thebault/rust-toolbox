@@ -7,16 +7,22 @@
 //! `UserStore` over a `users` table, and one line in [`providers`]. The login
 //! route does not change.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use secrecy::SecretString;
+use {{crate_name}}_todo::proto::{WatchTodosRequest, todo_service_client::TodoServiceClient};
 use toolbox_auth::{
     AuthError, ForwardedIdentityProvider, JwtIdentityProvider, PasswordIdentityProvider,
     ProviderRegistry, Role, StoredUser, UserStore,
 };
-use toolbox_cluster::{EventBus, InMemoryEventBus, InMemoryKvStore};
-use toolbox_web::{idempotency::Idempotency, realtime::Hub};
+use toolbox_cluster::{CloudEvent, InMemoryKvStore, event};
+use toolbox_grpc::ClientChannel;
+use toolbox_web::{
+    idempotency::Idempotency,
+    realtime::{Hub, HubConfig, SlowConsumer},
+};
+use tracing::{debug, info, warn};
 
 use crate::state::AppState;
 
@@ -195,34 +201,52 @@ pub fn state(
         users: SeededAdmin::new(config),
         session_secret: config.session_secret.clone(),
         idempotency: Arc::new(Idempotency::new(Arc::new(InMemoryKvStore::default()))),
-        events: Arc::new(InMemoryEventBus::default()),
-        hub: Arc::new(Hub::new(toolbox_web::realtime::HubConfig::new(
-            64,
-            toolbox_web::realtime::SlowConsumer::DropOldest,
-        ))),
+        hub: Arc::new(Hub::new(HubConfig::new(64, SlowConsumer::DropOldest))),
     })
 }
 
-/// Forward every event on `events` into `hub`, so every SSE connection sees it
-/// without each one opening its own subscription.
+/// Hold one `WatchTodos` stream open against the backend and fan every event
+/// on it into `hub`, so a browser gets one SSE connection rather than each one
+/// dialing the backend.
 ///
-/// Runs for the life of the process; a subscription that ends (the bus was
-/// dropped) ends the loop.
+/// Runs for the life of the process. The stream ending - a backend restart or
+/// deploy - is expected, not fatal: wait a second and reconnect, because a
+/// gateway that stopped relaying would leave every browser silently stale.
 ///
 /// # Arguments
 ///
-/// * `events` - The upstream to read from.
-/// * `hub` - Where to fan it out.
-pub async fn forward_events(events: Arc<dyn EventBus>, hub: Arc<Hub<toolbox_cluster::CloudEvent>>) {
-    use futures_util::StreamExt as _;
-
-    let Ok(mut stream) = events
-        .subscribe(&toolbox_cluster::Topic::from(crate::state::TODOS_TOPIC))
-        .await
-    else {
-        return;
-    };
-    while let Some(event) = stream.next().await {
-        hub.publish(crate::state::TODOS_TOPIC, event);
+/// * `todos` - The backend channel, carrying the shared secret the same as any
+///   other call on it.
+/// * `hub` - Where to fan the events out.
+pub async fn forward_events(todos: ClientChannel, hub: Arc<Hub<CloudEvent>>) {
+    loop {
+        match TodoServiceClient::new(todos.channel())
+            .watch_todos(WatchTodosRequest {})
+            .await
+        {
+            Ok(response) => {
+                info!("attached to the backend todo event stream");
+                let mut stream = response.into_inner();
+                while let Ok(Some(ev)) = stream.message().await {
+                    debug!(r#type = %ev.r#type, id = ev.id, "relaying a todo event to the hub");
+                    let id = ev.id;
+                    match event(
+                        ev.r#type,
+                        {{crate_name}}_todo::EVENT_SOURCE,
+                        &serde_json::json!({ "id": id }),
+                    ) {
+                        Ok(envelope) => {
+                            hub.publish(crate::state::TODOS_TOPIC, envelope);
+                        }
+                        Err(e) => warn!(error = %e, id, "could not rebuild a todo event"),
+                    }
+                }
+                info!("the backend todo event stream ended; reconnecting");
+            }
+            Err(status) => {
+                warn!(error = %status, "could not attach to the todo event stream; retrying");
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }

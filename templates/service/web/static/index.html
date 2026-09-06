@@ -283,6 +283,9 @@
       accessToken = body.access_token;
       setSignedIn($("username").value);
       setStatus(authStatus, "Signed in.", "ok");
+      // The Delete buttons are disabled until there is a session - re-render
+      // the list now rather than waiting for the next event or Connect click.
+      await loadTodos();
     } catch (e) {
       setStatus(authStatus, e.message, "error");
     }
@@ -291,6 +294,7 @@
   function logout() {
     setSignedOut();
     setStatus(authStatus, "Signed out.");
+    loadTodos();
   }
 
   function renderTodos(items) {
@@ -396,14 +400,19 @@
     }
   }
 
-  function connect() {
+  async function connect() {
     setStatus(connectStatus, "Checking " + baseUrl() + "/health …");
-    fetch(baseUrl() + "/health")
-      .then((res) => {
-        if (!res.ok) throw new Error("responded " + res.status);
-        setStatus(connectStatus, "Connected.", "ok");
-      })
-      .catch((e) => setStatus(connectStatus, "Could not reach the gateway: " + e.message, "error"));
+    try {
+      const res = await fetch(baseUrl() + "/health");
+      if (!res.ok) throw new Error("responded " + res.status);
+      setStatus(connectStatus, "Connected.", "ok");
+    } catch (e) {
+      // Don't open the event stream against a gateway that is not up yet: the
+      // browser would sit in a slow EventSource reconnect loop rather than
+      // failing here, which reads as "/events is slow to connect".
+      setStatus(connectStatus, "Could not reach the gateway: " + e.message, "error");
+      return;
+    }
     connectEvents();
     loadTodos();
   }

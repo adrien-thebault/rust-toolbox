@@ -1,6 +1,6 @@
 //! A todo.
 
-use diesel::prelude::*;
+use diesel::{connection::LoadConnection, prelude::*};
 use toolbox_db::DbError;
 
 use crate::{Backend, Timestamp, proto, schema::todos};
@@ -84,7 +84,7 @@ impl Todo {
         request: &toolbox_core::PageRequest,
     ) -> Result<toolbox_core::Page<Self>, DbError>
     where
-        C: diesel::connection::LoadConnection<Backend = Backend>,
+        C: LoadConnection<Backend = Backend>,
     {
         use toolbox_db::Paginate as _;
 
@@ -94,35 +94,6 @@ impl Todo {
             .select(Self::as_select())
             .paginate(request)
             .load_page::<Self, C>(conn)
-    }
-
-    /// Soft-delete every completed todo last touched before `cutoff`.
-    ///
-    /// A hand-written bulk update rather than a loop of `delete_by_id`: the
-    /// derive's generated methods are id-based, and a scheduled sweep does not
-    /// know the ids in advance.
-    ///
-    /// # Arguments
-    ///
-    /// * `conn` - The connection to run on.
-    /// * `cutoff` - Todos completed and not touched since before this are
-    ///   purged.
-    ///
-    /// # Errors
-    /// [`DbError`] when the query fails.
-    pub fn purge_completed_before<C>(conn: &mut C, cutoff: Timestamp) -> Result<usize, DbError>
-    where
-        C: diesel::connection::Connection<Backend = Backend>,
-    {
-        diesel::update(
-            todos::table
-                .filter(todos::done.eq(true))
-                .filter(todos::updated_at.lt(cutoff))
-                .filter(todos::deleted_at.is_null()),
-        )
-        .set(todos::deleted_at.eq(chrono::Utc::now().naive_utc()))
-        .execute(conn)
-        .map_err(DbError::from)
     }
 }
 

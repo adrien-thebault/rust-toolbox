@@ -6,14 +6,14 @@ use secrecy::{ExposeSecret, SecretString};
 use toolbox_auth::{
     AuthError, JwtIdentityProvider, Principal, ProviderRegistry, RefreshInfo, UserStore, auth_epoch,
 };
-use toolbox_cluster::EventBus;
 use toolbox_grpc::ClientChannel;
 use toolbox_web::{auth::AuthState, idempotency::Idempotency, realtime::Hub};
 
 use crate::auth::SeededAdmin;
 
-/// The topic every todo change is published on, and every SSE connection
-/// subscribes to.
+/// The hub topic every todo change is fanned out on, and every SSE connection
+/// subscribes to. `forward_events` relays the backend's `WatchTodos` stream
+/// onto it.
 pub const TODOS_TOPIC: &str = "todos";
 
 /// Everything a handler can reach.
@@ -31,14 +31,8 @@ pub struct AppState {
     pub session_secret: SecretString,
     /// Claims `Idempotency-Key`s for the create route, backed by a `KvStore`.
     pub idempotency: Arc<Idempotency>,
-    /// Where a mutation publishes a "something changed" signal.
-    ///
-    /// In-process only: with more than one gateway replica, this is exactly
-    /// the seam a shared adapter (Redis, Kafka) would slot into, and every SSE
-    /// connection would still subscribe through the same `hub`.
-    pub events: Arc<dyn EventBus>,
-    /// Fans the one upstream subscription on [`Self::events`] out to every
-    /// connected browser.
+    /// Fans the one upstream `WatchTodos` stream out to every connected
+    /// browser. `forward_events` fills it; the SSE route reads it.
     pub hub: Arc<Hub<toolbox_cluster::CloudEvent>>,
 }
 

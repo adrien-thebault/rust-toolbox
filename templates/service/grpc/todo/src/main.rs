@@ -1,26 +1,22 @@
 //! The todo service process.
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 use clap::Parser;
-use diesel::RunQueryDsl as _;
-use {{crate_name}}_todo::{Connection, MIGRATIONS, TodoService, model::Todo, proto};
+use {{crate_name}}_todo::{Connection, MIGRATIONS, TodoService, proto};
 {% if gateway %}use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
-{% endif %}use toolbox_cluster::InMemoryLockManager;
-use toolbox_db::args::DatabaseArgs;
-{% if gateway %}use toolbox_grpc::{
+{% endif %}use toolbox_cluster::{EventBus, InMemoryEventBus, InMemoryLockManager};
+{% if database == "postgres" %}use toolbox_db::{Db, args::DatabaseArgs};
+{% else %}use toolbox_db::{Db, SqlitePragmas, args::DatabaseArgs};
+{% endif %}{% if gateway %}use toolbox_grpc::{
     RoutesBuilder, ServerConfig, serve,
     server::{identity, shared_secret::shared_secret_layer},
 };
 {% else %}use toolbox_grpc::{RoutesBuilder, ServerConfig, serve};
 {% endif %}use toolbox_schedule::{Scheduler, Trigger};
-use toolbox_server::{HealthCheck, StartupConfig, args::ServerArgs, telemetry::TelemetryArgs};
+use toolbox_server::{
+    StartupConfig, args::ServerArgs, lifecycle::poll_check, telemetry::TelemetryArgs,
+};
 {% if gateway %}use tower::Layer;
 {% endif %}use tracing::error;
 
@@ -44,73 +40,45 @@ struct Args {
     service_secret: String,
 {% endif %}}
 
-/// Reports the database as healthy once it has answered a trivial query, and
-/// unhealthy again if a later ping fails.
-///
-/// Polled in the background rather than on the request path: `/ready` and the
-/// gRPC health probe read `HealthCheck::is_healthy` synchronously and often,
-/// so it must never itself make a round trip to the database.
-struct DbCheck(Arc<AtomicBool>);
-
-impl HealthCheck for DbCheck {
-    fn name(&self) -> &'static str {
-        "database"
-    }
-    fn is_healthy(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
-
-/// Ping the database every `interval`, publishing the result to `healthy`.
-async fn ping_database(
-    db: toolbox_db::Db<Connection>,
-    healthy: Arc<AtomicBool>,
-    interval: Duration,
-) {
-    let mut ticker = tokio::time::interval(interval);
-    loop {
-        ticker.tick().await;
-        let ok = db
-            .query(|c: &mut Connection| diesel::sql_query("SELECT 1").execute(c))
-            .await
-            .is_ok();
-        healthy.store(ok, Ordering::Relaxed);
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let _telemetry = args.telemetry.init()?;
 
-    let db = args.database.builder::<Connection>().build()?;
-    // Locked, so three replicas starting together do not race.
+{% if database == "postgres" %}    let db = args.database.builder::<Connection>().build()?;
+{% else %}    let db = args
+        .database
+        .builder::<Connection>()
+        .sqlite_pragmas(SqlitePragmas::default())
+        .build()?;
+{% endif %}    // Locked, so three replicas starting together do not race.
     db.migrate(MIGRATIONS).await?;
 
-    let db_healthy = Arc::new(AtomicBool::new(false));
-    tokio::spawn(ping_database(
-        db.clone(),
-        Arc::clone(&db_healthy),
-        Duration::from_secs(5),
-    ));
+    let (db_check, db_poll) =
+        poll_check("database", Duration::from_secs(5), db.clone(), Db::is_live);
+    tokio::spawn(db_poll);
 
-    // Sweeps completed todos nobody has touched in a month. Exclusive, so
-    // three replicas of this process do not all soft-delete the same rows -
-    // the point of `toolbox-schedule` existing at all.
-    let purge_db = db.clone();
+    // Published to by every mutation and by the purge below; `WatchTodos`
+    // streams it to the gateway. In-process only - a shared adapter would go
+    // here for a second replica.
+    let events: Arc<dyn EventBus> = Arc::new(InMemoryEventBus::default());
+    let todos = TodoService::new(db, events);
+
+    // Sweeps completed todos nobody has touched in a month, emitting a
+    // `todo.deleted` per row. Exclusive, so three replicas do not all
+    // soft-delete the same rows - the point of `toolbox-schedule` existing at
+    // all. Every minute so a freshly generated service shows the scheduler
+    // working; set your real cadence (e.g. `0 3 * * *`) before deploying.
     let scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .job(
             "purge-completed-todos",
-            Trigger::cron("0 3 * * *")?,
+            Trigger::cron("* * * * *")?,
             Duration::from_secs(30),
-            move || {
-                let db = purge_db.clone();
-                Box::pin(async move {
-                    let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(30);
-                    db.run(move |c: &mut Connection| Todo::purge_completed_before(c, cutoff))
-                        .await?;
-                    Ok(())
-                })
+            todos.clone(),
+            |todos| async move {
+                let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(30);
+                todos.purge_completed(cutoff).await?;
+                Ok(())
             },
         )?
         .build()?;
@@ -128,17 +96,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // who the gateway is asking on behalf of. Without both, anyone who can
     // reach this port could call `DeleteTodo` directly.
     let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
-    let service = shared_secret_layer(args.service_secret).layer(
+    let service = shared_secret_layer(args.service_secret.clone()).layer(
         identity::identity_layer(registry)
             .extracting(identity::asserted_principal)
-            .layer(TodoService::new(db).into_server()),
+            .layer(todos.into_server()),
     );
 {% else %}
     // No gateway in front of this service - a caller reaches it directly, so
     // there is no shared secret to check and nothing to assert an identity
     // from. Add `toolbox_grpc::server::shared_secret::shared_secret_layer` and
     // your own identity extraction here if that changes.
-    let service = TodoService::new(db).into_server();
+    let service = todos.into_server();
 {% endif %}
     // Graceful shutdown, health, reflection and the standard stack all come
     // from serve; none of it is written here. A second domain is one more
@@ -149,7 +117,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cfg,
         ServerConfig::default()
             .reflection(proto::DESCRIPTOR)
-            .readiness_checks(vec![Box::new(DbCheck(db_healthy))]),
+{% if gateway %}            // So the gateway's own `poll_health` proves the secret is right,
+            // not just that this process is up.
+            .health_secret(args.service_secret)
+{% endif %}            .readiness_checks(vec![Box::new(db_check)]),
         routes,
     )
     .await?;

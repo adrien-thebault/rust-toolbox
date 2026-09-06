@@ -4,22 +4,27 @@
 //! a wire shape and the handler that returns it change together, and splitting
 //! them puts a file boundary between two edits that are always one edit.
 
+use std::convert::Infallible;
+
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Response, sse::Sse},
+    http::{StatusCode, header::CONTENT_TYPE},
+    response::{
+        IntoResponse, Response,
+        sse::{Event, Sse},
+    },
     routing::{get, post},
 };
+use futures_core::Stream;
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 use {{crate_name}}_todo::proto::{
     CompleteTodoRequest, CreateTodoRequest, DeleteTodoRequest, GetTodoRequest, ListTodosRequest,
-    todo_service_client::TodoServiceClient,
+    Todo, todo_service_client::TodoServiceClient,
 };
-use tokio_stream::StreamExt as _;
+use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use toolbox_auth::AssertedPrincipal;
-use toolbox_cluster::{Topic, signal};
 use toolbox_grpc::{client::asserting, with_retry};
 use toolbox_web::{
     ApiError, Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson,
@@ -49,8 +54,8 @@ pub struct TodoDto {
     pub version: i32,
 }
 
-impl From<{{crate_name}}_todo::proto::Todo> for TodoDto {
-    fn from(t: {{crate_name}}_todo::proto::Todo) -> Self {
+impl From<Todo> for TodoDto {
+    fn from(t: Todo) -> Self {
         Self {
             id: t.id,
             title: t.title,
@@ -100,27 +105,22 @@ pub fn realtime_router() -> Router<AppState> {
     Router::new().route("/api/todos/events", get(events))
 }
 
-/// `GET`: a signal every time a todo changes, over SSE.
+/// `GET`: a `todo.*` event every time a todo changes, over SSE.
 ///
-/// The event carries no payload, only a type - `resume_from`'s reconnect
-/// story is "re-query the domain for what you missed, then subscribe live",
-/// not "replay what arrived while you were gone", so there is nothing to lose
-/// by keeping the event itself empty. Left unauthenticated on purpose: a
-/// signal with no payload leaks nothing that `GET /api/todos` does not already
-/// hand out to anyone.
+/// The payload is only `{ id }` - `resume_from`'s reconnect story is "re-query
+/// the domain for what you missed, then subscribe live", not "replay what
+/// arrived while you were gone", so the event never needs to carry the whole
+/// row. Left unauthenticated on purpose: an id and a type leak nothing that
+/// `GET /api/todos` does not already hand out to anyone.
 ///
 /// # Arguments
 ///
-/// * `state` - The gateway's state, for the hub every change is published to.
+/// * `state` - The gateway's state, for the hub every change is fanned out on.
 pub(crate) async fn events(
     State(state): State<AppState>,
-) -> Sse<
-    impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
-    + Send,
-> {
+) -> Sse<impl Stream<Item = Result<Event, Infallible>> + Send> {
     let rx = state.hub.subscribe(TODOS_TOPIC);
-    let stream =
-        tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(std::result::Result::ok);
+    let stream = BroadcastStream::new(rx).filter_map(Result::ok);
     sse_from_events(stream, SseConfig::default())
 }
 
@@ -152,28 +152,6 @@ async fn assert_caller<F: Future>(principal: &MaybeAuthenticated, f: F) -> F::Ou
     match &principal.0 {
         Some(p) => asserting(AssertedPrincipal::from(p).encode(), f).await,
         None => f.await,
-    }
-}
-
-/// Tell every SSE connection something changed, so it re-fetches rather than
-/// trusting a payload that could go stale between the event and the render.
-///
-/// Best-effort: a todo change that could not be announced is still a todo
-/// change, so a publish failure is logged and swallowed rather than failing
-/// the request that already succeeded against the backend.
-///
-/// # Arguments
-///
-/// * `state` - Read for the event bus.
-/// * `ty` - The CloudEvents type, e.g. `"todo.created"`.
-async fn announce(state: &AppState, ty: &str) {
-    match signal(ty.to_owned(), "/api/todos") {
-        Ok(event) => {
-            if let Err(e) = state.events.publish(&Topic::from(TODOS_TOPIC), event).await {
-                tracing::warn!(error = %e, ty, "could not publish a todo change");
-            }
-        }
-        Err(e) => tracing::warn!(error = %e, ty, "could not build a todo change event"),
     }
 }
 
@@ -308,7 +286,6 @@ async fn do_create(
     .await
     .map_err(|s| from_backend(&s))?
     .into_inner();
-    announce(state, "todo.created").await;
     Ok(todo.into())
 }
 
@@ -337,7 +314,6 @@ pub(crate) async fn complete(
     .await
     .map_err(|s| from_backend(&s))?
     .into_inner();
-    announce(&state, "todo.completed").await;
     Ok(Json(todo.into()))
 }
 
@@ -369,7 +345,6 @@ pub(crate) async fn remove(
     .map_err(|s| from_backend(&s))?
     .into_inner()
     .deleted;
-    announce(&state, "todo.deleted").await;
     Ok(Json(serde_json::json!({ "deleted": deleted })))
 }
 
@@ -387,10 +362,7 @@ fn replay(stored: &StoredResponse) -> Response {
     let status = StatusCode::from_u16(stored.status).unwrap_or(StatusCode::OK);
     (
         status,
-        [(
-            axum::http::header::CONTENT_TYPE,
-            stored.content_type.clone(),
-        )],
+        [(CONTENT_TYPE, stored.content_type.clone())],
         stored.body.clone(),
     )
         .into_response()

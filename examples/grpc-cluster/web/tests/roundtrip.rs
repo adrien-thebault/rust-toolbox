@@ -6,6 +6,7 @@ use example_todo::{Connection, MIGRATIONS, TodoService};
 use example_web::{auth::AuthConfig, routes::router};
 use secrecy::SecretString;
 use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
+use toolbox_cluster::InMemoryEventBus;
 use toolbox_grpc::{
     ClientConfig, client,
     server::{identity, shared_secret::shared_secret_layer},
@@ -56,11 +57,12 @@ async fn cluster_with(
     let cluster = TestCluster::new()
         .service("todo", move |routes| {
             let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
+            let events = Arc::new(InMemoryEventBus::default());
             routes.add_service(
                 shared_secret_layer(SERVICE_SECRET).layer(
                     identity::identity_layer(registry)
                         .extracting(identity::asserted_principal)
-                        .layer(TodoService::new(service_db).into_server()),
+                        .layer(TodoService::new(service_db, events).into_server()),
                 ),
             );
         })
@@ -329,11 +331,12 @@ async fn bypassing_the_gateway_and_calling_the_backend_directly_is_refused() {
     let cluster = TestCluster::new()
         .service("todo", move |routes| {
             let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
+            let events = Arc::new(InMemoryEventBus::default());
             routes.add_service(
                 shared_secret_layer(SERVICE_SECRET).layer(
                     identity::identity_layer(registry)
                         .extracting(identity::asserted_principal)
-                        .layer(TodoService::new(db).into_server()),
+                        .layer(TodoService::new(db, events).into_server()),
                 ),
             );
         })
@@ -394,36 +397,49 @@ async fn an_asserted_non_admin_principal_still_cannot_delete() {
     );
 }
 
-/// `create`, `complete` and `remove` each publish a signal on success; this is
-/// the regression test for `forward_events` actually relaying the bus into the
-/// hub every SSE connection subscribes to, rather than the two sitting there
-/// disconnected.
+/// A backend mutation publishes a `todo.*` event, `WatchTodos` streams it, and
+/// `forward_events` relays it into the hub every SSE connection subscribes to.
+/// The regression test for those three staying connected.
 #[tokio::test]
-async fn a_mutation_is_announced_to_every_hub_subscriber() {
-    // `forward_events` is what `main.rs` spawns over `auth::state`'s bus and
-    // hub; this exercises the same wiring directly.
-    let events: std::sync::Arc<dyn toolbox_cluster::EventBus> =
-        std::sync::Arc::new(toolbox_cluster::InMemoryEventBus::default());
-    let hub = std::sync::Arc::new(toolbox_web::realtime::Hub::new(
-        toolbox_web::realtime::HubConfig::new(8, toolbox_web::realtime::SlowConsumer::DropOldest),
-    ));
+async fn a_backend_mutation_reaches_every_hub_subscriber() {
+    use example_todo::proto::{CreateTodoRequest, todo_service_client::TodoServiceClient};
+    use toolbox_web::realtime::{Hub, HubConfig, SlowConsumer};
+
+    let (db, _guard) = temp_db::<Connection>();
+    db.migrate(MIGRATIONS).await.expect("migrations");
+
+    let cluster = TestCluster::new()
+        .service("todo", move |routes| {
+            let events = Arc::new(InMemoryEventBus::default());
+            routes.add_service(TodoService::new(db, events).into_server());
+        })
+        .await
+        .expect("the todo backend came up");
+
+    let channel = client(
+        "todo",
+        &ClientConfig::new(&cluster.backend_uri("todo")).expect("a valid uri"),
+    );
+
+    // `forward_events` is what `main.rs` spawns over `auth::state`; this drives
+    // the same wiring against a real backend stream.
+    let hub = Arc::new(Hub::new(HubConfig::new(8, SlowConsumer::DropOldest)));
     tokio::spawn(example_web::auth::forward_events(
-        events.clone(),
+        channel.clone(),
         hub.clone(),
     ));
-    // Give the subscribe a moment to attach before anything is published.
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // Let the WatchTodos stream attach before anything is published.
+    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let mut rx = hub.subscribe("todos");
-    events
-        .publish(
-            &toolbox_cluster::Topic::from("todos"),
-            toolbox_cluster::signal("todo.created", "/api/todos").unwrap(),
-        )
+    TodoServiceClient::new(channel.channel())
+        .create_todo(CreateTodoRequest {
+            title: "watch me".to_owned(),
+        })
         .await
-        .unwrap();
+        .expect("the create succeeded");
 
-    let received = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+    let received = tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
         .expect("the hub relayed the event before the timeout")
         .expect("the channel is still open");
@@ -586,8 +602,9 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
 
     let cluster = TestCluster::new()
         .service("todo", move |routes| {
+            let events = Arc::new(InMemoryEventBus::default());
             routes.add_service(tonic::service::interceptor::InterceptedService::new(
-                TodoService::new(db).into_server(),
+                TodoService::new(db, events).into_server(),
                 recorder,
             ));
         })

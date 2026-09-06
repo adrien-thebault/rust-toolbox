@@ -5,10 +5,11 @@
 
 pub mod todo;
 
-use axum::Router;
+use axum::{Router, middleware::from_fn_with_state};
 use toolbox_web::{
     ApiError,
     auth::{ForwardedConfig, auth_router, forwarded_auth_layer, session_layer},
+    openapi::{bearer_security, with_standard_errors},
     rate_limit::RateLimitConfig,
 };
 
@@ -32,8 +33,8 @@ pub struct ApiDoc;
 pub fn openapi() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi as _;
     let mut api = ApiDoc::openapi();
-    toolbox_web::openapi::with_standard_errors(&mut api);
-    toolbox_web::openapi::bearer_security(&mut api);
+    with_standard_errors(&mut api);
+    bearer_security(&mut api);
     api
 }
 
@@ -58,14 +59,11 @@ pub fn router(state: AppState, login: &RateLimitConfig) -> Router {
     Router::new()
         .merge(todo::router())
         .merge(auth_router::<AppState>(login))
-        .layer(axum::middleware::from_fn_with_state(
+        .layer(from_fn_with_state(
             (state.clone(), forwarded),
             forwarded_auth_layer::<AppState>,
         ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            session_layer::<AppState>,
-        ))
+        .layer(from_fn_with_state(state.clone(), session_layer::<AppState>))
         .with_state(state)
 }
 

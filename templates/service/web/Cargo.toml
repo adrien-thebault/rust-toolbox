@@ -28,7 +28,6 @@ async-trait = { workspace = true }
 axum        = { workspace = true }
 clap        = { workspace = true }
 futures-core = { workspace = true }
-futures-util = { workspace = true }
 garde       = { workspace = true }
 secrecy     = { workspace = true }
 serde       = { workspace = true }

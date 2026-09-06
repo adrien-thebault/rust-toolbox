@@ -21,11 +21,14 @@ toolbox-server = { workspace = true }
 
 chrono     = { workspace = true }
 clap       = { workspace = true }
+cloudevents-sdk = { workspace = true }
 diesel     = { workspace = true }
 diesel_migrations = { workspace = true }
 prost      = { workspace = true }
+serde_json = { workspace = true }
 thiserror  = { workspace = true }
 tokio      = { workspace = true }
+tokio-stream = { workspace = true }
 tonic      = { workspace = true }
 tonic-prost = { workspace = true }
 tower      = { workspace = true }

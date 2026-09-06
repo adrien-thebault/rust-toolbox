@@ -29,6 +29,13 @@ pub type Connection = diesel::sqlite::SqliteConnection;
 /// The timestamp type, named **once** for the whole crate.
 pub type Timestamp = chrono::NaiveDateTime;
 
+/// The event-bus topic every todo mutation is published on, and `WatchTodos`
+/// subscribes to.
+pub const TODOS_TOPIC: &str = "todos";
+
+/// The CloudEvents `source` for every todo event this domain emits.
+pub const EVENT_SOURCE: &str = "/todo-service";
+
 /// This domain's migrations, applied by the binary at startup.
 pub const MIGRATIONS: toolbox_db::EmbeddedMigrations = toolbox_db::embed_migrations!("migrations");
 
