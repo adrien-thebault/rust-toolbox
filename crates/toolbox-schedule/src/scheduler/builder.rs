@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    future::Future,
     sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
@@ -12,7 +13,7 @@ use super::{JobState, Scheduler, to_utc};
 use crate::{
     clock::{Clock, SystemClock},
     error::ScheduleError,
-    job::{Job, JobFuture, Overlap, RunMode},
+    job::{Job, JobFuture, JobResult, Overlap, RunMode},
     trigger::Trigger,
 };
 
@@ -71,21 +72,30 @@ impl SchedulerBuilder {
     /// * `trigger` - When it fires.
     /// * `timeout` - How long one run may take. Mandatory: it is also what
     ///   sizes the lock lease, so there is no correct default.
-    /// * `body` - What to run. It is called once per occurrence and must be
-    ///   safe to call again.
+    /// * `state` - Cloned once per occurrence and handed to `body`, rather than
+    ///   captured by `body` itself, so `body` stays a one-liner - a `Db` handle
+    ///   or a service, both cheap to clone, named once here instead of behind a
+    ///   `move ||` that re-clones. Pass `()` for a job that needs none.
+    /// * `body` - What to run: a closure taking the cloned `state` and returning
+    ///   an `async` block. Called once per occurrence, so it must be safe to
+    ///   call again. The future is boxed here, so it is a bare
+    ///   `async move { ... }`, not a `Box::pin` of one.
     ///
     /// # Errors
     /// [`ScheduleError::DuplicateName`] when the name is taken - two jobs
     /// sharing a name would share a lock key and silently exclude each other.
-    pub fn job<F>(
+    pub fn job<T, F, Fut>(
         mut self,
         name: &'static str,
         trigger: Trigger,
         timeout: Duration,
+        state: T,
         body: F,
     ) -> Result<Self, ScheduleError>
     where
-        F: Fn() -> JobFuture + Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
+        F: Fn(T) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = JobResult> + Send + 'static,
     {
         if self.jobs.iter().any(|j| j.name == name) {
             return Err(ScheduleError::DuplicateName(name.to_owned()));
@@ -96,7 +106,7 @@ impl SchedulerBuilder {
             mode: RunMode::default(),
             overlap: Overlap::default(),
             timeout,
-            body: Arc::new(body),
+            body: Arc::new(move || -> JobFuture { Box::pin(body(state.clone())) }),
         });
         Ok(self)
     }

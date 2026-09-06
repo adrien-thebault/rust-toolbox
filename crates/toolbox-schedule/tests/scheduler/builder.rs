@@ -12,7 +12,8 @@ async fn two_jobs_cannot_share_a_name() {
             "dup",
             Trigger::fixed_rate(Duration::from_secs(60)),
             Duration::from_secs(5),
-            || Box::pin(async { Ok(()) }),
+            (),
+            |()| async { Ok(()) },
         )
         .unwrap();
 
@@ -21,7 +22,8 @@ async fn two_jobs_cannot_share_a_name() {
             "dup",
             Trigger::fixed_rate(Duration::from_secs(60)),
             Duration::from_secs(5),
-            || Box::pin(async { Ok(()) }),
+            (),
+            |()| async { Ok(()) },
         )
         .unwrap_err();
     assert!(matches!(err, ScheduleError::DuplicateName(_)));

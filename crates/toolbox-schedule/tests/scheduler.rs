@@ -8,20 +8,16 @@ use std::{
 
 use toolbox_cluster::{InMemoryLockManager, LockManager};
 use toolbox_schedule::{
-    JobOutcome, ManualClock, Overlap, RunMode, ScheduleError, Scheduler, Trigger, lock_key,
+    JobOutcome, JobResult, ManualClock, Overlap, RunMode, ScheduleError, Scheduler, Trigger,
+    lock_key,
 };
 
 mod builder;
 
-/// A job that counts how many times it ran.
-fn counting(counter: Arc<AtomicUsize>) -> impl Fn() -> toolbox_schedule::JobFuture + Send + Sync {
-    move || {
-        let counter = Arc::clone(&counter);
-        Box::pin(async move {
-            counter.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        })
-    }
+/// A job body that counts how many times it ran.
+async fn count(counter: Arc<AtomicUsize>) -> JobResult {
+    counter.fetch_add(1, Ordering::SeqCst);
+    Ok(())
 }
 
 /// **The test that keeps `Exclusive` honest.** Three schedulers sharing one
@@ -40,7 +36,8 @@ async fn three_schedulers_sharing_a_lock_manager_run_a_job_exactly_once() {
                 "nightly",
                 Trigger::fixed_rate(Duration::from_secs(60)),
                 Duration::from_secs(5),
-                counting(Arc::clone(&counter)),
+                Arc::clone(&counter),
+                count,
             )
             .unwrap()
             .build()
@@ -84,7 +81,8 @@ async fn a_local_job_runs_on_every_replica() {
                     "refresh-cache",
                     Trigger::fixed_rate(Duration::from_secs(60)),
                     Duration::from_secs(5),
-                    counting(Arc::clone(&counter)),
+                    Arc::clone(&counter),
+                    count,
                 )
                 .unwrap()
                 .mode(RunMode::Local)
@@ -110,7 +108,8 @@ async fn a_job_does_not_run_before_it_is_due() {
             "later",
             Trigger::fixed_rate(Duration::from_secs(3600)),
             Duration::from_secs(5),
-            counting(Arc::clone(&counter)),
+            Arc::clone(&counter),
+            count,
         )
         .unwrap()
         .build()
@@ -136,11 +135,10 @@ async fn a_job_that_overruns_its_timeout_is_abandoned() {
             "hangs",
             Trigger::fixed_rate(Duration::from_secs(60)),
             Duration::from_millis(50),
-            || {
-                Box::pin(async {
-                    std::future::pending::<()>().await;
-                    Ok(())
-                })
+            (),
+            |()| async {
+                std::future::pending::<()>().await;
+                Ok(())
             },
         )
         .unwrap()
@@ -161,7 +159,8 @@ async fn a_failing_job_is_reported_rather_than_swallowed() {
             "fails",
             Trigger::fixed_rate(Duration::from_secs(60)),
             Duration::from_secs(5),
-            || Box::pin(async { Err("nope".into()) }),
+            (),
+            |()| async { Err("nope".into()) },
         )
         .unwrap()
         .build()
@@ -186,20 +185,17 @@ async fn an_overrunning_job_does_not_start_a_second_run_by_default() {
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     let started = Arc::new(AtomicUsize::new(0));
 
-    let (g, s) = (Arc::clone(&gate), Arc::clone(&started));
     let mut scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .clock(clock.clone())
         .job(
             "slow",
             Trigger::fixed_rate(Duration::from_secs(60)),
             Duration::from_secs(30),
-            move || {
-                let (g, s) = (Arc::clone(&g), Arc::clone(&s));
-                Box::pin(async move {
-                    s.fetch_add(1, Ordering::SeqCst);
-                    let _ = g.acquire().await;
-                    Ok(())
-                })
+            (Arc::clone(&gate), Arc::clone(&started)),
+            |(gate, started)| async move {
+                started.fetch_add(1, Ordering::SeqCst);
+                let _ = gate.acquire().await;
+                Ok(())
             },
         )
         .unwrap()
@@ -246,7 +242,8 @@ async fn a_job_can_be_run_on_demand_even_when_not_due() {
             "nightly",
             Trigger::cron("0 3 * * *").unwrap(),
             Duration::from_secs(5),
-            counting(Arc::clone(&counter)),
+            Arc::clone(&counter),
+            count,
         )
         .unwrap()
         .build()
@@ -280,7 +277,8 @@ async fn the_schedule_is_inspectable() {
             "nightly",
             Trigger::cron("0 3 * * *").unwrap(),
             Duration::from_secs(300),
-            || Box::pin(async { Ok(()) }),
+            (),
+            |()| async { Ok(()) },
         )
         .unwrap()
         .build()
@@ -318,7 +316,8 @@ async fn an_exclusive_lease_outlives_the_run_it_guarded() {
             "nightly",
             Trigger::fixed_rate(Duration::from_secs(3600)),
             Duration::from_secs(5),
-            counting(Arc::clone(&counter)),
+            Arc::clone(&counter),
+            count,
         )
         .unwrap()
         .build()

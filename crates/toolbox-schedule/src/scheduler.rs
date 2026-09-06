@@ -192,10 +192,8 @@ impl Scheduler {
 
         // Hold the lock until the *next* occurrence is due, so no other replica
         // can run this one.
-        let until_next = job
-            .trigger
-            .next_after(now)
-            .ok()
+        let next_run = job.trigger.next_after(now).ok();
+        let until_next = next_run
             .and_then(|next| (next - now).to_std().ok())
             .unwrap_or(MIN_LEASE);
 
@@ -243,6 +241,7 @@ impl Scheduler {
 
         let body = Arc::clone(&job.body);
         let timeout = job.timeout;
+        info!(job = name, mode = ?job.mode, "job started");
         let started = std::time::Instant::now();
 
         let outcome = match tokio::time::timeout(timeout, body()).await {
@@ -260,6 +259,7 @@ impl Scheduler {
                 JobOutcome::TimedOut
             }
         };
+        let elapsed = started.elapsed();
 
         running.store(false, Ordering::SeqCst);
 
@@ -270,7 +270,14 @@ impl Scheduler {
             guard.keep();
         }
 
-        record(name, outcome, started.elapsed());
+        record(name, outcome, elapsed);
+        info!(
+            job = name,
+            outcome = outcome.as_label(),
+            elapsed_ms = elapsed.as_millis(),
+            next_run_at = ?next_run,
+            "job finished"
+        );
         Ok(outcome)
     }
 
