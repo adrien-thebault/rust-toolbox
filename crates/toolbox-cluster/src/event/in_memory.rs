@@ -7,7 +7,7 @@ use std::{
 
 use async_trait::async_trait;
 use tokio::sync::broadcast;
-use tokio_stream::StreamExt as _;
+use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 
 use super::{CloudEvent, EventBus, EventBusError, EventStream, Topic};
 
@@ -83,8 +83,7 @@ impl EventBus for InMemoryEventBus {
 
     async fn subscribe(&self, topic: &Topic) -> Result<EventStream, EventBusError> {
         let rx = self.sender(topic).subscribe();
-        let stream =
-            tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(std::result::Result::ok);
+        let stream = BroadcastStream::new(rx).filter_map(Result::ok);
         Ok(Box::pin(stream))
     }
 }

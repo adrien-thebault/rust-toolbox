@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeMap, net::SocketAddr, time::Duration};
 
+use tokio_stream::wrappers::TcpListenerStream;
 use tonic::service::RoutesBuilder;
 
 /// How long to wait for a spawned backend to accept a connection.
@@ -85,7 +86,7 @@ impl TestCluster {
         let handle = tokio::spawn(async move {
             let _ = tonic::transport::Server::builder()
                 .add_routes(routes.routes())
-                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .serve_with_incoming(TcpListenerStream::new(listener))
                 .await;
         });
 
