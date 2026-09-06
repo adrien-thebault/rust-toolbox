@@ -17,7 +17,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-pub use health::{Health, HealthCheck};
+pub use health::{Health, HealthCheck, PolledCheck, poll_check};
 pub use shutdown::{Shutdown, ShutdownConfig, shutdown_signal};
 pub use startup::{StartupConfig, StartupError, wait_until_healthy};
 

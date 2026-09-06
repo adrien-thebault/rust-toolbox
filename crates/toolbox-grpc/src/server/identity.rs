@@ -25,8 +25,9 @@ use std::{
 
 use http::{HeaderMap, Request, Response, header::AUTHORIZATION};
 use secrecy::SecretString;
-use tonic::Status;
+use tonic::{Status, server::NamedService};
 use toolbox_auth::{AssertedPrincipal, Credential, Principal, ProviderRegistry};
+use toolbox_server::trace_context::record_principal;
 use tower::{Layer, Service};
 
 use crate::X_ASSERTED_PRINCIPAL;
@@ -180,7 +181,7 @@ pub struct IdentityService<S> {
     extractors: Vec<Arc<Extractor>>,
 }
 
-impl<S: tonic::server::NamedService> tonic::server::NamedService for IdentityService<S> {
+impl<S: NamedService> NamedService for IdentityService<S> {
     const NAME: &'static str = S::NAME;
 }
 
@@ -209,6 +210,7 @@ where
             if let Some(cred) = credential(&extractors, req.headers())
                 && let Ok(principal) = registry.authenticate(&cred).await
             {
+                record_principal(&principal.subject);
                 req.extensions_mut().insert(principal);
             }
             inner.call(req).await

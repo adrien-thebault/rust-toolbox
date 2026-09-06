@@ -1,5 +1,6 @@
 use toolbox_server::trace_context::{
     CURRENT_TRACE, TRACEPARENT, TraceContext, TraceContextLayer, X_REQUEST_ID, current_request_id,
+    record_principal,
 };
 use tower::{Layer, Service, ServiceExt};
 
@@ -94,4 +95,9 @@ async fn the_context_is_visible_to_the_handler() {
 #[test]
 fn there_is_no_request_id_outside_a_request() {
     assert!(current_request_id().is_none());
+}
+
+#[test]
+fn recording_a_principal_outside_a_request_span_does_not_panic() {
+    record_principal("someone");
 }

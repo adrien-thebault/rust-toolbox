@@ -4,7 +4,7 @@ use tower::{Layer, ServiceBuilder};
 use tower_http::{
     catch_panic::{CatchPanic, CatchPanicLayer, DefaultResponseForPanic},
     classify::{GrpcErrorsAsFailures, SharedClassifier},
-    trace::{Trace, TraceLayer},
+    trace::{DefaultOnBodyChunk, DefaultOnFailure, DefaultOnRequest, Trace, TraceLayer},
 };
 
 use super::StackConfig;
@@ -16,7 +16,16 @@ use crate::{
 /// The service a gRPC stack wraps a server in.
 pub type GrpcStacked<S> = CatchPanic<
     TraceContextService<
-        Trace<DeadlineService<S>, SharedClassifier<GrpcErrorsAsFailures>, MakeTracedSpan>,
+        Trace<
+            DeadlineService<S>,
+            SharedClassifier<GrpcErrorsAsFailures>,
+            MakeTracedSpan,
+            DefaultOnRequest,
+            MakeTracedSpan,
+            DefaultOnBodyChunk,
+            MakeTracedSpan,
+            DefaultOnFailure,
+        >,
     >,
     DefaultResponseForPanic,
 >;
@@ -36,12 +45,15 @@ impl<S> Layer<S> for GrpcStack {
     type Service = GrpcStacked<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
+        let traced = MakeTracedSpan::new(self.cfg.trace_level);
         ServiceBuilder::new()
             .layer(CatchPanicLayer::new())
             .layer(TraceContextLayer::new())
             .layer(
                 TraceLayer::new_for_grpc()
-                    .make_span_with(MakeTracedSpan::new(self.cfg.trace_level)),
+                    .make_span_with(traced)
+                    .on_response(traced)
+                    .on_eos(traced),
             )
             .layer(DeadlineLayer::new(self.cfg.timeout).grpc())
             .service(inner)

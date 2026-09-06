@@ -18,6 +18,8 @@ use serde::Deserialize;
 #[cfg(feature = "auth-router")]
 use toolbox_auth::Credential;
 use toolbox_auth::{AuthError, Principal, Role, principal::AnyRole};
+#[cfg(feature = "auth-router")]
+use toolbox_server::trace_context::record_principal;
 
 #[cfg(feature = "auth-router")]
 use crate::auth::AuthState;
@@ -150,6 +152,7 @@ where
             .providers()
             .authenticate(&Credential::Bearer(SecretString::from(raw.token)))
             .await?;
+        record_principal(&principal.subject);
 
         if !principal.has::<R>() {
             return Err(AuthError::Forbidden {

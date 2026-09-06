@@ -282,8 +282,7 @@ impl IntoResponse for ApiError {
                 error = self
                     .source
                     .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_default(),
+                    .map_or_else(|| "-".to_owned(), ToString::to_string),
                 detail = self.problem.detail.as_deref().unwrap_or("-"),
                 "request failed"
             );

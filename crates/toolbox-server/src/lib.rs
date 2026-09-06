@@ -14,8 +14,8 @@ pub mod trace_context;
 
 pub use deadline::{DEADLINE, DeadlineLayer, current_deadline, time_remaining};
 pub use lifecycle::{
-    Health, HealthCheck, LifecycleHandle, Shutdown, ShutdownConfig, StartupConfig, StartupError,
-    shutdown_signal, wait_until_healthy,
+    Health, HealthCheck, LifecycleHandle, PolledCheck, Shutdown, ShutdownConfig, StartupConfig,
+    StartupError, poll_check, shutdown_signal, wait_until_healthy,
 };
 pub use stack::{
     GrpcStack, HttpStack, RealtimeStack, StackConfig, grpc_stack, http_stack, realtime_stack,
@@ -23,7 +23,7 @@ pub use stack::{
 pub use telemetry::{LogFormat, TelemetryError, TelemetryGuard};
 pub use trace_context::{
     CURRENT_TRACE, MakeTracedSpan, TRACEPARENT, TraceContext, TraceContextLayer, X_REQUEST_ID,
-    X_REQUEST_ID_NAME, current_request_id, current_trace_context,
+    X_REQUEST_ID_NAME, current_request_id, current_trace_context, record_principal,
 };
 use tracing::info;
 

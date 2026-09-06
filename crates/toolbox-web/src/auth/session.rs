@@ -8,6 +8,7 @@ use axum::{
 use http::header::AUTHORIZATION;
 use secrecy::SecretString;
 use toolbox_auth::{AuthError, Credential};
+use toolbox_server::trace_context::record_principal;
 use tracing::debug;
 
 use super::AuthState;
@@ -45,6 +46,7 @@ pub async fn session_layer<S: AuthState>(
             .await
         {
             Ok(principal) => {
+                record_principal(&principal.subject);
                 request.extensions_mut().insert(principal);
             }
             // An expired token has to reach the client as a 401 so it knows to

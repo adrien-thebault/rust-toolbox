@@ -7,7 +7,9 @@
 
 use std::str::FromStr;
 
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt as _, util::SubscriberInitExt as _};
+use tracing_subscriber::{
+    EnvFilter, fmt::format::FmtSpan, layer::SubscriberExt as _, util::SubscriberInitExt as _,
+};
 
 /// How log lines are rendered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -112,16 +114,33 @@ impl TelemetryArgs {
 /// # Errors
 /// [`TelemetryError::AlreadyInitialised`] when one is already installed.
 pub fn init(format: LogFormat, filter: EnvFilter) -> Result<TelemetryGuard, TelemetryError> {
+    // NEW and CLOSE turn `MakeTracedSpan`'s request span into an access log:
+    // one line as a call comes in, one as it completes, the latter carrying
+    // the busy time and whatever the stack recorded onto the span - status,
+    // and the caller's subject once identity resolves.
+    let span_events = FmtSpan::NEW | FmtSpan::CLOSE;
     let registry = tracing_subscriber::registry().with(filter);
     let installed = match format {
         LogFormat::Pretty => registry
-            .with(tracing_subscriber::fmt::layer().pretty())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .pretty()
+                    .with_span_events(span_events),
+            )
             .try_init(),
         LogFormat::Compact => registry
-            .with(tracing_subscriber::fmt::layer().compact())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .compact()
+                    .with_span_events(span_events),
+            )
             .try_init(),
         LogFormat::Json => registry
-            .with(tracing_subscriber::fmt::layer().json())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_span_events(span_events),
+            )
             .try_init(),
     };
     installed.map_err(|_| TelemetryError::AlreadyInitialised)?;
