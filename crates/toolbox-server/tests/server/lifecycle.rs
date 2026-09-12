@@ -1,13 +1,12 @@
-mod health;
-mod shutdown;
-mod startup;
-
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
-use toolbox_server::lifecycle::{Health, HealthCheck, LifecycleHandle, Shutdown};
+use toolbox_server::server::{Health, HealthCheck, LifecycleHandle, Shutdown, wait_until_healthy};
 
 /// A check flipped by the test, shared with the handle via an `Arc` so both
 /// sides see the same flag.
@@ -68,4 +67,24 @@ fn shutdown_wins_over_every_check() {
 
     shutdown.begin();
     assert_eq!(handle.current(), Health::ShuttingDown);
+}
+
+#[tokio::test]
+async fn a_handle_with_no_checks_resolves_at_once() {
+    let handle = LifecycleHandle::new(Shutdown::new());
+    tokio::time::timeout(Duration::from_millis(100), wait_until_healthy(&handle))
+        .await
+        .expect("no checks means healthy immediately");
+}
+
+#[tokio::test]
+async fn shutdown_before_becoming_healthy_still_resolves_rather_than_hanging() {
+    let (_flag, check) = toggle(false);
+    let shutdown = Shutdown::new();
+    let handle = LifecycleHandle::new(shutdown.clone()).with_checks(vec![check]);
+    shutdown.begin();
+
+    tokio::time::timeout(Duration::from_millis(100), wait_until_healthy(&handle))
+        .await
+        .expect("a process asked to drain must not wait forever to become healthy");
 }

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use toolbox_grpc::{ClientConfig, RoutesBuilder, ServerConfig, client, client::poll_health, serve};
-use toolbox_server::{StartupConfig, lifecycle::HealthCheck};
+use toolbox_grpc::{ClientConfig, GrpcServerConfig, Routes, client, client::poll_health, serve};
+use toolbox_server::ServerBuilder;
 
 /// Real bound server, real client, no shared secret: `poll_health` should
 /// need nothing more than a serving backend to report healthy.
@@ -11,16 +11,18 @@ async fn poll_health_reports_a_serving_backend_as_healthy() {
     let addr = probe.local_addr().unwrap();
     drop(probe);
 
+    let server = ServerBuilder::listening_on(addr).build().await.unwrap();
     tokio::spawn(serve(
-        StartupConfig::new(addr),
-        ServerConfig::default(),
-        RoutesBuilder::default(),
+        server,
+        GrpcServerConfig::default(),
+        Routes::default(),
     ));
 
     let cfg = ClientConfig::new(&format!("http://{addr}")).unwrap();
     let channel = client("backend", &cfg);
-    let (check, task) = poll_health(channel, "backend", Duration::from_millis(20));
-    tokio::spawn(task);
+    let probe = poll_health(channel, "backend", Duration::from_millis(20));
+    let check = probe.check;
+    tokio::spawn(probe.poll);
 
     for _ in 0..200 {
         if check.is_healthy() {

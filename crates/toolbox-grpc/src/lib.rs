@@ -33,7 +33,7 @@ pub use client::{
 pub use limits::MessageLimits;
 pub use pagination::{PROTO_INCLUDE, PageInfo, PageRequestProto, split};
 pub use server::{
-    RoutesBuilder, ServerConfig, identity, identity::identity_layer, serve,
+    GrpcServerConfig, Routes, RoutesBuilder, identity, identity::identity_layer, serve,
     shared_secret::shared_secret_layer,
 };
 pub use status::{GrpcResult, code_for, from_status, kind_for, to_status};

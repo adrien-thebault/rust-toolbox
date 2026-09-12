@@ -2,7 +2,7 @@
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 mod deadline;
-mod lifecycle;
+mod server;
 mod stack;
 mod telemetry;
 mod trace_context;
@@ -12,7 +12,6 @@ use std::convert::Infallible;
 use bytes::Bytes;
 use http::{Request, Response};
 use http_body_util::Full;
-use toolbox_server::{StartupConfig, bind};
 
 /// A body type that satisfies every bound the stacks impose.
 pub type TestBody = Full<Bytes>;
@@ -34,8 +33,10 @@ pub fn req() -> Request<TestBody> {
 }
 
 #[tokio::test]
-async fn binding_hands_out_a_listener_on_the_requested_address() {
-    let cfg = StartupConfig::new("127.0.0.1:0".parse().unwrap());
-    let listener = bind(&cfg).await.unwrap();
-    assert!(listener.local_addr().unwrap().port() > 0);
+async fn building_binds_a_listener_on_the_requested_address() {
+    let server = toolbox_server::ServerBuilder::listening_on("127.0.0.1:0".parse().unwrap())
+        .build()
+        .await
+        .unwrap();
+    assert!(server.listener.local_addr().unwrap().port() > 0);
 }

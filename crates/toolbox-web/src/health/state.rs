@@ -1,8 +1,8 @@
 //! The state `health_router` reads: the process lifecycle, plus any extra
 //! dependency checks `/ready` must also pass.
 
-pub use toolbox_server::lifecycle::HealthCheck;
-use toolbox_server::lifecycle::{LifecycleHandle, Shutdown};
+pub use toolbox_server::HealthCheck;
+use toolbox_server::{LifecycleHandle, Shutdown};
 
 /// The state `health_router` needs.
 #[derive(Clone)]
@@ -44,5 +44,20 @@ impl HealthState {
     pub fn with_checks(mut self, checks: Vec<Box<dyn HealthCheck>>) -> Self {
         self.lifecycle = self.lifecycle.with_checks(checks);
         self
+    }
+
+    /// Wrap a [`LifecycleHandle`] a [`Server`](toolbox_server::Server) already
+    /// assembled - its probe checks registered - so `/ready` reads the exact
+    /// view the rest of the server drains on. This is what
+    /// [`toolbox_web::serve`](crate::serve) uses; a hand-rolled server uses
+    /// [`new`](Self::new) plus [`with_checks`](Self::with_checks).
+    ///
+    /// # Arguments
+    ///
+    /// * `lifecycle` - The combined drain-plus-checks handle, i.e.
+    ///   [`Server::lifecycle`](toolbox_server::Server).
+    #[must_use]
+    pub fn from_lifecycle(lifecycle: LifecycleHandle) -> Self {
+        Self { lifecycle }
     }
 }

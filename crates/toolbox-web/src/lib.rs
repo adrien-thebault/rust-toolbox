@@ -47,4 +47,4 @@ pub use openapi::{OpenApiConfig, openapi_router, serialize_openapi, with_standar
 pub use pagination::{attach_page_headers, page_links};
 #[cfg(feature = "rate-limit")]
 pub use rate_limit::RateLimitConfig;
-pub use server::serve;
+pub use server::{WebServerConfig, serve};

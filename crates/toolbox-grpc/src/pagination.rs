@@ -14,8 +14,14 @@ pub use crate::{
 /// Where the toolbox's protos live, for a consumer's `tonic-build` include
 /// path.
 ///
+/// Add it as a second include directory and a domain `.proto` can
+/// `import "toolbox/v1/pagination.proto";` to reuse `PageRequest`/`PageInfo`
+/// rather than redeclaring them:
+///
 /// ```ignore
+/// // build.rs
 /// tonic_prost_build::configure()
+///     .file_descriptor_set_path(out.join("mine_descriptor.bin"))
 ///     .compile_protos(&["proto/mine.proto"], &["proto", toolbox_grpc::PROTO_INCLUDE])?;
 /// ```
 pub const PROTO_INCLUDE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/proto");

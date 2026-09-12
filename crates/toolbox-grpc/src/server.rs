@@ -1,29 +1,31 @@
 //! Serving a tonic server.
 //!
-//! Shaped to match `toolbox_web::server::serve`: assemble the transport object,
-//! hand it over, and the one call binds, serves and drains. The one gRPC-only
-//! difference is that the standard stack is applied here rather than by the
-//! caller, because every service in one tonic server gets the same treatment -
-//! there is no per-route split like the axum realtime one.
+//! Shaped to match `toolbox_web::serve`: build a [`Server`] with
+//! `toolbox_server::ServerBuilder`, hand it over with a [`GrpcServerConfig`],
+//! and the one call serves it and drains on `SIGTERM`. The bind and the
+//! background work already happened in `ServerBuilder::build`. The one
+//! gRPC-only difference is that the standard stack is applied here rather than
+//! by the caller, because every service in one tonic server gets the same
+//! treatment - there is no per-route split like the axum realtime one.
 
 pub mod identity;
 pub mod shared_secret;
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_stream::wrappers::TcpListenerStream;
-pub use tonic::service::RoutesBuilder;
-use tonic::transport::Server;
+pub use tonic::service::{Routes, RoutesBuilder};
+use tonic::transport::Server as TonicServer;
 use toolbox_server::{
-    bind,
-    lifecycle::{HealthCheck, LifecycleHandle, StartupConfig, StartupError, shutdown_signal},
+    LifecycleHandle, Server, ServerError,
+    server::shutdown_signal,
     stack::{StackConfig, grpc_stack},
 };
 use tower::Layer as _;
 use tracing::warn;
 
-use crate::limits::MessageLimits;
+use crate::{limits::MessageLimits, shared_secret_layer};
 
 /// How often the readiness poller re-evaluates the checks. It also re-evaluates
 /// the instant shutdown begins, so this only bounds how stale a dependency
@@ -31,8 +33,12 @@ use crate::limits::MessageLimits;
 const READINESS_POLL: Duration = Duration::from_secs(2);
 
 /// What a gRPC server does beyond routing.
+///
+/// The readiness checks are not here: they ride on the [`Server`] as
+/// [`Probe`](toolbox_server::Probe)s, the same as on the axum side, so a
+/// process serving both transports registers each dependency once.
 #[derive(Clone)]
-pub struct ServerConfig {
+pub struct GrpcServerConfig {
     /// Message limits, as the single value both ends read.
     ///
     /// **Applied by you, on each service.** tonic puts
@@ -40,14 +46,13 @@ pub struct ServerConfig {
     /// trait to reach it through, so this cannot be applied for you:
     ///
     /// ```ignore
-    /// let cfg = ServerConfig::default();
-    /// let mut routes = RoutesBuilder::default();
-    /// routes.add_service(
+    /// let cfg = GrpcServerConfig::default();
+    /// let routes = Routes::new(
     ///     TodoServiceServer::new(svc)
     ///         .max_decoding_message_size(cfg.limits.max_decoding)
     ///         .max_encoding_message_size(cfg.limits.max_encoding),
     /// );
-    /// serve(serve_cfg, cfg, routes).await?;
+    /// serve(server, cfg, routes).await?;
     /// ```
     ///
     /// Carrying it here is still worth it: the client half reads the same value
@@ -72,25 +77,21 @@ pub struct ServerConfig {
     /// Whether to serve server reflection, so `grpcurl` works without the protos
     /// to hand.
     pub reflection: Option<&'static [u8]>,
-    /// Dependencies the gRPC readiness probe consults, alongside the drain
-    /// state. Empty means "ready whenever the process is up and not draining".
-    pub readiness: Arc<Vec<Box<dyn HealthCheck>>>,
 }
 
-impl std::fmt::Debug for ServerConfig {
+impl std::fmt::Debug for GrpcServerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ServerConfig")
+        f.debug_struct("GrpcServerConfig")
             .field("limits", &self.limits)
             .field("stack", &self.stack)
             .field("health", &self.health)
             .field("health_secret", &self.health_secret.is_some())
             .field("reflection", &self.reflection.is_some())
-            .field("readiness", &self.readiness.len())
             .finish()
     }
 }
 
-impl Default for ServerConfig {
+impl Default for GrpcServerConfig {
     fn default() -> Self {
         Self {
             limits: MessageLimits::default(),
@@ -98,12 +99,11 @@ impl Default for ServerConfig {
             health: true,
             health_secret: None,
             reflection: None,
-            readiness: Arc::new(Vec::new()),
         }
     }
 }
 
-impl ServerConfig {
+impl GrpcServerConfig {
     /// Serve reflection from a `tonic-build`-generated descriptor set.
     ///
     /// # Arguments
@@ -129,21 +129,8 @@ impl ServerConfig {
         self
     }
 
-    /// Gate the gRPC readiness probe on `checks` as well as the drain state.
-    ///
-    /// # Arguments
-    ///
-    /// * `checks` - The dependencies readiness consults. The health probe for
-    ///   the empty service name then reports `NOT_SERVING` while any of them is
-    ///   unusable, the same signal the axum side's `/ready` gives.
-    #[must_use]
-    pub fn readiness_checks(mut self, checks: Vec<Box<dyn HealthCheck>>) -> Self {
-        self.readiness = Arc::new(checks);
-        self
-    }
-
     /// Require `secret` on the standard health service too. See
-    /// [`ServerConfig::health_secret`].
+    /// [`GrpcServerConfig::health_secret`].
     ///
     /// # Arguments
     ///
@@ -156,7 +143,7 @@ impl ServerConfig {
     }
 }
 
-/// Bind, serve, and drain gracefully on `SIGTERM`.
+/// Serve `server` and drain gracefully on `SIGTERM`.
 ///
 /// The standard gRPC stack (`grpc_stack`) is applied for you, unlike the axum
 /// side where `http_stack` is the caller's to place: a router with realtime
@@ -165,20 +152,33 @@ impl ServerConfig {
 ///
 /// # Arguments
 ///
-/// * `cfg` - Where to listen.
-/// * `server` - What the server does beyond routing: the stack, health,
-///   reflection, message limits and the readiness checks.
-/// * `routes` - The services to serve. Health and reflection are added onto it
-///   here, from `server`.
+/// * `server` - The live [`Server`] from
+///   [`ServerBuilder::build`](toolbox_server::ServerBuilder::build): a bound
+///   listener, the spawned probe loops and tasks, and the drain handle. Its
+///   probe checks gate the gRPC readiness status alongside the drain state.
+/// * `config` - What the server does beyond routing: the stack, health,
+///   reflection and message limits.
+/// * `routes` - The services to serve, usually
+///   `Routes::new(secret_layer.layer(svc.into_server()))` (chain
+///   `.add_service` for a second domain in one process). Health and reflection
+///   are added onto it here, from `config`.
 ///
 /// # Errors
-/// [`StartupError::Io`] when the address cannot be bound.
+/// [`ServerError::Io`] when the server fails while running.
 pub async fn serve(
-    cfg: StartupConfig,
-    server: ServerConfig,
-    mut routes: RoutesBuilder,
-) -> Result<(), StartupError> {
-    let health_reporter = if server.health {
+    server: Server,
+    config: GrpcServerConfig,
+    mut routes: Routes,
+) -> Result<(), ServerError> {
+    let Server {
+        listener,
+        lifecycle,
+        tasks,
+        shutdown_handle,
+        drain,
+    } = server;
+
+    let health_reporter = if config.health {
         let (reporter, health) = tonic_health::server::health_reporter();
         // The empty service name is the gRPC convention for "the server as a
         // whole", which is what a Kubernetes gRPC probe with no `service`
@@ -186,50 +186,43 @@ pub async fn serve(
         reporter
             .set_service_status("", tonic_health::ServingStatus::Serving)
             .await;
-        if let Some(secret) = &server.health_secret {
-            routes.add_service(
-                shared_secret::shared_secret_layer(secret.expose_secret()).layer(health),
-            );
+        routes = if let Some(secret) = &config.health_secret {
+            routes.add_service(shared_secret_layer(secret.expose_secret()).layer(health))
         } else {
-            routes.add_service(health);
-        }
+            routes.add_service(health)
+        };
         Some(reporter)
     } else {
         None
     };
 
-    if let Some(descriptor) = server.reflection {
+    if let Some(descriptor) = config.reflection {
         match tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(descriptor)
             .build_v1()
         {
             Ok(service) => {
-                routes.add_service(service);
+                routes = routes.add_service(service);
             }
             Err(e) => warn!(error = %e, "reflection could not be enabled"),
         }
     }
 
-    let listener = bind(&cfg).await?;
-    let drain = cfg.shutdown;
-    let shutdown = cfg.shutdown_handle.clone();
-    let lifecycle =
-        LifecycleHandle::new(shutdown.clone()).with_shared_checks(Arc::clone(&server.readiness));
-
     // The health reporter goes to exactly one place: the poller when there are
     // checks to run, otherwise the shutdown future for a bare flip on `SIGTERM`.
+    let has_checks = !lifecycle.checks().is_empty();
     let (poll, drain_reporter) = match health_reporter {
-        Some(reporter) if !server.readiness.is_empty() => {
-            (Some(poll_readiness(reporter, lifecycle)), None)
-        }
+        Some(reporter) if has_checks => (Some(poll_readiness(reporter, lifecycle)), None),
         other => (None, other),
     };
 
-    let serve = Server::builder()
-        .layer(grpc_stack(server.stack))
-        .add_routes(routes.routes())
+    let serve = TonicServer::builder()
+        .layer(grpc_stack(config.stack))
+        .add_routes(routes)
         .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
             shutdown_signal().await;
+            // A scheduler has no reason to keep ticking through a drain.
+            tasks.abort();
             // Fail the gRPC health probe the moment the signal lands, so a
             // Kubernetes readiness check pulls this replica before the drain
             // wait - the same contract the axum side's `/ready` honours.
@@ -238,7 +231,7 @@ pub async fn serve(
                     .set_service_status("", tonic_health::ServingStatus::NotServing)
                     .await;
             }
-            shutdown.drain(drain).await;
+            shutdown_handle.drain(drain).await;
         });
 
     let result = if let Some(poll) = poll {
@@ -249,7 +242,7 @@ pub async fn serve(
     } else {
         serve.await
     };
-    result.map_err(|e| StartupError::Io(std::io::Error::other(e.to_string())))?;
+    result.map_err(|e| ServerError::Io(std::io::Error::other(e.to_string())))?;
 
     Ok(())
 }

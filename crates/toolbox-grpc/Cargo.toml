@@ -15,6 +15,9 @@ build      = "build.rs"
 name = "integration"
 path = "tests/integration.rs"
 
+[features]
+default = []
+
 [dependencies]
 toolbox-core    = { workspace = true }
 toolbox-server  = { workspace = true }

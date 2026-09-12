@@ -297,6 +297,53 @@ impl Scheduler {
             self.clock.sleep(tick).await;
         }
     }
+
+    /// Log the schedule, then return the future that drives
+    /// [`run`](Self::run) - for a caller that owns the spawning, so a
+    /// `toolbox_server::Server` can abort it on drain alongside every other
+    /// background task.
+    ///
+    /// Every binary that owns a scheduler writes the same three lines - hold
+    /// the loop, log the [`ScheduleError`] that ends it, swallow the unit - so
+    /// they are here once. The schedule is logged synchronously, before the
+    /// future is returned, so "what is scheduled?" is answerable from the logs
+    /// whether or not the task is ever polled.
+    ///
+    /// A returning `run` is always a fault - a trigger that can no longer
+    /// produce its next time - so it is logged at `ERROR` rather than swallowed.
+    ///
+    /// # Arguments
+    ///
+    /// * `tick` - Passed straight to [`run`](Self::run): how often to wake and
+    ///   look for due jobs, and the granularity of every trigger.
+    pub fn into_task(mut self, tick: Duration) -> impl Future<Output = ()> + Send {
+        self.log_schedule();
+        async move {
+            if let Err(e) = self.run(tick).await {
+                error!(error = %e, "the scheduler loop stopped");
+            }
+        }
+    }
+
+    /// Log the schedule, then drive [`run`](Self::run) on a background task.
+    ///
+    /// [`into_task`](Self::into_task) plus a [`tokio::spawn`], for a binary
+    /// that manages the handle itself rather than handing the task to a
+    /// `toolbox_server::Server`. The returned
+    /// [`JoinHandle`](tokio::task::JoinHandle) is detach-friendly: drop it and
+    /// the task keeps running for the life of the process, or keep it to abort
+    /// the loop on shutdown.
+    ///
+    /// # Arguments
+    ///
+    /// * `tick` - Passed straight to [`run`](Self::run): how often to wake and
+    ///   look for due jobs, and the granularity of every trigger.
+    ///
+    /// Not `#[must_use]`: like [`tokio::spawn`], dropping the handle detaches
+    /// the task rather than cancelling it, which is the usual intent here.
+    pub fn spawn(self, tick: Duration) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(self.into_task(tick))
+    }
 }
 
 /// The lock key for a job.

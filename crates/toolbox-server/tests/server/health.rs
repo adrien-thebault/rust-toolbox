@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use toolbox_server::lifecycle::{Health, HealthCheck, poll_check};
+use toolbox_server::server::{Health, Probe, poll_check};
 
 #[test]
 fn is_healthy_is_true_for_healthy_alone() {
@@ -18,14 +18,14 @@ fn is_healthy_is_true_for_healthy_alone() {
 
 #[test]
 fn a_polled_check_reports_the_name_it_was_given() {
-    let (check, _task) = poll_check("thing", Duration::from_secs(5), (), |()| async { true });
-    assert_eq!(check.name(), "thing");
+    let probe = poll_check("thing", Duration::from_secs(5), (), |()| async { true });
+    assert_eq!(probe.check.name(), "thing");
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_polled_check_starts_unhealthy_then_tracks_the_probe() {
     let flag = Arc::new(AtomicBool::new(true));
-    let (check, task) = poll_check(
+    let Probe { check, poll } = poll_check(
         "thing",
         Duration::from_secs(5),
         Arc::clone(&flag),
@@ -33,7 +33,7 @@ async fn a_polled_check_starts_unhealthy_then_tracks_the_probe() {
     );
     assert!(!check.is_healthy(), "no tick has run yet");
 
-    tokio::spawn(task);
+    tokio::spawn(poll);
     tokio::task::yield_now().await;
     assert!(check.is_healthy(), "the first tick fires immediately");
 

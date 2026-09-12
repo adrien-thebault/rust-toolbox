@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use toolbox_server::lifecycle::{Shutdown, ShutdownConfig};
+use toolbox_server::server::{Shutdown, ShutdownConfig};
 
 #[test]
 fn a_fresh_handle_is_not_shutting_down() {

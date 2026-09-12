@@ -1,6 +1,6 @@
 use axum::Router;
 use http::StatusCode;
-use toolbox_server::lifecycle::Shutdown;
+use toolbox_server::Shutdown;
 use toolbox_web::health::{HealthCheck, HealthState, health_router};
 
 use crate::{call, get};

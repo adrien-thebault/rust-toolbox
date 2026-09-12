@@ -1,4 +1,4 @@
-use toolbox_server::lifecycle::Shutdown;
+use toolbox_server::Shutdown;
 use toolbox_web::health::{HealthCheck, HealthState};
 
 struct Always(&'static str);

@@ -91,7 +91,7 @@ impl TelemetryArgs {
     /// # Errors
     /// [`TelemetryError`] when the format or filter is invalid, or a
     /// subscriber was already installed.
-    pub fn init(&self) -> Result<TelemetryGuard, TelemetryError> {
+    pub fn init(&self) -> Result<(), TelemetryError> {
         let format: LogFormat = self.log_format.parse()?;
         let filter = match &self.log_filter {
             Some(directive) => {
@@ -113,7 +113,7 @@ impl TelemetryArgs {
 ///
 /// # Errors
 /// [`TelemetryError::AlreadyInitialised`] when one is already installed.
-pub fn init(format: LogFormat, filter: EnvFilter) -> Result<TelemetryGuard, TelemetryError> {
+pub fn init(format: LogFormat, filter: EnvFilter) -> Result<(), TelemetryError> {
     // NEW and CLOSE turn `MakeTracedSpan`'s request span into an access log:
     // one line as a call comes in, one as it completes, the latter carrying
     // the busy time and whatever the stack recorded onto the span - status,
@@ -144,12 +144,5 @@ pub fn init(format: LogFormat, filter: EnvFilter) -> Result<TelemetryGuard, Tele
             .try_init(),
     };
     installed.map_err(|_| TelemetryError::AlreadyInitialised)?;
-    Ok(TelemetryGuard { _private: () })
-}
-
-/// Held for the process's lifetime. Dropping it flushes any exporter.
-#[derive(Debug)]
-pub struct TelemetryGuard {
-    /// Blocks construction outside this module.
-    _private: (),
+    Ok(())
 }

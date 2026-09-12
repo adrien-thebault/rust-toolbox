@@ -1,32 +1,28 @@
-//! Boot, health and drain, as one state rather than three loosely related
-//! flags.
+//! Boot, health and drain combined into the one reading a caller wants.
 //!
-//! A process is starting, healthy, degraded or draining, in that order except
-//! that degraded can only follow healthy. The three submodules each own one
-//! mechanism - [`shutdown`] the drain sequence, [`health`] the dependency
-//! contract, [`startup`] the bind config and waiting for the first healthy
-//! pass - and this module is where they combine into the one [`Health`] a
-//! caller actually wants to read.
+//! [`shutdown`](super::shutdown) owns the drain sequence and
+//! [`health`](super::health) the dependency contract; this is where they
+//! combine into [`LifecycleHandle`], which `toolbox-web`'s `/ready` route and
+//! `toolbox-grpc`'s health poller both read rather than each re-deriving
+//! `not draining && every check passes`.
 
-pub mod health;
-pub mod shutdown;
-pub mod startup;
-
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
-pub use health::{Health, HealthCheck, PolledCheck, poll_check};
-pub use shutdown::{Shutdown, ShutdownConfig, shutdown_signal};
-pub use startup::{StartupConfig, StartupError, wait_until_healthy};
+use tokio::sync::watch;
+
+use super::{Health, HealthCheck, Shutdown};
+
+/// How often to re-check while [`wait_until_healthy`] waits for first health.
+const POLL: Duration = Duration::from_millis(200);
 
 /// Reads the process's current [`Health`]: the drain state, plus every
 /// registered [`HealthCheck`].
-///
-/// The one place this computation is written. `toolbox-web`'s `/ready` route
-/// and `toolbox-grpc`'s health poller both read it rather than each
-/// re-deriving `not draining && every check passes`.
 #[derive(Clone)]
 pub struct LifecycleHandle {
     /// The drain state.
@@ -75,9 +71,7 @@ impl LifecycleHandle {
         self
     }
 
-    /// The same, for a caller that already holds the checks behind an `Arc` -
-    /// because its own config type needs to stay cheaply `Clone` despite the
-    /// trait objects inside - and would otherwise have to unwrap it first.
+    /// The same, for a caller that already holds the checks behind an `Arc`.
     ///
     /// # Arguments
     ///
@@ -100,7 +94,7 @@ impl LifecycleHandle {
     /// than wait for its next tick - checks have no async notification of
     /// their own, but the drain state does.
     #[must_use]
-    pub fn shutdown_watch(&self) -> tokio::sync::watch::Receiver<bool> {
+    pub fn shutdown_watch(&self) -> watch::Receiver<bool> {
         self.shutdown.watch()
     }
 
@@ -118,6 +112,30 @@ impl LifecycleHandle {
             Health::Degraded
         } else {
             Health::Starting
+        }
+    }
+}
+
+/// Wait until `handle` first reports [`Health::Healthy`], or shutdown begins
+/// first.
+///
+/// Opt-in, for a `main` that wants to log `"started"` or open some other
+/// startup gate only once the process can actually serve rather than the
+/// instant the listener binds. Never on the `serve` path: two interdependent
+/// services that each waited for the other to be healthy would deadlock at
+/// boot.
+///
+/// # Arguments
+///
+/// * `handle` - The lifecycle handle to poll.
+pub async fn wait_until_healthy(handle: &LifecycleHandle) {
+    let mut ticker = tokio::time::interval(POLL);
+    loop {
+        match handle.current() {
+            Health::Healthy | Health::ShuttingDown => return,
+            Health::Starting | Health::Degraded => {
+                ticker.tick().await;
+            }
         }
     }
 }

@@ -9,8 +9,13 @@ use std::{
     time::Duration,
 };
 
-use toolbox_grpc::{RoutesBuilder, ServerConfig, serve};
-use toolbox_server::{StartupConfig, lifecycle::HealthCheck};
+use toolbox_grpc::{GrpcServerConfig, Routes, serve};
+use toolbox_server::{ServerBuilder, poll_check};
+
+/// A live server bound on `addr` with no extra probes or tasks.
+async fn server(addr: std::net::SocketAddr) -> toolbox_server::Server {
+    ServerBuilder::listening_on(addr).build().await.unwrap()
+}
 
 /// `serve` binds the listener and runs the tonic serve loop until it is
 /// cancelled - it must not return on its own.
@@ -21,25 +26,11 @@ async fn serve_binds_and_stays_up() {
     let addr = probe.local_addr().unwrap();
     drop(probe);
 
-    let cfg = StartupConfig::new(addr);
-
     tokio::select! {
-        result = serve(cfg, ServerConfig::default(), RoutesBuilder::default()) => {
+        result = serve(server(addr).await, GrpcServerConfig::default(), Routes::default()) => {
             panic!("serve exited early: {result:?}")
         }
         () = tokio::time::sleep(Duration::from_millis(100)) => {}
-    }
-}
-
-/// A health check flipped by the test.
-struct Toggle(Arc<AtomicBool>);
-
-impl HealthCheck for Toggle {
-    fn name(&self) -> &'static str {
-        "toggle"
-    }
-    fn is_healthy(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
     }
 }
 
@@ -52,32 +43,41 @@ async fn a_bad_reflection_descriptor_does_not_stop_the_server() {
     let addr = probe.local_addr().unwrap();
     drop(probe);
 
-    let server = ServerConfig::default().reflection(b"not a descriptor set");
+    let config = GrpcServerConfig::default().reflection(b"not a descriptor set");
 
     tokio::select! {
-        result = serve(StartupConfig::new(addr), server, RoutesBuilder::default()) => {
+        result = serve(server(addr).await, config, Routes::default()) => {
             panic!("serve exited early: {result:?}")
         }
         () = tokio::time::sleep(Duration::from_millis(100)) => {}
     }
 }
 
-/// The gRPC health probe for the empty service name tracks the health
-/// checks, so a backend whose dependency is down is pulled from rotation the
-/// same way the axum `/ready` route does it.
+/// The gRPC health probe for the empty service name tracks the readiness
+/// probes on the `Server`, so a backend whose dependency is down is pulled
+/// from rotation the same way the axum `/ready` route does it.
 #[tokio::test]
-async fn the_health_probe_follows_the_health_checks() {
+async fn the_health_probe_follows_the_readiness_probes() {
     let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = probe.local_addr().unwrap();
     drop(probe);
 
     let flag = Arc::new(AtomicBool::new(false));
-    let cfg = StartupConfig::new(addr);
-    let server =
-        ServerConfig::default().readiness_checks(vec![Box::new(Toggle(Arc::clone(&flag)))]);
+    let server = ServerBuilder::listening_on(addr)
+        .check(poll_check(
+            "toggle",
+            Duration::from_millis(100),
+            Arc::clone(&flag),
+            |flag| async move { flag.load(Ordering::SeqCst) },
+        ))
+        .build()
+        .await
+        .unwrap();
 
     tokio::select! {
-        result = serve(cfg, server, RoutesBuilder::default()) => panic!("serve exited: {result:?}"),
+        result = serve(server, GrpcServerConfig::default(), Routes::default()) => {
+            panic!("serve exited: {result:?}")
+        }
         outcome = probe_health_transitions(addr, &flag) => outcome,
     }
 }
@@ -115,7 +115,8 @@ async fn probe_health_transitions(addr: std::net::SocketAddr, flag: &AtomicBool)
     );
 
     flag.store(true, Ordering::SeqCst);
-    // One poll interval plus slack; the interval is a private constant.
+    // One readiness-poll interval plus slack; the interval is a private
+    // constant.
     tokio::time::sleep(Duration::from_millis(2_500)).await;
 
     assert_eq!(
@@ -125,7 +126,7 @@ async fn probe_health_transitions(addr: std::net::SocketAddr, flag: &AtomicBool)
     );
 }
 
-/// `ServerConfig::health_secret` gates the health service exactly like
+/// `GrpcServerConfig::health_secret` gates the health service exactly like
 /// `shared_secret_layer` gates any other service - proven here rather than
 /// assumed, since the wiring inside `serve` is new.
 #[tokio::test]
@@ -134,11 +135,12 @@ async fn health_secret_gates_the_health_service() {
     let addr = probe.local_addr().unwrap();
     drop(probe);
 
-    let cfg = StartupConfig::new(addr);
-    let server = ServerConfig::default().health_secret("s3cr3t");
+    let config = GrpcServerConfig::default().health_secret("s3cr3t");
 
     tokio::select! {
-        result = serve(cfg, server, RoutesBuilder::default()) => panic!("serve exited: {result:?}"),
+        result = serve(server(addr).await, config, Routes::default()) => {
+            panic!("serve exited: {result:?}")
+        }
         () = assert_health_requires_the_secret(addr) => {}
     }
 }
