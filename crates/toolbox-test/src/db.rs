@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use diesel::r2d2::R2D2Connection;
-use toolbox_db::{Db, SqlitePragmas};
+use toolbox_db::{Db, DbPooledConn, EmbeddedMigrations, MigrationHarness, SqlitePragmas};
 
 /// A database that deletes itself.
 ///
@@ -42,4 +42,36 @@ pub fn temp_db<C: R2D2Connection + 'static>() -> (Db<C>, TempDb) {
         .build()
         .expect("a pool over the test database");
     (db, guard)
+}
+
+/// A [`temp_db`] with `migrations` already applied.
+///
+/// The `db()` helper at the top of every domain's `tests/common.rs`. Bind the
+/// guard: `let (db, _guard) = migrated_db::<Connection>(MIGRATIONS).await;`.
+///
+/// # Panics
+/// When the pool cannot be built or a migration fails - a setup failure worth
+/// failing loudly on.
+pub async fn migrated_db<C>(migrations: EmbeddedMigrations) -> (Db<C>, TempDb)
+where
+    C: R2D2Connection + MigrationHarness<<C as diesel::Connection>::Backend> + 'static,
+{
+    let (db, guard) = temp_db::<C>();
+    db.migrate(migrations).await.expect("run migrations");
+    (db, guard)
+}
+
+/// A [`migrated_db`] plus one connection checked out of it, held for the whole
+/// test so every write is seen by every later read.
+///
+/// The `conn()` helper for sync entity/repository tests. Bind the guard.
+///
+/// # Panics
+/// When the pool cannot be built, a migration fails, or no connection is free.
+pub async fn migrated_conn<C>(migrations: EmbeddedMigrations) -> (DbPooledConn<C>, TempDb)
+where
+    C: R2D2Connection + MigrationHarness<<C as diesel::Connection>::Backend> + 'static,
+{
+    let (db, guard) = migrated_db::<C>(migrations).await;
+    (db.blocking_conn().expect("check out a connection"), guard)
 }
