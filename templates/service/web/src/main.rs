@@ -10,18 +10,12 @@ use {{crate_name}}_web::{
 };
 use toolbox_grpc::{BackoffConfig, ClientConfig, RetryPolicy, client, client::poll_health};
 use toolbox_server::{
-    StartupConfig,
+    ServerBuilder,
     args::ServerArgs,
     stack::{StackConfig, http_stack, realtime_stack},
     telemetry::TelemetryArgs,
 };
-use toolbox_web::{
-    ClientIpTrustPolicy, OpenApiConfig, cors_localhost,
-    health::{HealthState, health_router},
-    openapi_router,
-    rate_limit::RateLimitConfig,
-    serve,
-};
+use toolbox_web::{ClientIpTrustPolicy, WebServerConfig, rate_limit::RateLimitConfig, serve};
 
 /// Command-line arguments.
 #[derive(Parser)]
@@ -58,7 +52,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let _telemetry = args.telemetry.init()?;
+    args.telemetry.init()?;
 
     let todos = client(
         "todo",
@@ -76,15 +70,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The standard `grpc.health.v1.Health/Check` RPC, not a business call -
     // cheap, and it still proves the shared secret is right, since the
     // backend gates its health service on it too.
-    let (backend_check, backend_poll) =
-        poll_health(todos.clone(), "backend", Duration::from_secs(5));
-    tokio::spawn(backend_poll);
+    let backend_probe = poll_health(todos.clone(), "backend", Duration::from_secs(5));
 
     // Everything identity needs, read once at startup so a missing variable is
     // a refusal to start rather than a 500 on the first login.
     let config = AuthConfig::from_env()?;
     let state = auth::state(todos, &config)?;
-    tokio::spawn(auth::forward_events(state.todos.clone(), state.hub.clone()));
 
     // A handful of attempts, then one back every few seconds: a typo goes
     // unnoticed, credential stuffing from one address does not.
@@ -94,32 +85,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ClientIpTrustPolicy::hops(args.trusted_hops),
     );
 
-    let cfg = StartupConfig::new(args.server.listen_addr);
-    let health =
-        HealthState::new(cfg.shutdown_handle.clone()).with_checks(vec![Box::new(backend_check)]);
-
     // The stack is applied here rather than by serve, because a router
     // with realtime routes needs realtime_stack on those and http_stack on
     // the rest. StackConfig's defaults give a 30s timeout and a 2 MiB body
-    // limit; an upload route would be layered separately.
+    // limit; an upload route would be layered separately. `/health`, `/ready`,
+    // `/openapi.json`, `/docs` and CORS are added at the root by serve.
     let app = router(state.clone(), &login)
         .layer(http_stack(StackConfig::default()))
-        .merge(realtime_router(state).layer(realtime_stack()))
-        // Outside the stack on purpose: inside it, the 503 that /ready returns
-        // while draining is classified as a failure and logged at ERROR on
-        // every rolling deploy.
-        .merge(health_router().with_state(health))
-        // The spec at /openapi.json and a Scalar page at /docs. Public and
-        // outside the stack, like health: a spec fetch is not a business call
-        // and wants neither the deadline nor the body limit. The committed
-        // web/openapi.json is the same document, produced offline by
-        // ./openapi.sh for the CI drift check.
-        .merge(openapi_router(openapi(), &OpenApiConfig::default()))
-        // So `web/static/index.html`, served from a plain local static server,
-        // can call this gateway across origins. Loopback only - see
-        // `cors_localhost`'s own doc for why that never belongs in production.
-        .layer(cors_localhost(&[]));
+        .merge(realtime_router(state.clone()).layer(realtime_stack()));
 
-    serve(cfg, app).await?;
+    let server = ServerBuilder::listening_on(args.server.listen_addr)
+        .check(backend_probe)
+        // Hold one WatchTodos stream open against the backend and fan its
+        // events into the local SSE hub, for the life of the process; aborted
+        // on `SIGTERM`.
+        .task(auth::forward_events(state.todos.clone(), state.hub.clone()))
+        .build()
+        .await?;
+
+    serve(
+        server,
+        WebServerConfig::default()
+            // So `web/static/index.html`, served from a plain local static
+            // server, can call this gateway across origins. Loopback only -
+            // see `cors_localhost`'s own doc for why that never ships.
+            .cors_localhost(&[])
+            // The spec at /openapi.json and a Scalar page at /docs. The
+            // committed web/openapi.json is the same document, produced
+            // offline by ./openapi.sh for the CI drift check.
+            .openapi(openapi()),
+        app,
+    )
+    .await?;
     Ok(())
 }

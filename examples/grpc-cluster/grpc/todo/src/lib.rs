@@ -17,14 +17,8 @@ pub mod service;
 pub use model::Todo;
 pub use service::{TodoService, TodoServiceError};
 
-/// The database backend, named **once** for the whole crate.
-pub type Backend = diesel::sqlite::Sqlite;
-
-/// The connection type, following from [`Backend`].
-pub type Connection = diesel::sqlite::SqliteConnection;
-
-/// The timestamp type, named **once** for the whole crate.
-pub type Timestamp = chrono::NaiveDateTime;
+// `Backend` and `Connection`, named **once** for the whole crate.
+toolbox_db::sqlite_backend!();
 
 /// The event-bus topic every todo mutation is published on, and `WatchTodos`
 /// subscribes to.

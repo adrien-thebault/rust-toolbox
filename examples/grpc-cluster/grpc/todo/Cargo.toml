@@ -17,7 +17,7 @@ path = "src/lib.rs"
 [dependencies]
 toolbox-auth    = { workspace = true }
 toolbox-cluster = { workspace = true }
-toolbox-core    = { workspace = true }
+toolbox-core    = { workspace = true, features = ["derive"] }
 toolbox-db      = { workspace = true, features = ["clap"] }
 toolbox-grpc    = { workspace = true }
 toolbox-schedule = { workspace = true }

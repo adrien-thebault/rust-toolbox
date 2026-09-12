@@ -41,7 +41,7 @@ grpc/                 a grouping directory, not a crate
         todo.rs       the entity, and how it goes on the wire
       service.rs
       service/
-        todo_service.rs   todo.v1.TodoService, and what it can fail with
+        todo.rs       todo.v1.TodoService, and what it can fail with
 
 web/
   src/

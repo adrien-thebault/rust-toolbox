@@ -1,9 +1,10 @@
 //! A todo.
 
+use chrono::NaiveDateTime;
 use diesel::{connection::LoadConnection, prelude::*};
 use toolbox_db::DbError;
 
-use crate::{Backend, Timestamp, proto, schema::todos};
+use crate::{Backend, proto, schema::todos};
 
 /// A todo.
 ///
@@ -32,11 +33,11 @@ pub struct Todo {
     /// Whether it is done.
     pub done: bool,
     /// When it was created.
-    pub created_at: Timestamp,
+    pub created_at: NaiveDateTime,
     /// When it was last changed.
-    pub updated_at: Timestamp,
+    pub updated_at: NaiveDateTime,
     /// When it was deleted, if it was.
-    pub deleted_at: Option<Timestamp>,
+    pub deleted_at: Option<NaiveDateTime>,
     /// Bumped on every save, for optimistic locking.
     pub version: i32,
 }
@@ -111,7 +112,10 @@ impl Todo {
     ///
     /// # Errors
     /// [`DbError`] when the query fails.
-    pub fn purge_completed_before<C>(conn: &mut C, cutoff: Timestamp) -> Result<Vec<i32>, DbError>
+    pub fn purge_completed_before<C>(
+        conn: &mut C,
+        cutoff: NaiveDateTime,
+    ) -> Result<Vec<i32>, DbError>
     where
         C: LoadConnection<Backend = Backend>,
     {

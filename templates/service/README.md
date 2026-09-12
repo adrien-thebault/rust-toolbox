@@ -45,7 +45,7 @@ grpc/                 a grouping directory, not a crate
     migrations/
     src/
       main.rs         the process that serves this domain
-      lib.rs          Backend, Connection, Timestamp, MIGRATIONS, proto
+      lib.rs          sqlite_backend!() -> Backend/Connection, MIGRATIONS, proto
       auth.rs         the Admin role this domain checks on its own caller
       schema.rs
       model.rs
@@ -53,7 +53,7 @@ grpc/                 a grouping directory, not a crate
         todo.rs       the entity, and how it goes on the wire
       service.rs
       service/
-        todo_service.rs   todo.v1.TodoService, and what it can fail with
+        todo.rs      todo.v1.TodoService, and what it can fail with
 {% if gateway %}
 web/
   src/
@@ -82,8 +82,9 @@ Three units:
 - An **entity** is a file under `model/`. A `TodoList` regrouping several todos
   is `model/todo_list.rs`.
 
-`crate::Backend` and `crate::Timestamp` in `grpc/todo/src/lib.rs` are the only
-places the database backend and the timestamp type are named.
+`grpc/todo/src/lib.rs`'s `sqlite_backend!()` (or `postgres_backend!()`) is the
+one place the database backend is named; timestamp columns are plain
+`chrono::NaiveDateTime`.
 
 ## Adding an entity
 

@@ -13,7 +13,7 @@ publish = false
 [workspace.dependencies]
 # Pinned to a tag, never a branch: a branch means the next `cargo update` can
 # bring a breaking change nobody chose.
-toolbox-core    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
+toolbox-core    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["derive"] }
 toolbox-db      = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["clap"] }
 toolbox-cluster = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
 toolbox-schedule = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
@@ -59,3 +59,5 @@ unsafe_code  = "forbid"
 [workspace.lints.clippy]
 all      = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+# Every item carries a one-line "what it is", public or not.
+missing_docs_in_private_items = "warn"

@@ -3,22 +3,22 @@
 //! Note what is *not* here: no `EntityService`, no `DatabaseService`, no
 //! `Repository`. A service is a struct with a `new` and an `into_server`.
 
-use std::{collections::BTreeMap, pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::Arc};
 
+use chrono::NaiveDateTime;
 use cloudevents::AttributesReader as _;
 use tokio_stream::{Stream, StreamExt as _};
 use tonic::{Request, Response, Status};
 use toolbox_cluster::{EventBus, Topic, event, payload};
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_core::ServiceError;
 use toolbox_db::{Db, DbError};
-{% if gateway %}use toolbox_grpc::{GrpcResult, server::identity};
-{% else %}use toolbox_grpc::GrpcResult;
-{% endif %}use tracing::{info, trace, warn};
+use toolbox_grpc::{GrpcResult, server::identity};
+use tracing::{info, trace, warn};
 
 use crate::{
-    Connection, EVENT_SOURCE, TODOS_TOPIC, Timestamp,
-{% if gateway %}    auth::Admin,
-{% endif %}    model::Todo,
+    Connection, EVENT_SOURCE, TODOS_TOPIC,
+    auth::Admin,
+    model::Todo,
     proto,
     proto::{
         CompleteTodoRequest, CreateTodoRequest, DeleteTodoRequest, DeleteTodoResponse,
@@ -94,7 +94,7 @@ impl TodoService {
     ///
     /// # Errors
     /// [`TodoServiceError::Db`] when the sweep query fails.
-    pub async fn purge_completed(&self, cutoff: Timestamp) -> Result<u64, TodoServiceError> {
+    pub async fn purge_completed(&self, cutoff: NaiveDateTime) -> Result<u64, TodoServiceError> {
         let ids = self
             .db
             .run_named("purge_completed", move |c: &mut Connection| {
@@ -114,6 +114,9 @@ impl TodoService {
 
 #[tonic::async_trait]
 impl todo_service_server::TodoService for TodoService {
+    /// Every `todo.*` event on the bus, as a `TodoEvent`.
+    type WatchTodosStream = Pin<Box<dyn Stream<Item = Result<TodoEvent, Status>> + Send>>;
+
     async fn get_todo(&self, request: Request<GetTodoRequest>) -> GrpcResult<proto::Todo> {
         let id = request.into_inner().id;
         let todo = self
@@ -201,13 +204,13 @@ impl todo_service_server::TodoService for TodoService {
         &self,
         request: Request<DeleteTodoRequest>,
     ) -> GrpcResult<DeleteTodoResponse> {
-{% if gateway %}        // Checked here too, not just at the gateway: `identity_layer` resolves
+        // Checked here too, not just at the gateway: `identity_layer` resolves
         // whoever `shared_secret_layer` let through, but only this handler
         // knows that *delete* is the operation that needs the admin role.
         if !identity::require(&request)?.has::<Admin>() {
             return Err(TodoServiceError::Forbidden.into());
         }
-{% endif %}        let id = request.into_inner().id;
+        let id = request.into_inner().id;
         let deleted = self
             .db
             .run_named("delete_todo", move |c: &mut Connection| {
@@ -222,9 +225,6 @@ impl todo_service_server::TodoService for TodoService {
             deleted: i32::try_from(deleted).unwrap_or(i32::MAX),
         }))
     }
-
-    /// Every `todo.*` event on the bus, as a `TodoEvent`.
-    type WatchTodosStream = Pin<Box<dyn Stream<Item = Result<TodoEvent, Status>> + Send>>;
 
     async fn watch_todos(
         &self,
@@ -258,70 +258,36 @@ impl todo_service_server::TodoService for TodoService {
 ///
 /// Beside the service rather than in an `error.rs` of its own: the variants are
 /// its return type, and a second service in this domain fails differently.
-#[derive(Debug, thiserror::Error)]
+///
+/// `#[derive(ServiceError)]` writes `code`/`domain`/`kind`/`metadata` from the
+/// per-variant `#[service_error(..)]`, and `status` on the container adds the
+/// `impl From<Self> for tonic::Status` every consumer would otherwise write by
+/// hand. `transparent` delegates to the inner error's own impl.
+#[derive(Debug, thiserror::Error, ServiceError)]
+#[service_error(domain = "todo", status)]
 pub enum TodoServiceError {
     /// No todo with that id.
     #[error("todo {0} not found")]
+    #[service_error(code = "TODO_NOT_FOUND", kind = NotFound, meta(id = 0))]
     NotFound(i32),
     /// Someone else changed it first.
     #[error("todo {0} was changed by someone else")]
+    #[service_error(code = "TODO_CONFLICT", kind = Conflict, meta(id = 0))]
     Conflict(i32),
     /// The title was empty.
     #[error("a todo needs a title")]
+    #[service_error(code = "TODO_EMPTY_TITLE", kind = InvalidArgument)]
     EmptyTitle,
     /// The caller is not the admin.
     #[error("the admin role is required")]
+    #[service_error(code = "TODO_FORBIDDEN", kind = PermissionDenied)]
     Forbidden,
     /// Anything the database refused.
     #[error(transparent)]
+    #[service_error(transparent)]
     Db(#[from] DbError),
     /// A rollback, needed for `Db::transaction`'s bound.
     #[error(transparent)]
+    #[service_error(code = "TODO_QUERY_FAILED", kind = Internal)]
     Query(#[from] diesel::result::Error),
-}
-
-impl ServiceError for TodoServiceError {
-    fn code(&self) -> &'static str {
-        match self {
-            Self::NotFound(_) => "TODO_NOT_FOUND",
-            Self::Conflict(_) => "TODO_CONFLICT",
-            Self::EmptyTitle => "TODO_EMPTY_TITLE",
-            Self::Forbidden => "TODO_FORBIDDEN",
-            Self::Db(e) => e.code(),
-            Self::Query(_) => "TODO_QUERY_FAILED",
-        }
-    }
-
-    fn domain(&self) -> &'static str {
-        "todo"
-    }
-
-    fn kind(&self) -> ErrorKind {
-        match self {
-            Self::NotFound(_) => ErrorKind::NotFound,
-            Self::Conflict(_) => ErrorKind::Conflict,
-            Self::EmptyTitle => ErrorKind::InvalidArgument,
-            Self::Forbidden => ErrorKind::PermissionDenied,
-            Self::Db(e) => e.kind(),
-            Self::Query(_) => ErrorKind::Internal,
-        }
-    }
-
-    fn metadata(&self) -> BTreeMap<String, String> {
-        match self {
-            Self::NotFound(id) | Self::Conflict(id) => {
-                BTreeMap::from([("id".to_owned(), id.to_string())])
-            }
-            Self::Db(e) => e.metadata(),
-            _ => BTreeMap::new(),
-        }
-    }
-}
-
-/// The one line every consumer writes, and the deliberate reason there is no
-/// blanket impl in `toolbox-grpc`: this error is ours, so this is legal.
-impl From<TodoServiceError> for tonic::Status {
-    fn from(e: TodoServiceError) -> Self {
-        toolbox_grpc::to_status(e)
-    }
 }

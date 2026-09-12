@@ -13,22 +13,13 @@ pub mod service;
 pub use model::Todo;
 pub use service::{TodoService, TodoServiceError};
 
-/// The database backend, named **once** for the whole crate.
-///
-/// Swapping backends is this line plus the connection URL, because every entity
-/// says `backend = crate::Backend` rather than naming a diesel type.
-{% if database == "postgres" %}pub type Backend = diesel::pg::Pg;
-
-/// The connection type, following from [`Backend`].
-pub type Connection = diesel::pg::PgConnection;
-{% else %}pub type Backend = diesel::sqlite::Sqlite;
-
-/// The connection type, following from [`Backend`].
-pub type Connection = diesel::sqlite::SqliteConnection;
+// `Backend` and `Connection`, named **once** for the whole crate. Swapping
+// backends is this line plus the connection URL, because every entity says
+// `backend = crate::Backend` rather than naming a diesel type. Timestamp
+// columns are plain `chrono::NaiveDateTime`.
+{% if database == "postgres" %}toolbox_db::postgres_backend!();
+{% else %}toolbox_db::sqlite_backend!();
 {% endif %}
-/// The timestamp type, named **once** for the whole crate.
-pub type Timestamp = chrono::NaiveDateTime;
-
 /// The event-bus topic every todo mutation is published on, and `WatchTodos`
 /// subscribes to.
 pub const TODOS_TOPIC: &str = "todos";
@@ -43,9 +34,9 @@ pub const MIGRATIONS: toolbox_db::EmbeddedMigrations = toolbox_db::embed_migrati
 pub mod proto {
     #![allow(
         missing_docs,
-        clippy::missing_docs_in_private_items,
+        clippy::all,
         clippy::pedantic,
-        clippy::all
+        clippy::missing_docs_in_private_items
     )]
     tonic::include_proto!("todo.v1");
 
