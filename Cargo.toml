@@ -2,6 +2,10 @@
 resolver = "3"
 # `examples/*/grpc/*` because a domain is a crate and `grpc/` only groups them.
 members  = ["crates/*", "examples/*/grpc/*", "examples/*/web"]
+# `templates/` holds `{{placeholder}}` manifests that are not valid TOML until
+# `cargo generate` fills them in; without this, `cargo` chokes on them during
+# package discovery whenever the repo is a path/git dependency of another.
+exclude  = ["templates"]
 
 [workspace.package]
 version      = "0.2.0"
