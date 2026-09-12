@@ -13,6 +13,8 @@
 
 use std::{sync::Arc, time::Duration};
 
+use axum::response::{IntoResponse, Response};
+use http::{StatusCode, header::CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use toolbox_cluster::KvStore;
 use tracing::warn;
@@ -35,6 +37,36 @@ pub struct StoredResponse {
     pub body: Vec<u8>,
     /// The content type it returned.
     pub content_type: String,
+}
+
+impl StoredResponse {
+    /// A `200 application/json` record of `value`.
+    ///
+    /// The record that [`Idempotent::json`](crate::extract::Idempotent::json)
+    /// stores, and what a handler holding the raw [`Idempotency`] primitives
+    /// builds to pass to [`Idempotency::record`].
+    ///
+    /// # Errors
+    /// [`ApiError`] when `value` cannot be serialised.
+    pub fn json<T: Serialize>(value: &T) -> Result<Self, ApiError> {
+        Ok(Self {
+            status: StatusCode::OK.as_u16(),
+            body: serde_json::to_vec(value).map_err(ApiError::internal)?,
+            content_type: "application/json".to_owned(),
+        })
+    }
+
+    /// Rebuild this record as an HTTP response, for a replay.
+    #[must_use]
+    pub fn replay(&self) -> Response {
+        let status = StatusCode::from_u16(self.status).unwrap_or(StatusCode::OK);
+        (
+            status,
+            [(CONTENT_TYPE, self.content_type.clone())],
+            self.body.clone(),
+        )
+            .into_response()
+    }
 }
 
 /// What a claim attempt found.
