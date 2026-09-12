@@ -1,0 +1,5 @@
+error: `transparent` needs variant `Two` to have exactly one field, to delegate to
+ --> tests/ui/service_error_transparent_multifield.rs:8:5
+  |
+8 |     Two(i32, i32),
+  |     ^^^

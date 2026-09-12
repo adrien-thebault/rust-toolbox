@@ -11,6 +11,7 @@
 //! fighting for the same names.
 
 mod entity;
+mod service_error;
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
@@ -58,4 +59,44 @@ use syn::{DeriveInput, parse_macro_input};
 #[proc_macro_derive(Entity, attributes(entity))]
 pub fn derive_entity(input: TokenStream) -> TokenStream {
     entity::derive(&parse_macro_input!(input as DeriveInput)).into()
+}
+
+/// Generate `toolbox_core::ServiceError` for a service's error enum, from one
+/// `#[service_error(..)]` per variant.
+///
+/// ```ignore
+/// #[derive(Debug, thiserror::Error, ServiceError)]
+/// #[service_error(domain = crate::SERVICE_ERROR_DOMAIN, status)]
+/// pub enum FileServiceError {
+///     #[error("file {0} not found")]
+///     #[service_error(code = "FILE_NOT_FOUND", kind = NotFound, meta(id = 0))]
+///     NotFound(i32),
+///
+///     #[error(transparent)]
+///     #[service_error(transparent)]
+///     Db(#[from] toolbox_db::DbError),
+/// }
+/// ```
+///
+/// # Options
+///
+/// On the enum:
+/// - `domain = <expr>` (required) - an expression yielding `&'static str`,
+///   usually `crate::SERVICE_ERROR_DOMAIN`.
+/// - `status` - also emit `impl From<Self> for tonic::Status` via
+///   `toolbox_grpc::to_status`. Needs `tonic` and `toolbox-grpc` in scope; the
+///   deliberate absence of a blanket impl in `toolbox-grpc` is what makes this
+///   the consumer's to opt into.
+///
+/// On each variant (every variant needs one):
+/// - `transparent` - delegate `code`, `kind` and `metadata` to the variant's
+///   one field, which must itself be a `ServiceError` (a wrapped `DbError`).
+/// - `code = "SCREAMING_SNAKE_CASE"` + `kind = <ErrorKind>` - an explicit
+///   classification. `kind` is a `toolbox_core::ErrorKind` variant name.
+/// - `meta(name = <field or tuple index>, ..)` - entries for `metadata()`,
+///   each `name` a key and the value the named field rendered with
+///   `ToString`.
+#[proc_macro_derive(ServiceError, attributes(service_error))]
+pub fn derive_service_error(input: TokenStream) -> TokenStream {
+    service_error::derive(&parse_macro_input!(input as DeriveInput)).into()
 }

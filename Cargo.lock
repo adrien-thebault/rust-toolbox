@@ -3661,6 +3661,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "toolbox-core",
+ "toolbox-macros",
 ]
 
 [[package]]
@@ -3714,6 +3716,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+ "thiserror 2.0.20",
  "toolbox-core",
  "toolbox-db",
  "trybuild",

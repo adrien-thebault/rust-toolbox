@@ -1,0 +1,5 @@
+error: #[derive(ServiceError)] only applies to enums; a service's error type is a set of failures
+ --> tests/ui/service_error_on_struct.rs:6:8
+  |
+6 | struct NotAnEnum;
+  |        ^^^^^^^^^

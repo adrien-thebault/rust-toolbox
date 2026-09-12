@@ -1,0 +1,5 @@
+error: `#[service_error(..)]` on the enum needs `domain = <expr>`, e.g. `domain = crate::SERVICE_ERROR_DOMAIN`
+ --> tests/ui/service_error_missing_domain.rs:4:1
+  |
+4 | #[service_error(status)]
+  | ^

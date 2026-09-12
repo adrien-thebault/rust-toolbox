@@ -1,0 +1,5 @@
+error: variant `Boom` has no #[service_error(..)]; add `#[service_error(code = "...", kind = ...)]`, or `#[service_error(transparent)]` to delegate to an inner error
+ --> tests/ui/service_error_variant_without_attr.rs:7:5
+  |
+7 |     Boom,
+  |     ^^^^
