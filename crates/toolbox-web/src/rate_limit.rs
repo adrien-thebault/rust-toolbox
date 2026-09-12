@@ -143,7 +143,7 @@ pub fn error_response_handler(err: GovernorError) -> Response {
     match err {
         GovernorError::TooManyRequests { wait_time, .. } => {
             let mut response = ApiError::of_kind(
-                toolbox_core::ErrorKind::ResourceExhausted,
+                toolbox_error::ErrorKind::ResourceExhausted,
                 "Too Many Requests",
             )
             .with_code("RATE_LIMITED")
@@ -161,12 +161,13 @@ pub fn error_response_handler(err: GovernorError) -> Response {
                 .insert("ratelimit-remaining", http::HeaderValue::from_static("0"));
             response
         }
-        GovernorError::UnableToExtractKey => {
-            ApiError::of_kind(toolbox_core::ErrorKind::InvalidArgument, "Invalid Argument")
-                .with_code("UNIDENTIFIED_CLIENT")
-                .with_detail("the client address could not be determined")
-                .into_response()
-        }
+        GovernorError::UnableToExtractKey => ApiError::of_kind(
+            toolbox_error::ErrorKind::InvalidArgument,
+            "Invalid Argument",
+        )
+        .with_code("UNIDENTIFIED_CLIENT")
+        .with_detail("the client address could not be determined")
+        .into_response(),
         GovernorError::Other { code, msg, .. } => ApiError::new(code, "Rate Limiter Error")
             .with_code("RATE_LIMITER_ERROR")
             .with_detail(msg.unwrap_or_default())

@@ -13,7 +13,8 @@ publish = false
 [workspace.dependencies]
 # Pinned to a tag, never a branch: a branch means the next `cargo update` can
 # bring a breaking change nobody chose.
-toolbox-core    = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["derive"] }
+toolbox-error   = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["derive"] }
+toolbox-pagination = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
 toolbox-db      = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0", features = ["clap"] }
 toolbox-cluster = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
 toolbox-schedule = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }

@@ -19,7 +19,8 @@ path = "tests/integration.rs"
 default = []
 
 [dependencies]
-toolbox-core    = { workspace = true }
+toolbox-error   = { workspace = true }
+toolbox-pagination = { workspace = true }
 toolbox-server  = { workspace = true }
 toolbox-cluster = { workspace = true }
 toolbox-auth    = { workspace = true }

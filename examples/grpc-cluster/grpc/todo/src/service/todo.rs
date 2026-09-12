@@ -10,8 +10,8 @@ use cloudevents::AttributesReader as _;
 use tokio_stream::{Stream, StreamExt as _};
 use tonic::{Request, Response, Status};
 use toolbox_cluster::{EventBus, Topic, event, payload};
-use toolbox_core::ServiceError;
 use toolbox_db::{Db, DbError};
+use toolbox_error::ServiceError;
 use toolbox_grpc::{GrpcResult, server::identity};
 use tracing::{info, trace, warn};
 

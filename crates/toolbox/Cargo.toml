@@ -15,20 +15,22 @@ name = "integration"
 path = "tests/integration.rs"
 
 [features]
-default = ["core"]
-core    = ["dep:toolbox-core"]
-db      = ["core", "dep:toolbox-db", "dep:toolbox-macros"]
-cluster = ["core", "dep:toolbox-cluster"]
-server  = ["core", "cluster", "dep:toolbox-server"]
-auth    = ["core", "dep:toolbox-auth"]
-web     = ["server", "auth", "dep:toolbox-web", "dep:axum", "dep:axum-extra"]
-grpc    = ["server", "dep:toolbox-grpc", "dep:tonic"]
+default = ["error", "pagination"]
+error      = ["dep:toolbox-error"]
+pagination = ["dep:toolbox-pagination"]
+db      = ["error", "pagination", "dep:toolbox-db", "dep:toolbox-macros"]
+cluster = ["dep:toolbox-cluster"]
+server  = ["cluster", "dep:toolbox-server"]
+auth    = ["error", "dep:toolbox-auth"]
+web     = ["server", "auth", "error", "pagination", "dep:toolbox-web", "dep:axum", "dep:axum-extra"]
+grpc    = ["server", "error", "pagination", "dep:toolbox-grpc", "dep:tonic"]
 # Everything. Named rather than relying on --all-features so a consumer can ask
 # for it explicitly.
 full    = ["db", "web", "grpc"]
 
 [dependencies]
-toolbox-core    = { workspace = true, optional = true }
+toolbox-error   = { workspace = true, optional = true }
+toolbox-pagination = { workspace = true, optional = true }
 toolbox-db      = { workspace = true, optional = true }
 toolbox-macros  = { workspace = true, optional = true }
 toolbox-cluster = { workspace = true, optional = true }

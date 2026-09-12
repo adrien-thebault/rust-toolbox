@@ -18,7 +18,8 @@ publish      = false    # never crates.io
 
 [workspace.dependencies]
 # internal crates are added by the work package that creates each one.
-toolbox-core   = { version = "0.2.0", path = "crates/toolbox-core" }
+toolbox-error  = { version = "0.2.0", path = "crates/toolbox-error" }
+toolbox-pagination = { version = "0.2.0", path = "crates/toolbox-pagination" }
 toolbox-server = { version = "0.2.0", path = "crates/toolbox-server" }
 toolbox-db     = { version = "0.2.0", path = "crates/toolbox-db" }
 toolbox-macros = { version = "0.2.0", path = "crates/toolbox-macros" }

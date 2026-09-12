@@ -1,4 +1,4 @@
-use toolbox_core::{MAX_LIMIT, Page, PageError, PageRequest, Sort};
+use toolbox_pagination::{MAX_LIMIT, Page, PageError, PageRequest, Sort};
 
 #[test]
 fn paged_rejects_a_negative_offset() {

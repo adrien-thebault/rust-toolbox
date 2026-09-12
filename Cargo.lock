@@ -997,9 +997,10 @@ dependencies = [
  "tonic-prost-build",
  "toolbox-auth",
  "toolbox-cluster",
- "toolbox-core",
  "toolbox-db",
+ "toolbox-error",
  "toolbox-grpc",
+ "toolbox-pagination",
  "toolbox-schedule",
  "toolbox-server",
  "tower",
@@ -1028,7 +1029,6 @@ dependencies = [
  "tonic",
  "toolbox-auth",
  "toolbox-cluster",
- "toolbox-core",
  "toolbox-grpc",
  "toolbox-server",
  "toolbox-test",
@@ -3599,10 +3599,11 @@ dependencies = [
  "tonic",
  "toolbox-auth",
  "toolbox-cluster",
- "toolbox-core",
  "toolbox-db",
+ "toolbox-error",
  "toolbox-grpc",
  "toolbox-macros",
+ "toolbox-pagination",
  "toolbox-server",
  "toolbox-web",
  "tower",
@@ -3630,7 +3631,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "toolbox-auth",
- "toolbox-core",
+ "toolbox-error",
  "tracing",
 ]
 
@@ -3649,20 +3650,8 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
- "toolbox-core",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "toolbox-core"
-version = "0.2.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "toolbox-core",
- "toolbox-macros",
 ]
 
 [[package]]
@@ -3676,9 +3665,21 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "toolbox-core",
+ "toolbox-error",
  "toolbox-macros",
+ "toolbox-pagination",
  "tracing",
+]
+
+[[package]]
+name = "toolbox-error"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "toolbox-error",
+ "toolbox-macros",
 ]
 
 [[package]]
@@ -3701,7 +3702,8 @@ dependencies = [
  "tonic-types",
  "toolbox-auth",
  "toolbox-cluster",
- "toolbox-core",
+ "toolbox-error",
+ "toolbox-pagination",
  "toolbox-server",
  "tower",
  "tracing",
@@ -3717,9 +3719,19 @@ dependencies = [
  "quote",
  "syn 2.0.119",
  "thiserror 2.0.20",
- "toolbox-core",
  "toolbox-db",
+ "toolbox-error",
+ "toolbox-pagination",
  "trybuild",
+]
+
+[[package]]
+name = "toolbox-pagination"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -3733,7 +3745,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "toolbox-cluster",
- "toolbox-core",
+ "toolbox-error",
  "tracing",
 ]
 
@@ -3750,7 +3762,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "toolbox-cluster",
- "toolbox-core",
  "toolbox-server",
  "tower",
  "tower-http 0.7.0",
@@ -3774,8 +3785,8 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "toolbox-core",
  "toolbox-db",
+ "toolbox-error",
  "toolbox-grpc",
  "toolbox-test",
  "toolbox-web",
@@ -3805,7 +3816,8 @@ dependencies = [
  "tokio",
  "toolbox-auth",
  "toolbox-cluster",
- "toolbox-core",
+ "toolbox-error",
+ "toolbox-pagination",
  "toolbox-server",
  "toolbox-web",
  "tower",

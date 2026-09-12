@@ -3,7 +3,7 @@
 use axum::extract::{FromRequestParts, Query};
 use http::request::Parts;
 use serde::Deserialize;
-use toolbox_core::{MAX_LIMIT, PageRequest, Sort};
+use toolbox_pagination::{MAX_LIMIT, PageRequest, Sort};
 
 use crate::error::ApiError;
 

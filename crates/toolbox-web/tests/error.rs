@@ -1,6 +1,6 @@
 use axum::{Router, routing::get};
 use http::StatusCode;
-use toolbox_core::{ErrorKind, PROBLEM_JSON, ServiceError};
+use toolbox_error::{ErrorKind, PROBLEM_JSON, ServiceError};
 use toolbox_web::ApiError;
 
 use crate::{call, get as get_req};
@@ -214,7 +214,7 @@ fn it_behaves_as_a_std_error() {
 
 #[tokio::test]
 async fn an_error_info_from_grpc_becomes_the_same_problem_shape() {
-    use toolbox_core::ErrorInfo;
+    use toolbox_error::ErrorInfo;
     let info = ErrorInfo::new("BACKEND_SAID_NO", "events").with("id", "7");
     let app = Router::new().route(
         "/proxied",

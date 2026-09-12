@@ -1,6 +1,6 @@
 [package]
-name         = "toolbox-core"
-description  = "Transport-neutral vocabulary: error kinds, RFC 9457 problems and pagination."
+name         = "toolbox-pagination"
+description  = "One pagination and sort representation for query strings, protobuf and SQL alike."
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
@@ -16,23 +16,12 @@ autotests = false
 name = "integration"
 path = "tests/integration.rs"
 
-[features]
-default = []
-# `#[derive(ServiceError)]`. Off by default so a crate that only names the
-# trait does not compile a proc-macro chain.
-derive = ["dep:toolbox-macros"]
-
 [dependencies]
 serde     = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
-toolbox-macros = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-# The derive's own tests. The dev-dependency back onto toolbox-macros is a
-# cycle cargo permits.
-toolbox-core = { path = ".", features = ["derive"] }
-thiserror = { workspace = true }
 
 [lints]
 workspace = true

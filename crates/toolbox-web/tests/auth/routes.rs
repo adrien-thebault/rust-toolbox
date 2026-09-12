@@ -65,7 +65,7 @@ async fn a_wrong_password_is_a_401_problem() {
     let (res, text) = call(app(state()), post_json("/auth/login", body)).await;
 
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(res.headers()["content-type"], toolbox_core::PROBLEM_JSON);
+    assert_eq!(res.headers()["content-type"], toolbox_error::PROBLEM_JSON);
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["code"], "UNAUTHENTICATED");
 }

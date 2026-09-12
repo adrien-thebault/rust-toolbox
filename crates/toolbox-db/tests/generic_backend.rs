@@ -25,8 +25,8 @@ use diesel::{
     query_builder::{Query, QueryFragment},
     sqlite::Sqlite,
 };
-use toolbox_core::{Page, PageRequest, Sort};
 use toolbox_db::{DbResult, Paginate};
+use toolbox_pagination::{Page, PageRequest, Sort};
 
 use crate::fixtures::{TestEntity, seed, temp_db, test_entity};
 
@@ -61,8 +61,8 @@ macro_rules! generated_for {
     ($module:ident, $backend:ty) => {
         mod $module {
             use diesel::prelude::*;
-            use toolbox_core::{Page, PageRequest};
             use toolbox_db::DbResult;
+            use toolbox_pagination::{Page, PageRequest};
 
             use super::{Paginate, TestEntity, test_entity};
 
@@ -98,13 +98,13 @@ macro_rules! generated_for {
                     .into_boxed();
                 for item in request.sort().items() {
                     query = match (item.field.as_str(), item.direction) {
-                        ("id", toolbox_core::SortDirection::Asc) => {
+                        ("id", toolbox_pagination::SortDirection::Asc) => {
                             query.then_order_by(test_entity::id.asc())
                         }
-                        ("id", toolbox_core::SortDirection::Desc) => {
+                        ("id", toolbox_pagination::SortDirection::Desc) => {
                             query.then_order_by(test_entity::id.desc())
                         }
-                        ("rank", toolbox_core::SortDirection::Asc) => {
+                        ("rank", toolbox_pagination::SortDirection::Asc) => {
                             query.then_order_by(test_entity::rank.asc())
                         }
                         _ => query.then_order_by(test_entity::title.asc()),

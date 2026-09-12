@@ -63,7 +63,7 @@ fn problem_response(description: &str) -> RefOr<Response> {
     RefOr::T(
         ResponseBuilder::new()
             .description(description)
-            .content(toolbox_core::PROBLEM_JSON, ContentBuilder::new().build())
+            .content(toolbox_error::PROBLEM_JSON, ContentBuilder::new().build())
             .build(),
     )
 }

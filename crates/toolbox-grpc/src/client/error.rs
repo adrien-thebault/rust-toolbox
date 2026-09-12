@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_error::{ErrorKind, ServiceError};
 
 /// A failure building a [`ClientChannel`](super::ClientChannel).
 #[derive(Debug, thiserror::Error)]

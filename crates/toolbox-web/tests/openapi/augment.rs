@@ -1,4 +1,4 @@
-use toolbox_core::PROBLEM_JSON;
+use toolbox_error::PROBLEM_JSON;
 use toolbox_web::openapi::{bearer_security, serialize_openapi, with_standard_errors};
 use utoipa::OpenApi;
 

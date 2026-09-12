@@ -49,7 +49,7 @@ pub enum Classify {
     Explicit {
         /// `code = "..."`.
         code: LitStr,
-        /// `kind = <Ident>`, a `toolbox_core::ErrorKind` variant. Not checked
+        /// `kind = <Ident>`, a `toolbox_error::ErrorKind` variant. Not checked
         /// against the enum's real variants: it is `#[non_exhaustive]`.
         kind: Ident,
         /// `meta(name = <field or index>, ..)`.

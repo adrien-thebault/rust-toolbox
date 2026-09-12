@@ -5,7 +5,7 @@
 //! carrying the counts; the header carries the navigation.
 
 use http::HeaderValue;
-use toolbox_core::{Page, PageRequest};
+use toolbox_pagination::{Page, PageRequest};
 
 /// Build the `Link` header value for a page.
 ///

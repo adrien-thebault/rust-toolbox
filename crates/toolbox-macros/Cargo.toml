@@ -20,10 +20,11 @@ proc-macro2 = { workspace = true }
 [dev-dependencies]
 trybuild = { workspace = true }
 # The ui cases are real entities and error enums, so they need everything a
-# consumer has. The dev-dependency back onto toolbox-db/toolbox-core is a cycle
+# consumer has. The dev-dependency back onto toolbox-db/toolbox-error is a cycle
 # cargo permits.
 toolbox-db   = { workspace = true }
-toolbox-core = { workspace = true, features = ["derive"] }
+toolbox-error = { workspace = true, features = ["derive"] }
+toolbox-pagination = { workspace = true }
 diesel       = { workspace = true, features = ["r2d2", "sqlite", "chrono"] }
 chrono       = { workspace = true, features = ["clock", "std"] }
 thiserror    = { workspace = true }

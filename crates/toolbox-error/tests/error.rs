@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_error::{ErrorKind, ServiceError};
 
 #[derive(Debug, thiserror::Error)]
 #[error("event {id} not found")]
@@ -52,7 +52,7 @@ fn metadata_defaults_to_empty() {
 
 #[test]
 fn error_info_serializes_metadata_in_deterministic_order() {
-    let info = toolbox_core::ErrorInfo::new("X", "d")
+    let info = toolbox_error::ErrorInfo::new("X", "d")
         .with("b", "2")
         .with("a", "1");
     let json = serde_json::to_string(&info).unwrap();

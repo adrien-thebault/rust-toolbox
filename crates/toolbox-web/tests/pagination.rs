@@ -1,4 +1,4 @@
-use toolbox_core::{Page, PageRequest, Sort};
+use toolbox_pagination::{Page, PageRequest, Sort};
 use toolbox_web::pagination::page_links;
 
 fn page(offset: i64, limit: i64, total: i64) -> Page<u8> {

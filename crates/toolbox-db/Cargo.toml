@@ -20,7 +20,8 @@ default = []
 clap   = ["dep:clap"]
 
 [dependencies]
-toolbox-core       = { workspace = true }
+toolbox-error      = { workspace = true }
+toolbox-pagination = { workspace = true }
 toolbox-macros     = { workspace = true }
 diesel             = { workspace = true, features = ["r2d2"] }
 diesel_migrations  = { workspace = true }
@@ -38,7 +39,6 @@ diesel   = { workspace = true, features = [
   "sqlite", "postgres", "mysql",
 ] }
 chrono   = { workspace = true, features = ["clock", "std"] }
-toolbox-core = { workspace = true }
 tokio    = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }
 tempfile = { workspace = true }
 

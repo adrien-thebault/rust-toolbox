@@ -1,7 +1,7 @@
 mod mapping;
 
 use toolbox_auth::{AuthError, Principal, Role};
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_error::{ErrorKind, ServiceError};
 
 struct Admin;
 impl Role for Admin {

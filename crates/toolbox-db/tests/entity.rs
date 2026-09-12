@@ -4,8 +4,8 @@
 //! this covers what it generates.
 
 use diesel::{connection::SimpleConnection, prelude::*, sqlite::SqliteConnection};
-use toolbox_core::{PageRequest, Sort};
 use toolbox_db::{Db, DbError, Entity as _};
+use toolbox_pagination::{PageRequest, Sort};
 
 /// The backend, named once, exactly as the template does it.
 pub type Backend = diesel::sqlite::Sqlite;

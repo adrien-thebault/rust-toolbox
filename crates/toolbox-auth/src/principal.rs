@@ -5,7 +5,7 @@ pub mod mapping;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_error::{ErrorKind, ServiceError};
 
 /// A role, named by the consumer.
 ///

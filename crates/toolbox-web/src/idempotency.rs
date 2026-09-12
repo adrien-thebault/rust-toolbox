@@ -223,7 +223,7 @@ impl Idempotency {
 /// The error a claimed-but-unfinished key produces.
 #[must_use]
 pub fn in_flight_error() -> ApiError {
-    ApiError::of_kind(toolbox_core::ErrorKind::Conflict, "Conflict")
+    ApiError::of_kind(toolbox_error::ErrorKind::Conflict, "Conflict")
         .with_code("IDEMPOTENCY_IN_FLIGHT")
         .with_detail("a request with this Idempotency-Key is still being processed")
 }
@@ -246,7 +246,7 @@ fn storage_key(route: &str, key: &IdempotencyKey) -> String {
 ///
 /// * `e` - The failure the key-value adapter reported.
 fn store_error(e: toolbox_cluster::KvStoreError) -> ApiError {
-    ApiError::of_kind(toolbox_core::ErrorKind::Unavailable, "Service Unavailable")
+    ApiError::of_kind(toolbox_error::ErrorKind::Unavailable, "Service Unavailable")
         .with_code("IDEMPOTENCY_STORE_UNAVAILABLE")
         .with_source(e)
 }

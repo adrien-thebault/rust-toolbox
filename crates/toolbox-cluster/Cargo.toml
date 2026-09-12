@@ -15,7 +15,6 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
-toolbox-core = { workspace = true }
 tokio        = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 futures-core = { workspace = true }

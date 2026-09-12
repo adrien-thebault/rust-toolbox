@@ -38,7 +38,8 @@ idempotency = ["dep:toolbox-cluster"]
 realtime = ["dep:toolbox-cluster", "dep:cloudevents-sdk", "dep:futures-core", "dep:futures-util", "axum/macros"]
 
 [dependencies]
-toolbox-core   = { workspace = true }
+toolbox-error  = { workspace = true }
+toolbox-pagination = { workspace = true }
 toolbox-server = { workspace = true }
 toolbox-auth   = { workspace = true }
 toolbox-cluster = { workspace = true, optional = true }

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use tonic::Code;
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_error::{ErrorKind, ServiceError};
 use toolbox_grpc::{code_for, from_status, kind_for, to_status};
 
 #[derive(Debug, thiserror::Error)]

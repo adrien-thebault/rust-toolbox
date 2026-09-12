@@ -52,7 +52,7 @@ async fn an_invalid_body_names_every_bad_field() {
     let (res, text) = call(app(), post_json("/users", body)).await;
 
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(res.headers()["content-type"], toolbox_core::PROBLEM_JSON);
+    assert_eq!(res.headers()["content-type"], toolbox_error::PROBLEM_JSON);
 
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["code"], "VALIDATION_FAILED");
@@ -89,7 +89,7 @@ async fn a_body_that_is_not_json_is_a_400_problem_not_a_500() {
 async fn a_body_missing_a_field_is_a_400_problem() {
     let (res, text) = call(app(), post_json("/users", r#"{"name":"Ada"}"#)).await;
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(res.headers()["content-type"], toolbox_core::PROBLEM_JSON);
+    assert_eq!(res.headers()["content-type"], toolbox_error::PROBLEM_JSON);
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["code"], "MALFORMED_BODY");
 }

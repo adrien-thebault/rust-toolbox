@@ -26,7 +26,6 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
-toolbox-core    = { workspace = true }
 toolbox-cluster = { workspace = true }
 toolbox-auth    = { workspace = true, features = ["password"] }
 toolbox-web     = { workspace = true, features = ["rate-limit", "openapi", "auth-router", "idempotency", "realtime"] }

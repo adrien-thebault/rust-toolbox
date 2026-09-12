@@ -6,7 +6,7 @@
 //! # This crate does not depend on `toolbox-grpc`
 //!
 //! A plain HTTP project must never compile `tonic`. The single `ErrorInfo` in
-//! `toolbox-core` is what keeps them apart: `toolbox-grpc` owns
+//! `toolbox-error` is what keeps them apart: `toolbox-grpc` owns
 //! `Status -> ErrorInfo`, this crate owns `ErrorInfo -> ApiError`, and a
 //! gateway composes the two. There is no exception and no feature that
 //! reintroduces one.

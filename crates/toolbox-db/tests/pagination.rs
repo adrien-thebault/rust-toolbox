@@ -1,6 +1,6 @@
 use diesel::{prelude::*, sqlite::SqliteConnection};
-use toolbox_core::{PageRequest, Sort};
 use toolbox_db::{DbError, Paginate, pagination::validate};
+use toolbox_pagination::{PageRequest, Sort};
 
 use crate::fixtures::{TestEntity, seed, temp_db, test_entity};
 
@@ -179,7 +179,7 @@ fn a_sort_injection_attempt_is_rejected_like_any_other_unknown_field() {
 
 #[test]
 fn a_bad_sort_field_maps_to_a_client_mistake_not_a_server_fault() {
-    use toolbox_core::{ErrorKind, ServiceError};
+    use toolbox_error::{ErrorKind, ServiceError};
     let err = validate(&Sort::parse("nope").unwrap(), ALLOWED).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidArgument);
     assert_eq!(err.code(), "INVALID_SORT_FIELD");

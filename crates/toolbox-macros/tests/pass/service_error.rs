@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_error::{ErrorKind, ServiceError};
 
 #[derive(Debug, thiserror::Error)]
 #[error("inner boom")]

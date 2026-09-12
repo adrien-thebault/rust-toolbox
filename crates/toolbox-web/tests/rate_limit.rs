@@ -54,7 +54,7 @@ fn a_rejection_becomes_a_problem_document_with_retry_after() {
     assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(res.headers()["retry-after"], "7");
     assert_eq!(res.headers()["ratelimit-remaining"], "0");
-    assert_eq!(res.headers()["content-type"], toolbox_core::PROBLEM_JSON);
+    assert_eq!(res.headers()["content-type"], toolbox_error::PROBLEM_JSON);
 }
 
 #[test]

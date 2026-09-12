@@ -21,7 +21,8 @@ Each has its own README describing its modules.
 | Crate                                                   | What it is                                                                                           |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | [`toolbox`](crates/toolbox/README.md)                   | the facade: one dependency line, a feature per crate                                                 |
-| [`toolbox-core`](crates/toolbox-core/README.md)         | the shared error, problem and pagination vocabulary                                                  |
+| [`toolbox-error`](crates/toolbox-error/README.md)       | the shared error kind, service-error trait and RFC 9457 problem document                             |
+| [`toolbox-pagination`](crates/toolbox-pagination/README.md) | one pagination and sort representation for query strings, protobuf and SQL                       |
 | [`toolbox-macros`](crates/toolbox-macros/README.md)     | the `#[derive(Entity)]` proc macro                                                                   |
 | [`toolbox-db`](crates/toolbox-db/README.md)             | a diesel pool that keeps blocking calls off the async runtime, with pagination and locked migrations |
 | [`toolbox-cluster`](crates/toolbox-cluster/README.md)   | the event-bus, key-value and lock traits a multi-replica deployment coordinates through              |

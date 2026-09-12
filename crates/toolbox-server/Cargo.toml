@@ -19,7 +19,6 @@ default = []
 clap = ["dep:clap"]
 
 [dependencies]
-toolbox-core     = { workspace = true }
 http             = { workspace = true }
 http-body        = { workspace = true }
 tower            = { workspace = true }

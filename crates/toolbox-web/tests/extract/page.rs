@@ -1,6 +1,6 @@
 use axum::{Router, routing::get};
 use http::StatusCode;
-use toolbox_core::{MAX_LIMIT, PageRequest};
+use toolbox_pagination::{MAX_LIMIT, PageRequest};
 use toolbox_web::extract::PageQuery;
 
 use crate::{call, get as get_req};
@@ -78,7 +78,7 @@ async fn a_malformed_sort_is_a_400() {
 
 #[test]
 fn the_extractor_hands_back_the_request_it_built() {
-    let q = PageQuery(PageRequest::unpaged(toolbox_core::Sort::unsorted()));
+    let q = PageQuery(PageRequest::unpaged(toolbox_pagination::Sort::unsorted()));
     assert!(q.request().offset().is_none());
     assert!(matches!(q.into_request(), PageRequest::Unpaged { .. }));
 }

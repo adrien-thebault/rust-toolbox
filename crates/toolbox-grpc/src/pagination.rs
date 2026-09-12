@@ -4,7 +4,7 @@
 //! own page type was byte-identical in every consumer. It lives here once, and
 //! consumers import `toolbox/v1/pagination.proto` instead of copying it.
 
-use toolbox_core::{Page, PageRequest, Sort};
+use toolbox_pagination::{Page, PageRequest, Sort};
 
 pub use crate::{
     proto,
@@ -42,10 +42,10 @@ impl PageRequestProto {
     /// Validate this into a domain [`PageRequest`].
     ///
     /// # Errors
-    /// [`toolbox_core::PageError`] when the offset is negative, the limit is
+    /// [`toolbox_pagination::PageError`] when the offset is negative, the limit is
     /// negative, or the sort does not parse. A zero limit is unpaged, not an
     /// error.
-    pub fn to_domain(&self) -> Result<PageRequest, toolbox_core::PageError> {
+    pub fn to_domain(&self) -> Result<PageRequest, toolbox_pagination::PageError> {
         let sort = Sort::parse(&self.sort)?;
         if self.limit == 0 {
             return Ok(PageRequest::unpaged(sort));
@@ -69,8 +69,8 @@ impl PageInfo {
     /// Rebuild the page metadata this describes.
     ///
     /// # Errors
-    /// [`toolbox_core::PageError`] when the values do not form a valid window.
-    pub fn to_request(&self) -> Result<PageRequest, toolbox_core::PageError> {
+    /// [`toolbox_pagination::PageError`] when the values do not form a valid window.
+    pub fn to_request(&self) -> Result<PageRequest, toolbox_pagination::PageError> {
         let sort = Sort::parse(&self.sort)?;
         if self.limit == 0 {
             return Ok(PageRequest::unpaged(sort));
@@ -81,7 +81,7 @@ impl PageInfo {
 
 /// Split a page into the two halves a `ListXResponse` carries.
 ///
-/// This plus [`toolbox_core::Page::try_map`] is the whole conversion that used
+/// This plus [`toolbox_pagination::Page::try_map`] is the whole conversion that used
 /// to be written out per handler:
 ///
 /// ```ignore

@@ -102,12 +102,12 @@ impl CaptchaVerifier for ThirdPartyCaptcha {
                 // here would lock every user out when the provider has an
                 // outage; returning an error lets the caller decide.
                 warn!(error = %e, "the captcha provider could not be reached");
-                ApiError::of_kind(toolbox_core::ErrorKind::Unavailable, "Service Unavailable")
+                ApiError::of_kind(toolbox_error::ErrorKind::Unavailable, "Service Unavailable")
                     .with_code("CAPTCHA_UNAVAILABLE")
             })?;
 
         let verified: SiteVerify = response.json().await.map_err(|e| {
-            ApiError::of_kind(toolbox_core::ErrorKind::Unavailable, "Service Unavailable")
+            ApiError::of_kind(toolbox_error::ErrorKind::Unavailable, "Service Unavailable")
                 .with_code("CAPTCHA_UNAVAILABLE")
                 .with_source(e)
         })?;

@@ -61,7 +61,7 @@ pub fn derive_entity(input: TokenStream) -> TokenStream {
     entity::derive(&parse_macro_input!(input as DeriveInput)).into()
 }
 
-/// Generate `toolbox_core::ServiceError` for a service's error enum, from one
+/// Generate `toolbox_error::ServiceError` for a service's error enum, from one
 /// `#[service_error(..)]` per variant.
 ///
 /// ```ignore
@@ -92,7 +92,7 @@ pub fn derive_entity(input: TokenStream) -> TokenStream {
 /// - `transparent` - delegate `code`, `kind` and `metadata` to the variant's
 ///   one field, which must itself be a `ServiceError` (a wrapped `DbError`).
 /// - `code = "SCREAMING_SNAKE_CASE"` + `kind = <ErrorKind>` - an explicit
-///   classification. `kind` is a `toolbox_core::ErrorKind` variant name.
+///   classification. `kind` is a `toolbox_error::ErrorKind` variant name.
 /// - `meta(name = <field or tuple index>, ..)` - entries for `metadata()`,
 ///   each `name` a key and the value the named field rendered with
 ///   `ToString`.

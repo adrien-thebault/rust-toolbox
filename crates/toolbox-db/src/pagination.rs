@@ -12,7 +12,7 @@ use diesel::{
     query_builder::{AstPass, Query, QueryFragment, QueryId},
     sql_types::BigInt,
 };
-use toolbox_core::{Page, PageError, PageRequest, Sort};
+use toolbox_pagination::{Page, PageError, PageRequest, Sort};
 
 use crate::error::{DbError, DbResult};
 

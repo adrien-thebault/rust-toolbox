@@ -52,7 +52,7 @@ async fn a_non_admin_is_refused_with_a_problem_document() {
     let (res, body) = call(app, get_req("/admin")).await;
 
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
-    assert_eq!(res.headers()["content-type"], toolbox_core::PROBLEM_JSON);
+    assert_eq!(res.headers()["content-type"], toolbox_error::PROBLEM_JSON);
 
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["code"], "FORBIDDEN");

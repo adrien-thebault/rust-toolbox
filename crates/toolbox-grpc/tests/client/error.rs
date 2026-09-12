@@ -1,4 +1,4 @@
-use toolbox_core::{ErrorKind, ServiceError};
+use toolbox_error::{ErrorKind, ServiceError};
 use toolbox_grpc::ClientError;
 
 #[test]

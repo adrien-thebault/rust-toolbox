@@ -1,12 +1,12 @@
 //! Converting between domain errors and `tonic::Status`.
 //!
-//! It bridges `toolbox-core`'s transport-neutral error vocabulary and
+//! It bridges `toolbox-error`'s transport-neutral error vocabulary and
 //! `google.rpc.ErrorInfo` as carried by `tonic-types`, which do not know about
 //! each other.
 
 use tonic::{Code, Status};
 use tonic_types::{ErrorDetails, StatusExt as _};
-use toolbox_core::{ErrorInfo, ErrorKind, ServiceError};
+use toolbox_error::{ErrorInfo, ErrorKind, ServiceError};
 use tracing::error;
 
 /// What a gRPC handler returns.

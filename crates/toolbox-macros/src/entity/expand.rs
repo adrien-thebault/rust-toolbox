@@ -173,8 +173,8 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             /// [`::toolbox_db::DbError::Query`] when the statement fails.
             pub fn page<__C>(
                 conn: &mut __C,
-                request: &::toolbox_core::PageRequest,
-            ) -> ::toolbox_db::DbResult<::toolbox_core::Page<Self>>
+                request: &::toolbox_pagination::PageRequest,
+            ) -> ::toolbox_db::DbResult<::toolbox_pagination::Page<Self>>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -189,7 +189,7 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
                         _ => __q,
                     };
                 }
-                let __page: ::toolbox_core::Page<Self> = __q
+                let __page: ::toolbox_pagination::Page<Self> = __q
                     .select(<Self as ::diesel::SelectableHelper<#backend>>::as_select())
                     .paginate(request)
                     .load_page::<Self, __C>(conn)?;
@@ -199,7 +199,7 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
                     // the soft-delete one, so the table count is the real total.
                     let __total = Self::count(conn)?;
                     if __total != __page.total() {
-                        return ::core::result::Result::Ok(::toolbox_core::Page::new(
+                        return ::core::result::Result::Ok(::toolbox_pagination::Page::new(
                             ::std::vec::Vec::new(),
                             ::core::clone::Clone::clone(request),
                             __total,
@@ -374,9 +374,9 @@ fn sort_arms(cfg: &EntityConfig) -> Vec<TokenStream> {
         .map(|col| {
             let name = col.to_string();
             quote! {
-                (#name, ::toolbox_core::SortDirection::Asc) =>
+                (#name, ::toolbox_pagination::SortDirection::Asc) =>
                     __q.then_order_by(#table::#col.asc()),
-                (#name, ::toolbox_core::SortDirection::Desc) =>
+                (#name, ::toolbox_pagination::SortDirection::Desc) =>
                     __q.then_order_by(#table::#col.desc()),
             }
         })

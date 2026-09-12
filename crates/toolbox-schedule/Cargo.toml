@@ -15,7 +15,7 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
-toolbox-core    = { workspace = true }
+toolbox-error   = { workspace = true }
 toolbox-cluster = { workspace = true }
 # A separate crate rather than a feature on toolbox-cluster: cargo unifies
 # features across a workspace, so a gateway that schedules nothing would

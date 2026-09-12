@@ -1,5 +1,5 @@
 use axum::{Router, routing::get};
-use toolbox_core::ErrorKind;
+use toolbox_error::ErrorKind;
 use toolbox_test::{TestGateway, assert_problem, problem::ProblemResponse};
 use toolbox_web::ApiError;
 

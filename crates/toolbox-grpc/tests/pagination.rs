@@ -1,5 +1,5 @@
-use toolbox_core::{Page, PageRequest, Sort};
 use toolbox_grpc::{PROTO_INCLUDE, PageInfo, PageRequestProto, split};
+use toolbox_pagination::{Page, PageRequest, Sort};
 
 #[test]
 fn a_page_request_round_trips_through_the_wire_type() {

@@ -21,7 +21,7 @@ web  = ["dep:toolbox-web", "dep:axum", "dep:axum-test"]
 grpc = ["dep:toolbox-grpc", "dep:tonic", "dep:tokio-stream"]
 
 [dependencies]
-toolbox-core = { workspace = true }
+toolbox-error = { workspace = true }
 toolbox-db   = { workspace = true, optional = true }
 toolbox-web  = { workspace = true, optional = true }
 toolbox-grpc = { workspace = true, optional = true }

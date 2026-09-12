@@ -1,4 +1,4 @@
-//! `#[derive(ServiceError)]`: the four `toolbox_core::ServiceError` methods, and
+//! `#[derive(ServiceError)]`: the four `toolbox_error::ServiceError` methods, and
 //! optionally `impl From<Self> for tonic::Status`, from one attribute per
 //! variant.
 //!

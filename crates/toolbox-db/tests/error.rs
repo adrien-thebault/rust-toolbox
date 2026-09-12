@@ -1,5 +1,5 @@
-use toolbox_core::{ErrorKind, ServiceError};
 use toolbox_db::DbError;
+use toolbox_error::{ErrorKind, ServiceError};
 
 /// The three variants a caller is allowed to see: everything else is an
 /// internal fault whose text `ApiError` redacts.

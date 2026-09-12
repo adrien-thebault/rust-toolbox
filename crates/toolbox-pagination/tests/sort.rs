@@ -1,4 +1,4 @@
-use toolbox_core::{PageError, Sort, SortDirection, SortItem};
+use toolbox_pagination::{PageError, Sort, SortDirection, SortItem};
 
 #[test]
 fn sort_round_trips_through_the_compact_form() {

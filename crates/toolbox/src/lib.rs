@@ -9,21 +9,23 @@
 //! ```
 //!
 //! Each feature pulls in the crate of the same name. The dependency order is
-//! `core -> db -> cluster -> server -> {web, grpc}`, so enabling `web` also
-//! enables `server`, `cluster`, `auth` and `core`.
+//! `{error, pagination} -> db -> cluster -> server -> {web, grpc}`, so enabling
+//! `web` also enables `server`, `cluster`, `auth`, `error` and `pagination`.
 
 #[cfg(feature = "auth")]
 pub use toolbox_auth as auth;
 #[cfg(feature = "cluster")]
 pub use toolbox_cluster as cluster;
-#[cfg(feature = "core")]
-pub use toolbox_core as core;
 #[cfg(feature = "db")]
 pub use toolbox_db as db;
+#[cfg(feature = "error")]
+pub use toolbox_error as error;
 #[cfg(feature = "grpc")]
 pub use toolbox_grpc as grpc;
 #[cfg(feature = "db")]
 pub use toolbox_macros as macros;
+#[cfg(feature = "pagination")]
+pub use toolbox_pagination as pagination;
 #[cfg(feature = "server")]
 pub use toolbox_server as server;
 #[cfg(feature = "web")]

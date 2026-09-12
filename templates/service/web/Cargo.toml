@@ -16,7 +16,6 @@ name = "dump-openapi"
 path = "examples/dump_openapi.rs"
 
 [dependencies]
-toolbox-core    = { workspace = true }
 toolbox-cluster = { workspace = true }
 toolbox-auth    = { workspace = true }
 toolbox-grpc    = { workspace = true }

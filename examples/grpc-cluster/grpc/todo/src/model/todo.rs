@@ -2,7 +2,8 @@
 
 use chrono::NaiveDateTime;
 use diesel::{connection::LoadConnection, prelude::*};
-use toolbox_db::DbError;
+use toolbox_db::{DbError, pagination};
+use toolbox_pagination::{Page, PageRequest};
 
 use crate::{Backend, proto, schema::todos};
 
@@ -82,14 +83,14 @@ impl Todo {
     pub fn search<C>(
         conn: &mut C,
         needle: &str,
-        request: &toolbox_core::PageRequest,
-    ) -> Result<toolbox_core::Page<Self>, DbError>
+        request: &PageRequest,
+    ) -> Result<Page<Self>, DbError>
     where
         C: LoadConnection<Backend = Backend>,
     {
         use toolbox_db::Paginate as _;
 
-        toolbox_db::pagination::validate(request.sort(), Self::sortable_fields())?;
+        pagination::validate(request.sort(), Self::sortable_fields())?;
         Self::query()
             .filter(todos::title.like(format!("%{needle}%")))
             .select(Self::as_select())

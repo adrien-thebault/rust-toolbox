@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use toolbox_core::{ErrorKind, PROBLEM_JSON, Problem, ServiceError, problem::title_for};
+use toolbox_error::{ErrorKind, PROBLEM_JSON, Problem, ServiceError, problem::title_for};
 
 #[derive(Debug, thiserror::Error)]
 #[error("the database exploded: connection refused to 10.0.0.4:5432")]

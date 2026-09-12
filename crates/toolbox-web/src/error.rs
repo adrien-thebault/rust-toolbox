@@ -7,7 +7,7 @@
 
 use axum::response::{IntoResponse, Response};
 use http::{HeaderValue, StatusCode, header};
-use toolbox_core::{ErrorInfo, ErrorKind, PROBLEM_JSON, Problem, ServiceError};
+use toolbox_error::{ErrorInfo, ErrorKind, PROBLEM_JSON, Problem, ServiceError};
 use toolbox_server::trace_context::current_request_id;
 use tracing::error;
 

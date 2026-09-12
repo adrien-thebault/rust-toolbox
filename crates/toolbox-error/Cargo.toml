@@ -1,0 +1,37 @@
+[package]
+name         = "toolbox-error"
+description  = "Transport-neutral error vocabulary: ErrorKind, ServiceError and RFC 9457 problems."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+publish                = false
+# tests/ holds one harness whose module tree mirrors src/; without this cargo
+# would also compile each tests/*.rs as its own extra test crate.
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[features]
+default = []
+# `#[derive(ServiceError)]`. Off by default so a crate that only names the
+# trait does not compile a proc-macro chain.
+derive = ["dep:toolbox-macros"]
+
+[dependencies]
+serde     = { workspace = true, features = ["derive"] }
+toolbox-macros = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+# The derive's own tests. The dev-dependency back onto toolbox-macros is a
+# cycle cargo permits.
+toolbox-error = { path = ".", features = ["derive"] }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

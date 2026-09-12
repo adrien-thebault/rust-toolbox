@@ -6,9 +6,10 @@
 //! so a consumer nobody here wrote can read the stream and any CloudEvents-aware
 //! broker can route it. What this module adds is the two constructors a service
 //! actually reaches for - one line instead of a builder chain - and a timestamp
-//! the builder leaves unset. It sits in a crate about replication rather than in
-//! `toolbox-core` because the SDK pulls `uuid` and `chrono`, which `toolbox-core`
-//! refuses, and a crate of its own for two constructors would not earn the line.
+//! the builder leaves unset. It sits in a crate about replication rather than
+//! in one of the toolbox's dependency-free vocabulary crates, because the SDK
+//! pulls `uuid` and `chrono`, which those refuse, and a crate of its own for
+//! two constructors would not earn the line.
 //!
 //! [`EventBus`] is the transport. It holds state across requests, so it is a
 //! trait with a local adapter and at least one shared adapter; the payload is

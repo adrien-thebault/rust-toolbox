@@ -22,7 +22,7 @@ pub fn expand(cfg: &Config) -> TokenStream {
 
     let service_error_impl = quote! {
         #[automatically_derived]
-        impl #impl_generics ::toolbox_core::ServiceError for #ident #ty_generics #where_clause {
+        impl #impl_generics ::toolbox_error::ServiceError for #ident #ty_generics #where_clause {
             fn code(&self) -> &'static str {
                 match self { #(#code_arms),* }
             }
@@ -31,7 +31,7 @@ pub fn expand(cfg: &Config) -> TokenStream {
                 #domain
             }
 
-            fn kind(&self) -> ::toolbox_core::ErrorKind {
+            fn kind(&self) -> ::toolbox_error::ErrorKind {
                 match self { #(#kind_arms),* }
             }
 
@@ -73,7 +73,7 @@ fn code_arm(variant: &Variant) -> TokenStream {
     match &variant.classify {
         Classify::Transparent => {
             let (pat, binding) = transparent_pattern(variant);
-            quote!(#pat => ::toolbox_core::ServiceError::code(#binding))
+            quote!(#pat => ::toolbox_error::ServiceError::code(#binding))
         }
         Classify::Explicit { code, .. } => {
             let pat = discriminant_pattern(variant);
@@ -87,11 +87,11 @@ fn kind_arm(variant: &Variant) -> TokenStream {
     match &variant.classify {
         Classify::Transparent => {
             let (pat, binding) = transparent_pattern(variant);
-            quote!(#pat => ::toolbox_core::ServiceError::kind(#binding))
+            quote!(#pat => ::toolbox_error::ServiceError::kind(#binding))
         }
         Classify::Explicit { kind, .. } => {
             let pat = discriminant_pattern(variant);
-            quote!(#pat => ::toolbox_core::ErrorKind::#kind)
+            quote!(#pat => ::toolbox_error::ErrorKind::#kind)
         }
     }
 }
@@ -101,7 +101,7 @@ fn metadata_arm(variant: &Variant) -> TokenStream {
     match &variant.classify {
         Classify::Transparent => {
             let (pat, binding) = transparent_pattern(variant);
-            quote!(#pat => ::toolbox_core::ServiceError::metadata(#binding))
+            quote!(#pat => ::toolbox_error::ServiceError::metadata(#binding))
         }
         Classify::Explicit { meta, .. } if meta.is_empty() => {
             let pat = discriminant_pattern(variant);
