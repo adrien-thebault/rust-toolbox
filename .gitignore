@@ -5,11 +5,3 @@ target/
 # The exception: a public demo with no real secret at stake, committed so
 # `docker compose up` needs no setup step.
 !/examples/grpc-cluster/.env
-
-# Working documents for the rewrite. Root-anchored, and listed here rather than
-# in .git/info/exclude so that `git add -A` cannot sweep them into a commit from
-# a fresh clone either.
-/REWRITE.md
-/REVIEW.md
-/IMPLEMENTATION.md
-/MIGRATION.md
