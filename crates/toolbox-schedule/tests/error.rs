@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use toolbox_error::{ErrorKind, ServiceError};
 use toolbox_schedule::ScheduleError;
 
@@ -39,6 +41,10 @@ fn the_kind_matches_what_the_failure_actually_is() {
         ScheduleError::DuplicateName("x".to_owned()).kind(),
         ErrorKind::InvalidArgument
     );
+    assert_eq!(
+        ScheduleError::DurationOutOfRange(Duration::MAX).kind(),
+        ErrorKind::InvalidArgument
+    );
 }
 
 /// The code is the stable identifier a client branches on, one per variant,
@@ -59,6 +65,10 @@ fn each_variant_has_its_own_code_in_the_schedule_domain() {
         ),
         (ScheduleError::NotFound("x".to_owned()), "JOB_NOT_FOUND"),
         (ScheduleError::Lock("x".to_owned()), "LOCK_FAILED"),
+        (
+            ScheduleError::DurationOutOfRange(Duration::MAX),
+            "DURATION_OUT_OF_RANGE",
+        ),
     ];
     for (err, code) in cases {
         assert_eq!(err.code(), code);
@@ -73,5 +83,12 @@ fn the_job_name_is_carried_as_metadata_where_there_is_one() {
     assert!(
         ScheduleError::Lock("down".to_owned()).metadata().is_empty(),
         "a lock failure has no job to name"
+    );
+    assert_eq!(
+        ScheduleError::DurationOutOfRange(Duration::from_secs(1))
+            .metadata()
+            .get("duration")
+            .map(String::as_str),
+        Some("1s")
     );
 }

@@ -151,7 +151,9 @@ impl SchedulerBuilder {
                 job.name,
                 JobState {
                     running: Arc::new(AtomicBool::new(false)),
-                    next_at: job.trigger.next_after(now)?,
+                    // No run has happened yet: `completed_at` gets `now` too,
+                    // the "zero elapsed" estimate.
+                    next_at: job.trigger.next_after(now, now)?,
                     last_success: None,
                 },
             );

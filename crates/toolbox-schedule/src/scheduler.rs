@@ -8,7 +8,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub use builder::SchedulerBuilder;
@@ -144,20 +144,32 @@ impl Scheduler {
 
         let mut outcomes = Vec::with_capacity(due.len());
         for name in due {
-            let outcome = self.run_now(name).await?;
+            let started = to_utc(self.clock.now());
 
+            // Caught rather than `?`-propagated: a lock-manager blip on one
+            // job must not abort the rest of this tick, or the whole loop.
+            let outcome = match self.run_now(name).await {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    error!(job = name, error = %e, "run_now failed before the job could run");
+                    record(name, JobOutcome::Failed, Duration::ZERO);
+                    JobOutcome::Failed
+                }
+            };
+
+            let completed = to_utc(self.clock.now());
             let next_at = self
                 .jobs
                 .iter()
                 .find(|job| job.name == name)
-                .map(|job| job.trigger.next_after(now))
+                .map(|job| job.trigger.next_after(started, completed))
                 .transpose()?;
             if let Some(state) = self.state.get_mut(name) {
                 if let Some(next_at) = next_at {
                     state.next_at = next_at;
                 }
                 if outcome == JobOutcome::Succeeded {
-                    state.last_success = Some(now);
+                    state.last_success = Some(completed);
                 }
             }
             outcomes.push((name, outcome));
@@ -192,7 +204,9 @@ impl Scheduler {
 
         // Hold the lock until the *next* occurrence is due, so no other replica
         // can run this one.
-        let next_run = job.trigger.next_after(now).ok();
+        // No run has happened yet, so `completed_at` gets `now` too: the best
+        // available estimate, for sizing the lease below, is "zero elapsed".
+        let next_run = job.trigger.next_after(now, now).ok();
         let until_next = next_run
             .and_then(|next| (next - now).to_std().ok())
             .unwrap_or(MIN_LEASE);
@@ -242,22 +256,35 @@ impl Scheduler {
         let body = Arc::clone(&job.body);
         let timeout = job.timeout;
         info!(job = name, mode = ?job.mode, "job started");
-        let started = std::time::Instant::now();
+        let started = Instant::now();
 
-        let outcome = match tokio::time::timeout(timeout, body()).await {
-            Ok(Ok(())) => JobOutcome::Succeeded,
-            Ok(Err(e)) => {
-                error!(job = name, error = %e, "a scheduled job failed");
-                JobOutcome::Failed
-            }
+        // Spawned rather than awaited in place: a panic in the body then
+        // unwinds only this task, surfacing as a `JoinError` here instead of
+        // taking down the scheduler's own loop and every other job with it.
+        let mut handle = tokio::spawn(body());
+        let outcome = match tokio::time::timeout(timeout, &mut handle).await {
             Err(_) => {
                 error!(
                     job = name,
                     timeout_s = timeout.as_secs(),
                     "a scheduled job timed out"
                 );
+                handle.abort();
                 JobOutcome::TimedOut
             }
+            // Joined within the timeout: either the body panicked, or it ran
+            // to completion and returned its own result.
+            Ok(joined) => match joined {
+                Err(join_err) => {
+                    error!(job = name, error = %join_err, "a scheduled job panicked");
+                    JobOutcome::Failed
+                }
+                Ok(Err(e)) => {
+                    error!(job = name, error = %e, "a scheduled job failed");
+                    JobOutcome::Failed
+                }
+                Ok(Ok(())) => JobOutcome::Succeeded,
+            },
         };
         let elapsed = started.elapsed();
 
@@ -382,8 +409,8 @@ fn record(name: &'static str, outcome: JobOutcome, elapsed: Duration) {
         // The only metric that catches "the job silently stopped", which is the
         // characteristic scheduled-job failure. Alert on
         // time() - job_last_success_timestamp.
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .map_or(0.0, |d| d.as_secs_f64());
         metrics::gauge!("job_last_success_timestamp", "job" => name).set(now);
     }
@@ -396,6 +423,6 @@ fn record(name: &'static str, outcome: JobOutcome, elapsed: Duration) {
 ///
 /// * `t` - The instant the clock reported. A time before the epoch clamps
 ///   rather than panicking.
-fn to_utc(t: std::time::SystemTime) -> DateTime<Utc> {
+fn to_utc(t: SystemTime) -> DateTime<Utc> {
     DateTime::<Utc>::from(t)
 }

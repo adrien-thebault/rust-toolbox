@@ -1,6 +1,6 @@
 //! What can go wrong scheduling.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use toolbox_error::{ErrorKind, ServiceError};
 
@@ -25,6 +25,9 @@ pub enum ScheduleError {
     /// The lock manager failed.
     #[error("lock: {0}")]
     Lock(String),
+    /// A configured duration does not fit in a `chrono::TimeDelta`.
+    #[error("duration out of range: {0:?}")]
+    DurationOutOfRange(Duration),
 }
 
 impl ServiceError for ScheduleError {
@@ -34,6 +37,7 @@ impl ServiceError for ScheduleError {
             Self::DuplicateName(_) => "DUPLICATE_JOB",
             Self::NotFound(_) => "JOB_NOT_FOUND",
             Self::Lock(_) => "LOCK_FAILED",
+            Self::DurationOutOfRange(_) => "DURATION_OUT_OF_RANGE",
         }
     }
 
@@ -53,6 +57,9 @@ impl ServiceError for ScheduleError {
         match self {
             Self::NotFound(name) | Self::DuplicateName(name) => {
                 BTreeMap::from([("job".to_owned(), name.clone())])
+            }
+            Self::DurationOutOfRange(d) => {
+                BTreeMap::from([("duration".to_owned(), format!("{d:?}"))])
             }
             _ => BTreeMap::new(),
         }

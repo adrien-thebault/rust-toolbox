@@ -106,21 +106,37 @@ impl Trigger {
         self
     }
 
-    /// The next instant this fires strictly after `after`.
+    /// The next instant this fires after a job's occurrence.
     ///
     /// # Arguments
     ///
-    /// * `after` - The instant to search from, exclusive. Passing the previous
-    ///   fire is what stops a job firing twice for one occurrence.
+    /// * `started_at` - When the run started. [`Cron`](Self::Cron) and
+    ///   [`FixedRate`](Self::FixedRate) count from this: a schedule pinned to
+    ///   wall-clock positions, unaffected by how long a run takes.
+    /// * `completed_at` - When the run actually finished.
+    ///   [`FixedDelay`](Self::FixedDelay) counts from this instead, per its
+    ///   own "gap after the run **ends**" contract. Pass the same instant for
+    ///   both before a run has happened (registration, or sizing a lease
+    ///   ahead of time) - the best available estimate is "no run took any
+    ///   time yet".
     ///
     /// # Errors
-    /// [`ScheduleError::Cron`] when the expression cannot produce another time.
-    pub fn next_after(&self, after: DateTime<Utc>) -> Result<DateTime<Utc>, ScheduleError> {
+    /// [`ScheduleError::Cron`] when the expression cannot produce another
+    /// time, or [`ScheduleError::DurationOutOfRange`] when the configured
+    /// delay or period does not fit in a `chrono::TimeDelta`.
+    pub fn next_after(
+        &self,
+        started_at: DateTime<Utc>,
+        completed_at: DateTime<Utc>,
+    ) -> Result<DateTime<Utc>, ScheduleError> {
         match self {
-            Self::Cron { expr } => next_cron(expr, after),
-            Self::FixedDelay { delay, .. } | Self::FixedRate { period: delay, .. } => Ok(after
+            Self::Cron { expr } => next_cron(expr, started_at),
+            Self::FixedRate { period, .. } => Ok(started_at
+                + chrono::Duration::from_std(*period)
+                    .map_err(|_| ScheduleError::DurationOutOfRange(*period))?),
+            Self::FixedDelay { delay, .. } => Ok(completed_at
                 + chrono::Duration::from_std(*delay)
-                    .unwrap_or_else(|_| chrono::Duration::hours(1))),
+                    .map_err(|_| ScheduleError::DurationOutOfRange(*delay))?),
         }
     }
 
