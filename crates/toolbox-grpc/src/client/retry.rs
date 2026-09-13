@@ -69,6 +69,10 @@ impl RetryPolicy {
 
     /// How many attempts `method` gets.
     ///
+    /// Not validated here: a misconfigured `max_attempts: 0` is reported by
+    /// [`with_retry`] as an error on the call, since this method has no
+    /// `Result` to report it through.
+    ///
     /// # Arguments
     ///
     /// * `method` - The bare gRPC method name. A method the policy does not
@@ -106,7 +110,12 @@ impl RetryPolicy {
 ///   one.
 ///
 /// # Errors
-/// The last error the operation returned.
+/// The last error the operation returned, or [`tonic::Code::Internal`] if
+/// `policy` itself is misconfigured (`max_attempts: 0`, or a `backoff.factor`
+/// that is not finite and non-negative) - reported rather than silently
+/// reinterpreted as "1 attempt" or "no growth", and reported as an error
+/// rather than a panic because a bad static policy should not be able to
+/// crash a task handling live traffic.
 pub async fn with_retry<T, F, Fut>(
     policy: &RetryPolicy,
     method: &str,
@@ -120,6 +129,13 @@ where
     let RetryPolicy::Idempotent { backoff, .. } = policy else {
         return operation().await;
     };
+
+    if attempts < 1 || !backoff.factor.is_finite() || backoff.factor < 0.0 {
+        return Err(tonic::Status::internal(format!(
+            "misconfigured retry policy for `{method}`: max_attempts={attempts}, factor={}",
+            backoff.factor
+        )));
+    }
 
     let mut delay = backoff.min_delay;
     let mut last = None;
