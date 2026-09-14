@@ -18,6 +18,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: ./examples/todo/openapi.sh
       - name: The committed spec is out of date - run examples/todo/openapi.sh and commit the result
         run: git diff --exit-code examples/todo/web/openapi.json
