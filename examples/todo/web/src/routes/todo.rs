@@ -16,13 +16,13 @@ use axum::{
     },
     routing::{get, post},
 };
-use example_todo::proto::{
-    CompleteTodoRequest, CreateTodoRequest, DeleteTodoRequest, GetTodoRequest, ListTodosRequest,
-    Todo, todo_service_client::TodoServiceClient,
-};
 use futures_core::Stream;
 use garde::Validate;
 use serde::{Deserialize, Serialize};
+use todo_grpc::proto::{
+    CompleteTodoRequest, CreateTodoRequest, DeleteTodoRequest, GetTodoRequest, ListTodosRequest,
+    Todo, todo_service_client::TodoServiceClient,
+};
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use toolbox_auth::AssertedPrincipal;
 use toolbox_grpc::{client::asserting, with_retry};

@@ -8,7 +8,7 @@ use std::{sync::Arc, time::Duration};
 
 use chrono::Utc;
 use clap::Parser;
-use example_todo::{Connection, MIGRATIONS, TodoService, proto};
+use todo_grpc::{Connection, MIGRATIONS, TodoService, proto};
 use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
 use toolbox_cluster::{EventBus, InMemoryEventBus, InMemoryLockManager};
 use toolbox_db::{Db, SqlitePragmas, args::DatabaseArgs};
@@ -22,7 +22,7 @@ use tower::Layer;
 
 /// Command-line arguments.
 #[derive(Parser)]
-#[command(name = "example-todo")]
+#[command(name = "todo-grpc")]
 struct Args {
     /// Log format and level.
     #[command(flatten)]

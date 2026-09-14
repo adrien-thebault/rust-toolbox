@@ -5,5 +5,5 @@
 # without this being run is a build failure naming exactly what moved.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-cargo run --quiet -p example-web --example dump-openapi > web/openapi.json
-echo "wrote examples/grpc-cluster/web/openapi.json"
+cargo run --quiet -p todo-web --example dump-openapi > web/openapi.json
+echo "wrote examples/todo/web/openapi.json"

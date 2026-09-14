@@ -4,4 +4,4 @@ target/
 .env
 # The exception: a public demo with no real secret at stake, committed so
 # `docker compose up` needs no setup step.
-!/examples/grpc-cluster/.env
+!/examples/todo/.env

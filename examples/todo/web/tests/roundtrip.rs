@@ -2,9 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use cloudevents::AttributesReader as _;
 use diesel::connection::SimpleConnection;
-use example_todo::{Connection, MIGRATIONS, TodoService};
-use example_web::{auth::AuthConfig, routes::router};
 use secrecy::SecretString;
+use todo_grpc::{Connection, MIGRATIONS, TodoService};
+use todo_web::{auth::AuthConfig, routes::router};
 use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
 use toolbox_cluster::InMemoryEventBus;
 use toolbox_grpc::{
@@ -26,7 +26,7 @@ const SERVICE_SECRET: &str = "test-shared-secret";
 fn config() -> AuthConfig {
     AuthConfig {
         session_secret: SecretString::from("0123456789abcdef0123456789abcdef"),
-        issuer: "example-web".to_owned(),
+        issuer: "todo-web".to_owned(),
         admin_username: "admin".to_owned(),
         admin_password_hash: toolbox_auth::hash_password(PASSWORD).expect("argon2 accepted it"),
     }
@@ -76,7 +76,7 @@ async fn cluster_with(
             .service_secret(SERVICE_SECRET),
     );
 
-    let state = example_web::auth::state(channel, &config()).expect("the gateway configured");
+    let state = todo_web::auth::state(channel, &config()).expect("the gateway configured");
 
     (TestGateway::new(router(state, &login)), cluster, guard)
 }
@@ -349,10 +349,9 @@ async fn bypassing_the_gateway_and_calling_the_backend_directly_is_refused() {
         "todo",
         &ClientConfig::new(&cluster.backend_uri("todo")).expect("a valid uri"),
     );
-    let mut raw =
-        example_todo::proto::todo_service_client::TodoServiceClient::new(channel.channel());
+    let mut raw = todo_grpc::proto::todo_service_client::TodoServiceClient::new(channel.channel());
     let refused = raw
-        .list_todos(example_todo::proto::ListTodosRequest {
+        .list_todos(todo_grpc::proto::ListTodosRequest {
             page: None,
             title_contains: String::new(),
         })
@@ -378,13 +377,12 @@ async fn an_asserted_non_admin_principal_still_cannot_delete() {
             .expect("a valid uri")
             .service_secret(SERVICE_SECRET),
     );
-    let mut raw =
-        example_todo::proto::todo_service_client::TodoServiceClient::new(channel.channel());
+    let mut raw = todo_grpc::proto::todo_service_client::TodoServiceClient::new(channel.channel());
 
     let encoded =
         toolbox_auth::AssertedPrincipal::from(&toolbox_auth::Principal::new("mallory", "test"))
             .encode();
-    let mut request = tonic::Request::new(example_todo::proto::DeleteTodoRequest { id: 1 });
+    let mut request = tonic::Request::new(todo_grpc::proto::DeleteTodoRequest { id: 1 });
     request
         .metadata_mut()
         .insert(toolbox_grpc::X_ASSERTED_PRINCIPAL, encoded.parse().unwrap());
@@ -402,7 +400,7 @@ async fn an_asserted_non_admin_principal_still_cannot_delete() {
 /// The regression test for those three staying connected.
 #[tokio::test]
 async fn a_backend_mutation_reaches_every_hub_subscriber() {
-    use example_todo::proto::{CreateTodoRequest, todo_service_client::TodoServiceClient};
+    use todo_grpc::proto::{CreateTodoRequest, todo_service_client::TodoServiceClient};
     use toolbox_web::realtime::{Hub, HubConfig, SlowConsumer};
 
     let (db, _guard) = temp_db::<Connection>();
@@ -424,10 +422,7 @@ async fn a_backend_mutation_reaches_every_hub_subscriber() {
     // `forward_events` is what `main.rs` spawns over `auth::state`; this drives
     // the same wiring against a real backend stream.
     let hub = Arc::new(Hub::new(HubConfig::new(8, SlowConsumer::DropOldest)));
-    tokio::spawn(example_web::auth::forward_events(
-        channel.clone(),
-        hub.clone(),
-    ));
+    tokio::spawn(todo_web::auth::forward_events(channel.clone(), hub.clone()));
     // Let the WatchTodos stream attach before anything is published.
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -543,7 +538,7 @@ async fn migrations_are_idempotent() {
     let count: i64 = db
         .query(|c: &mut Connection| {
             use diesel::prelude::*;
-            example_todo::schema::todos::table.count().get_result(c)
+            todo_grpc::schema::todos::table.count().get_result(c)
         })
         .await
         .expect("the table exists");
@@ -619,9 +614,9 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
     // Without a caller deadline in scope, nothing is sent - inventing one
     // would cap calls made outside a request, like a scheduled job's.
     let mut client =
-        example_todo::proto::todo_service_client::TodoServiceClient::new(channel.channel());
+        todo_grpc::proto::todo_service_client::TodoServiceClient::new(channel.channel());
     let _ = client
-        .create_todo(example_todo::proto::CreateTodoRequest { title: "x".into() })
+        .create_todo(todo_grpc::proto::CreateTodoRequest { title: "x".into() })
         .await;
     assert!(
         seen.lock().unwrap().is_none(),
@@ -633,11 +628,11 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
         .scope(
             std::time::Instant::now() + std::time::Duration::from_secs(10),
             async {
-                let mut client = example_todo::proto::todo_service_client::TodoServiceClient::new(
+                let mut client = todo_grpc::proto::todo_service_client::TodoServiceClient::new(
                     channel.channel(),
                 );
                 let _ = client
-                    .create_todo(example_todo::proto::CreateTodoRequest { title: "y".into() })
+                    .create_todo(todo_grpc::proto::CreateTodoRequest { title: "y".into() })
                     .await;
                 seen.lock().unwrap().clone()
             },

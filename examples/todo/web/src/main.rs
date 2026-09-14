@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use clap::Parser;
-use example_web::{
+use todo_web::{
     auth::{self, AuthConfig},
     routes::{openapi, realtime_router, router},
 };
@@ -21,7 +21,7 @@ use toolbox_web::{ClientIpTrustPolicy, WebServerConfig, rate_limit::RateLimitCon
 
 /// Command-line arguments.
 #[derive(Parser)]
-#[command(name = "example-web")]
+#[command(name = "todo-web")]
 struct Args {
     /// Log format and level.
     #[command(flatten)]

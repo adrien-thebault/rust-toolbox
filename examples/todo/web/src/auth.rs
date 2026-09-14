@@ -2,13 +2,13 @@
 //!
 //! The gateway owns identity and the backend trusts its caller, so everything
 //! about authentication is on this side of the hop and none of it is in
-//! `example-todo`.
+//! `todo-grpc`.
 
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use example_todo::proto::{WatchTodosRequest, todo_service_client::TodoServiceClient};
 use secrecy::SecretString;
+use todo_grpc::proto::{WatchTodosRequest, todo_service_client::TodoServiceClient};
 use toolbox_auth::{
     AuthError, ForwardedIdentityProvider, JwtIdentityProvider, PasswordIdentityProvider,
     ProviderRegistry, Role, StoredUser, UserStore,
@@ -57,7 +57,7 @@ impl AuthConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
             session_secret: SecretString::from(var("SESSION_SECRET")?),
-            issuer: std::env::var("SESSION_ISSUER").unwrap_or_else(|_| "example-web".to_owned()),
+            issuer: std::env::var("SESSION_ISSUER").unwrap_or_else(|_| "todo-web".to_owned()),
             admin_username: var("ADMIN_USERNAME")?,
             admin_password_hash: var("ADMIN_PASSWORD_HASH")?,
         })
@@ -228,7 +228,7 @@ pub async fn forward_events(todos: ClientChannel, hub: Arc<Hub<CloudEvent>>) {
                     let id = ev.id;
                     match event(
                         ev.r#type,
-                        example_todo::EVENT_SOURCE,
+                        todo_grpc::EVENT_SOURCE,
                         &serde_json::json!({ "id": id }),
                     ) {
                         Ok(envelope) => {

@@ -27,7 +27,7 @@ services:
       - |
         apt-get update -qq
         apt-get install -y -qq --no-install-recommends protobuf-compiler libsqlite3-dev
-        cargo run -p example-todo
+        cargo run -p todo-grpc
 
   gateway:
     <<: *rust
@@ -46,7 +46,7 @@ services:
       - |
         apt-get update -qq
         apt-get install -y -qq --no-install-recommends protobuf-compiler libsqlite3-dev
-        cargo run -p example-web
+        cargo run -p todo-web
 
   test:
     <<: *rust
@@ -60,7 +60,7 @@ services:
       - |
         apt-get update -qq
         apt-get install -y -qq --no-install-recommends protobuf-compiler libsqlite3-dev
-        cargo test -p example-todo -p example-web
+        cargo test -p todo-grpc -p todo-web
 
 volumes:
   cargo-registry:

@@ -1,8 +1,8 @@
-# The gRPC cluster example
+# The todo example
 
 Two crates that deploy separately: `grpc` owns the database and speaks only
 gRPC, `web` owns authentication and speaks only HTTP. It is the same tree
-`templates/service` generates, with one less placeholder; the template adds a
+`template` generates, with one less placeholder; the template adds a
 Dockerfile and the compose file.
 
 ## Running it
@@ -11,11 +11,11 @@ Dockerfile and the compose file.
 cp .env.example .env
 docker compose up                     # both services, port 8080
 docker compose run --rm test          # the end-to-end test, no toolchain needed
-cargo test -p example-todo -p example-web   # the same test on the host
+cargo test -p todo-grpc -p todo-web   # the same test on the host
 ./openapi.sh                          # regenerate the committed openapi.json
 ```
 
-On the host, `cargo run -p example-todo` and `cargo run -p example-web` take
+On the host, `cargo run -p todo-grpc` and `cargo run -p todo-web` take
 the same variables as flags - `--listen-addr`, `--database-url`,
 `--todo-backend`.
 

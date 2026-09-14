@@ -1,5 +1,5 @@
 [package]
-name         = "example-web"
+name         = "todo-web"
 description  = "The example's HTTP gateway: it owns authentication and calls the backend."
 version.workspace      = true
 edition.workspace      = true
@@ -12,7 +12,7 @@ autotests    = false
 autoexamples = false
 
 [lib]
-name = "example_web"
+name = "todo_web"
 path = "src/lib.rs"
 
 # An example rather than a second binary: it is a tool that prints a file, not
@@ -31,7 +31,7 @@ toolbox-auth    = { workspace = true, features = ["password"] }
 toolbox-web     = { workspace = true, features = ["rate-limit", "openapi", "auth-router", "idempotency", "realtime"] }
 toolbox-grpc    = { workspace = true }
 toolbox-server  = { workspace = true, features = ["clap"] }
-example-todo    = { path = "../grpc/todo" }
+todo-grpc    = { path = "../grpc/todo" }
 
 async-trait = { workspace = true }
 axum       = { workspace = true }

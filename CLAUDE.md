@@ -62,14 +62,14 @@ cargo deny check
 ./scripts/changelog.sh
 ./scripts/hash-password.sh           # an argon2 hash in PHC format
 ./scripts/coverage.sh                # workspace line coverage, opens the HTML report
-cargo test -p example-todo -p example-web           # the gRPC cluster example, end to end
-./examples/grpc-cluster/openapi.sh                  # regenerate the example's committed spec
+cargo test -p todo-grpc -p todo-web                 # the todo example, end to end
+./examples/todo/openapi.sh                          # regenerate the example's committed spec
 ```
 
 Needs `protoc`, and `libpq` + `libmysqlclient` for `toolbox-db`'s
 three-backend test.
 
-`examples/grpc-cluster` and `templates/service` are the **same tree**: same
+`examples/todo` and `template` are the **same tree**: same
 crate layout, same modules, same two `main.rs`. The template adds the
 placeholders, the Dockerfile and the compose file; the example adds the
 end-to-end test. A change to one belongs in both, and the example's test is

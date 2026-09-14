@@ -19,5 +19,5 @@ fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 exec cargo llvm-cov --workspace --all-features \
-    --exclude example-todo --exclude example-web \
+    --exclude todo-grpc --exclude todo-web \
     --open "$@"

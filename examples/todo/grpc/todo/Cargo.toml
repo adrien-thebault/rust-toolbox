@@ -1,5 +1,5 @@
 [package]
-name         = "example-todo"
+name         = "todo-grpc"
 description  = "The example's todo domain: it owns the database and knows nothing about HTTP."
 version.workspace      = true
 edition.workspace      = true
@@ -11,7 +11,7 @@ publish                = false
 build      = "build.rs"
 
 [lib]
-name = "example_todo"
+name = "todo_grpc"
 path = "src/lib.rs"
 
 [dependencies]

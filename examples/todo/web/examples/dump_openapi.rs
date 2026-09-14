@@ -2,13 +2,13 @@
 //!
 //! CI redirects this into the committed `openapi.json` and fails on a diff, so
 //! a route whose schema changed without the spec being regenerated is a build
-//! failure naming exactly what moved. `examples/grpc-cluster/openapi.sh` is the
+//! failure naming exactly what moved. `examples/todo/openapi.sh` is the
 //! same thing by hand.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "{}",
-        toolbox_web::openapi::serialize_openapi(&example_web::routes::openapi())?
+        toolbox_web::openapi::serialize_openapi(&todo_web::routes::openapi())?
     );
     Ok(())
 }

@@ -37,7 +37,7 @@ jobs:
       - name: Generate
         run: |
           mkdir -p /tmp/generated && cd /tmp/generated
-          cargo generate --path "$GITHUB_WORKSPACE/templates/service" \
+          cargo generate --path "$GITHUB_WORKSPACE/template" \
             --name svc \
             --define "gateway=${{ matrix.gateway }}" \
             --define "database=${{ matrix.database }}" \

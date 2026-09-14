@@ -36,7 +36,7 @@ Each has its own README describing its modules.
 ## Template
 
 ```sh
-cargo generate --git https://github.com/adrien-thebault/rust-toolbox.git templates/service
+cargo generate --git https://github.com/adrien-thebault/rust-toolbox.git template
 ```
 
 Two prompts: whether to include an HTTP gateway, and which database backend.
