@@ -1,6 +1,6 @@
 //! What every outgoing request to a backend carries.
 
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use secrecy::{ExposeSecret as _, SecretString};
 use tonic::{
@@ -73,8 +73,8 @@ impl ClientInterceptor {
     }
 }
 
-impl std::fmt::Debug for ClientInterceptor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for ClientInterceptor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ClientInterceptor")
             .field("secret", &self.secret.is_some())
             .finish()
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn a_scoped_deadline_becomes_a_grpc_timeout() {
         let mut interceptor = ClientInterceptor::new(None);
-        let req = DEADLINE.sync_scope(Instant::now() + Duration::from_secs(5), || {
+        let req = DEADLINE.sync_scope(Some(Instant::now() + Duration::from_secs(5)), || {
             interceptor.call(request())
         });
         assert!(req.unwrap().metadata().get("grpc-timeout").is_some());

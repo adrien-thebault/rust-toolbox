@@ -5,16 +5,10 @@ use toolbox_cluster::{InMemoryLockManager, LockManager};
 #[tokio::test]
 async fn a_lock_can_be_taken_and_is_then_held() {
     let locks = InMemoryLockManager::new();
-    let guard = locks
-        .try_lock("job", Duration::from_secs(60))
-        .await
-        .unwrap();
+    let guard = locks.try_lock("job", Duration::from_mins(1)).await.unwrap();
     assert!(guard.is_some());
 
-    let second = locks
-        .try_lock("job", Duration::from_secs(60))
-        .await
-        .unwrap();
+    let second = locks.try_lock("job", Duration::from_mins(1)).await.unwrap();
     assert!(second.is_none(), "contention is Ok(None), not an error");
 }
 
@@ -22,7 +16,7 @@ async fn a_lock_can_be_taken_and_is_then_held() {
 async fn dropping_the_guard_releases_the_lock() {
     let locks = InMemoryLockManager::new();
     let guard = locks
-        .try_lock("job", Duration::from_secs(60))
+        .try_lock("job", Duration::from_mins(1))
         .await
         .unwrap()
         .unwrap();
@@ -31,7 +25,7 @@ async fn dropping_the_guard_releases_the_lock() {
 
     assert!(
         locks
-            .try_lock("job", Duration::from_secs(60))
+            .try_lock("job", Duration::from_mins(1))
             .await
             .unwrap()
             .is_some()
@@ -42,13 +36,13 @@ async fn dropping_the_guard_releases_the_lock() {
 async fn different_keys_do_not_contend() {
     let locks = InMemoryLockManager::new();
     let _a = locks
-        .try_lock("a", Duration::from_secs(60))
+        .try_lock("a", Duration::from_mins(1))
         .await
         .unwrap()
         .unwrap();
     assert!(
         locks
-            .try_lock("b", Duration::from_secs(60))
+            .try_lock("b", Duration::from_mins(1))
             .await
             .unwrap()
             .is_some()
@@ -70,7 +64,7 @@ async fn an_expired_lease_can_be_taken_by_someone_else() {
     tokio::time::sleep(Duration::from_millis(60)).await;
     assert!(
         locks
-            .try_lock("job", Duration::from_secs(60))
+            .try_lock("job", Duration::from_mins(1))
             .await
             .unwrap()
             .is_some()
@@ -90,7 +84,7 @@ async fn a_stale_guard_does_not_release_someone_elses_lock() {
     tokio::time::sleep(Duration::from_millis(60)).await;
 
     let fresh = locks
-        .try_lock("job", Duration::from_secs(60))
+        .try_lock("job", Duration::from_mins(1))
         .await
         .unwrap()
         .unwrap();
@@ -98,7 +92,7 @@ async fn a_stale_guard_does_not_release_someone_elses_lock() {
 
     assert!(
         locks
-            .try_lock("job", Duration::from_secs(60))
+            .try_lock("job", Duration::from_mins(1))
             .await
             .unwrap()
             .is_none()

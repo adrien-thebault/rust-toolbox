@@ -5,9 +5,11 @@
 //! `application/json` while claiming RFC 7807, and putting raw database text in
 //! a 5xx body sent to anonymous callers.
 
+use std::{error::Error, fmt};
+
 use axum::response::{IntoResponse, Response};
 use http::{HeaderValue, StatusCode, header};
-use toolbox_error::{ErrorInfo, ErrorKind, PROBLEM_JSON, Problem, ServiceError};
+use toolbox_error::{ErrorInfo, ErrorKind, PROBLEM_JSON, Problem, ServiceError, title_for};
 use toolbox_server::trace_context::current_request_id;
 use tracing::error;
 
@@ -24,7 +26,7 @@ pub struct ApiError {
     /// and that is ~240 bytes per return; boxed it is ~48.
     problem: Box<Problem>,
     /// The underlying error, logged but never serialized.
-    source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    source: Option<Box<dyn Error + Send + Sync>>,
     /// Seconds for a `Retry-After` header, when the status warrants one.
     retry_after: Option<u64>,
 }
@@ -64,7 +66,7 @@ impl ApiError {
     /// * `source` - The underlying cause. It is logged and never serialized,
     ///   which is what stops database text reaching an anonymous caller.
     #[must_use]
-    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+    pub fn with_source(mut self, source: impl Error + Send + Sync + 'static) -> Self {
         self.source = Some(Box::new(source));
         self
     }
@@ -170,22 +172,20 @@ impl ApiError {
     ///
     /// * `source` - The cause. It is logged in full and never serialized, which
     ///   is the entire difference between this and the other constructors.
-    pub fn internal(source: impl std::error::Error + Send + Sync + 'static) -> Self {
+    pub fn internal(source: impl Error + Send + Sync + 'static) -> Self {
         Self::of_kind(ErrorKind::Internal, "Internal Server Error").with_source(source)
     }
 }
 
-impl std::fmt::Display for ApiError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.status.as_u16(), self.problem.title)
     }
 }
 
-impl std::error::Error for ApiError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source
-            .as_ref()
-            .map(|e| &**e as &(dyn std::error::Error + 'static))
+impl Error for ApiError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.source.as_ref().map(|e| &**e as &(dyn Error + 'static))
     }
 }
 
@@ -254,10 +254,7 @@ impl ApiError {
     #[must_use]
     pub fn from_error_info(info: ErrorInfo, kind: ErrorKind) -> Self {
         let status = status_for(kind);
-        let mut problem = Problem::new(
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Error"),
-        );
+        let mut problem = Problem::new(status.as_u16(), title_for(kind));
         problem.code = Some(info.code);
         problem.domain = Some(info.domain);
         problem.metadata = info.metadata;

@@ -4,6 +4,8 @@
 //! `google.rpc.ErrorInfo` as carried by `tonic-types`, which do not know about
 //! each other.
 
+use std::collections::HashMap;
+
 use tonic::{Code, Status};
 use tonic_types::{ErrorDetails, StatusExt as _};
 use toolbox_error::{ErrorInfo, ErrorKind, ServiceError};
@@ -99,9 +101,7 @@ pub fn to_status<E: ServiceError>(err: E) -> Status {
         info.domain.clone(),
         // ErrorInfo keeps a BTreeMap so its JSON is deterministic; tonic-types
         // wants a HashMap, and the ordering does not survive the wire anyway.
-        info.metadata
-            .into_iter()
-            .collect::<std::collections::HashMap<_, _>>(),
+        info.metadata.into_iter().collect::<HashMap<_, _>>(),
     );
 
     let message = if kind == ErrorKind::Internal {

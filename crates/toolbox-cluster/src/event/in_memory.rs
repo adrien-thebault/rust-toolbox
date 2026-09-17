@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    fmt,
     sync::{Mutex, PoisonError},
 };
 
@@ -28,8 +29,8 @@ pub struct InMemoryEventBus {
     buffer: usize,
 }
 
-impl std::fmt::Debug for InMemoryEventBus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for InMemoryEventBus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("InMemoryEventBus")
             .field("buffer", &self.buffer)
             .finish_non_exhaustive()

@@ -4,7 +4,11 @@
 //! behind one provider. There is deliberately **no** `PasswordVerifier` trait
 //! here - `password_hash::PasswordVerifier` already exists.
 
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt,
+    hash::BuildHasher,
+};
 
 use argon2::Argon2;
 use async_trait::async_trait;
@@ -124,9 +128,9 @@ pub struct StoredUser {
 /// An in-memory user store keyed by username, for a fixed set of service
 /// accounts or a test fixture. A real deployment queries a table.
 #[async_trait]
-impl<H> UserStore for std::collections::HashMap<String, StoredUser, H>
+impl<H> UserStore for HashMap<String, StoredUser, H>
 where
-    H: std::hash::BuildHasher + Send + Sync + 'static,
+    H: BuildHasher + Send + Sync + 'static,
 {
     async fn lookup(&self, username: &str) -> Result<Option<StoredUser>, AuthError> {
         Ok(self.get(username).cloned())
@@ -143,8 +147,8 @@ pub struct PasswordIdentityProvider<S> {
     display_name: String,
 }
 
-impl<S> std::fmt::Debug for PasswordIdentityProvider<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<S> fmt::Debug for PasswordIdentityProvider<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PasswordIdentityProvider")
             .field("id", &self.id)
             .finish_non_exhaustive()

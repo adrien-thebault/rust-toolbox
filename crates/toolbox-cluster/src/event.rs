@@ -17,7 +17,7 @@
 
 mod in_memory;
 
-use std::pin::Pin;
+use std::{fmt, pin::Pin};
 
 use async_trait::async_trait;
 use cloudevents::{EventBuilder, EventBuilderV10, event::Data};
@@ -134,8 +134,8 @@ impl Topic {
     }
 }
 
-impl std::fmt::Display for Topic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Topic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }

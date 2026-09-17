@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
 };
 
@@ -45,10 +45,7 @@ struct InMemoryRelease {
 
 impl LockRelease for InMemoryRelease {
     fn release(&self, key: &str, owner: &str) {
-        let mut held = self
-            .held
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         // Only if we still hold it: the lease may have expired and been taken
         // by someone else, and releasing then would steal their lock.
         if held.get(key).is_some_and(|h| h.owner == owner) {
@@ -66,10 +63,7 @@ impl LockManager for InMemoryLockManager {
     ) -> Result<Option<LockGuard>, LockManagerError> {
         let owner = uuid::Uuid::now_v7().to_string();
         let now = Instant::now();
-        let mut held = self
-            .held
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
 
         if held.get(key).is_some_and(|h| h.until > now) {
             return Ok(None);

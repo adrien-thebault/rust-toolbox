@@ -4,7 +4,7 @@
 //! can be built from, so a domain error is classified once rather than once per
 //! transport.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, error::Error};
 
 use serde::{Deserialize, Serialize};
 
@@ -106,7 +106,7 @@ impl ErrorInfo {
 /// Implement this on your service's error enum; `toolbox-grpc::to_status` and
 /// `toolbox-web::ApiError` both consume it. There is deliberately no blanket
 /// `impl<E: ServiceError> From<E> for tonic::Status` - see `toolbox-grpc`.
-pub trait ServiceError: std::error::Error {
+pub trait ServiceError: Error {
     /// A stable `SCREAMING_SNAKE_CASE` code. Clients match on this, never on
     /// the `Display` string.
     fn code(&self) -> &'static str;

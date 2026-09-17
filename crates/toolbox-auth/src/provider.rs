@@ -16,7 +16,7 @@ pub mod jwt;
 pub mod password;
 pub mod proxy_header;
 
-use std::sync::Arc;
+use std::{any::Any, fmt, sync::Arc};
 
 pub use asserted_principal::{AssertedPrincipal, AssertedPrincipalProvider};
 use async_trait::async_trait;
@@ -28,6 +28,7 @@ pub use password::{
 pub use proxy_header::{
     ForwardedHeaders, ForwardedIdentity, ForwardedIdentityProvider, parse_network,
 };
+use secrecy::SecretString;
 
 use crate::principal::{AuthError, Principal};
 
@@ -42,18 +43,18 @@ pub enum Credential {
         /// The username.
         username: String,
         /// The password, unhashed. Never logged, never stored.
-        password: secrecy::SecretString,
+        password: SecretString,
     },
     /// A long-lived API key.
-    ApiKey(secrecy::SecretString),
+    ApiKey(SecretString),
     /// A bearer token.
-    Bearer(secrecy::SecretString),
+    Bearer(SecretString),
     /// Anything a provider outside the toolbox defines.
-    Custom(Box<dyn std::any::Any + Send + Sync>),
+    Custom(Box<dyn Any + Send + Sync>),
 }
 
-impl std::fmt::Debug for Credential {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Credential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Never the secret. A Debug of a login request ends up in a log.
         f.write_str(match self {
             Self::Password { .. } => "Credential::Password(<redacted>)",
@@ -93,8 +94,8 @@ pub struct ProviderRegistry {
     providers: Vec<Arc<dyn IdentityProvider>>,
 }
 
-impl std::fmt::Debug for ProviderRegistry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for ProviderRegistry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProviderRegistry")
             .field("providers", &self.ids())
             .finish()

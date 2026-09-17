@@ -14,7 +14,7 @@ pub mod error;
 pub mod problem;
 
 pub use error::{ErrorInfo, ErrorKind, ServiceError};
-pub use problem::{ABOUT_BLANK, PROBLEM_JSON, Problem};
+pub use problem::{ABOUT_BLANK, PROBLEM_JSON, Problem, title_for};
 /// The derive. Shares its name with the [`ServiceError`] trait it implements,
 /// the way `serde::Serialize` does. Behind the `derive` feature.
 #[cfg(feature = "derive")]

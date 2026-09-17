@@ -1,6 +1,8 @@
 //! The state `health_router` reads: the process lifecycle, plus any extra
 //! dependency checks `/ready` must also pass.
 
+use std::fmt;
+
 pub use toolbox_server::HealthCheck;
 use toolbox_server::{LifecycleHandle, Shutdown};
 
@@ -11,8 +13,8 @@ pub struct HealthState {
     pub(super) lifecycle: LifecycleHandle,
 }
 
-impl std::fmt::Debug for HealthState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for HealthState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HealthState")
             .field("lifecycle", &self.lifecycle)
             .finish()

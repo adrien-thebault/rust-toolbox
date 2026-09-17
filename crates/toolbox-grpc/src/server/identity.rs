@@ -17,7 +17,9 @@
 //! whatever reached it.
 
 use std::{
+    fmt,
     future::Future,
+    mem,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -150,8 +152,8 @@ impl IdentityLayer {
     }
 }
 
-impl std::fmt::Debug for IdentityLayer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for IdentityLayer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IdentityLayer")
             .field("extractors", &self.extractors.len())
             .finish_non_exhaustive()
@@ -202,7 +204,7 @@ where
     fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
         // Clone-and-swap so the async block owns a ready inner service.
         let clone = self.inner.clone();
-        let mut inner = std::mem::replace(&mut self.inner, clone);
+        let mut inner = mem::replace(&mut self.inner, clone);
         let registry = Arc::clone(&self.registry);
         let extractors = self.extractors.clone();
 

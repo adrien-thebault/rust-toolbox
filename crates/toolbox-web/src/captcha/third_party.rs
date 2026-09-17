@@ -5,10 +5,11 @@
 //! drop-in reCAPTCHA replacements. So there is nothing here to select between:
 //! the consumer names the endpoint, this posts the form and reads the answer.
 
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
 use serde::Deserialize;
+use toolbox_error::ErrorKind;
 use tracing::{debug, warn};
 
 use super::CaptchaVerifier;
@@ -42,8 +43,8 @@ pub struct ThirdPartyCaptcha {
     http: reqwest::Client,
 }
 
-impl std::fmt::Debug for ThirdPartyCaptcha {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for ThirdPartyCaptcha {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ThirdPartyCaptcha")
             .field("endpoint", &self.endpoint)
             .finish_non_exhaustive()
@@ -102,12 +103,12 @@ impl CaptchaVerifier for ThirdPartyCaptcha {
                 // here would lock every user out when the provider has an
                 // outage; returning an error lets the caller decide.
                 warn!(error = %e, "the captcha provider could not be reached");
-                ApiError::of_kind(toolbox_error::ErrorKind::Unavailable, "Service Unavailable")
+                ApiError::of_kind(ErrorKind::Unavailable, "Service Unavailable")
                     .with_code("CAPTCHA_UNAVAILABLE")
             })?;
 
         let verified: SiteVerify = response.json().await.map_err(|e| {
-            ApiError::of_kind(toolbox_error::ErrorKind::Unavailable, "Service Unavailable")
+            ApiError::of_kind(ErrorKind::Unavailable, "Service Unavailable")
                 .with_code("CAPTCHA_UNAVAILABLE")
                 .with_source(e)
         })?;

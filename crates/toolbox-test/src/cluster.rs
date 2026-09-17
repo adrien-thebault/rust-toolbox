@@ -1,6 +1,6 @@
 //! A cluster of gRPC backends on ephemeral ports.
 
-use std::{collections::BTreeMap, net::SocketAddr, time::Duration};
+use std::{collections::BTreeMap, io, net::SocketAddr, time::Duration};
 
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::service::RoutesBuilder;
@@ -25,7 +25,7 @@ pub enum ClusterError {
         /// Which backend.
         name: &'static str,
         /// Why.
-        source: std::io::Error,
+        source: io::Error,
     },
     /// A backend bound but never started accepting within the timeout.
     #[error("backend `{name}` did not become ready within {timeout:?}")]

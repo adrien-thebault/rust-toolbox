@@ -5,24 +5,17 @@
 //! it cannot be forgotten, it is visible in the route table, and the type
 //! system checks it.
 
-use std::marker::PhantomData;
+use std::{convert::Infallible, marker::PhantomData};
 
 use axum::extract::FromRequestParts;
-#[cfg(feature = "auth-router")]
-use axum::extract::Query;
 use http::request::Parts;
-#[cfg(feature = "auth-router")]
-use secrecy::SecretString;
-#[cfg(feature = "auth-router")]
-use serde::Deserialize;
-#[cfg(feature = "auth-router")]
-use toolbox_auth::Credential;
 use toolbox_auth::{AuthError, Principal, Role, principal::AnyRole};
 #[cfg(feature = "auth-router")]
-use toolbox_server::trace_context::record_principal;
+use {
+    crate::auth::AuthState, axum::extract::Query, secrecy::SecretString, serde::Deserialize,
+    toolbox_auth::Credential, toolbox_server::trace_context::record_principal,
+};
 
-#[cfg(feature = "auth-router")]
-use crate::auth::AuthState;
 use crate::error::ApiError;
 
 /// A caller who is authenticated and holds `R`.
@@ -84,7 +77,7 @@ where
 pub struct MaybeAuthenticated(pub Option<Principal>);
 
 impl<S: Send + Sync> FromRequestParts<S> for MaybeAuthenticated {
-    type Rejection = std::convert::Infallible;
+    type Rejection = Infallible;
 
     #[allow(clippy::unused_async_trait_impl)] // trait-required async signature
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {

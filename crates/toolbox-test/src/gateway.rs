@@ -1,6 +1,9 @@
 //! An in-process gateway.
 
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    fmt,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
 use axum::{Router, extract::ConnectInfo};
 
@@ -12,8 +15,7 @@ use crate::problem::ProblemResponse;
 /// `ConnectInfo` is always present in production. The mock transport sets none,
 /// which makes `client_ip` return `None` and anything keyed on it - the login
 /// rate limit, an audit record - behave as if the caller were unidentifiable.
-pub const TEST_PEER: SocketAddr =
-    SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::LOCALHOST), 51_000);
+pub const TEST_PEER: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 51_000);
 
 /// A gateway driven in process.
 ///
@@ -24,8 +26,8 @@ pub struct TestGateway {
     server: axum_test::TestServer,
 }
 
-impl std::fmt::Debug for TestGateway {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for TestGateway {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TestGateway")
     }
 }

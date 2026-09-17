@@ -6,7 +6,7 @@
 
 use diesel::{
     connection::Connection,
-    r2d2::{CustomizeConnection, Error as R2d2Error},
+    r2d2::{CustomizeConnection, Error},
 };
 
 /// Pragmas applied to every pooled connection.
@@ -83,11 +83,11 @@ impl SqlitePragmas {
 /// Installing it on a pool that is not SQLite makes connection acquisition
 /// fail, which is why `DbBuilder::sqlite_pragmas` is opt-in and named for the
 /// backend it belongs to.
-impl<C> CustomizeConnection<C, R2d2Error> for SqlitePragmas
+impl<C> CustomizeConnection<C, Error> for SqlitePragmas
 where
     C: Connection + 'static,
 {
-    fn on_acquire(&self, conn: &mut C) -> Result<(), R2d2Error> {
+    fn on_acquire(&self, conn: &mut C) -> Result<(), Error> {
         let mut sql = format!("PRAGMA busy_timeout = {};", self.busy_timeout_ms);
         if self.wal {
             sql.push_str(" PRAGMA journal_mode = WAL;");
@@ -95,6 +95,6 @@ where
         if self.foreign_keys {
             sql.push_str(" PRAGMA foreign_keys = ON;");
         }
-        conn.batch_execute(&sql).map_err(R2d2Error::QueryError)
+        conn.batch_execute(&sql).map_err(Error::QueryError)
     }
 }

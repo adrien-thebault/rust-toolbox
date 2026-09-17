@@ -5,8 +5,10 @@
 //! ./scripts/hash-password.sh          # prompts, so it stays out of your shell history
 //! ```
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let password = if let Some(given) = std::env::args().nth(1) {
+use std::{env, error::Error, process};
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let password = if let Some(given) = env::args().nth(1) {
         given
     } else {
         eprint!("password: ");
@@ -15,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if password.is_empty() {
         eprintln!("refusing to hash an empty password");
-        std::process::exit(1);
+        process::exit(1);
     }
     println!("{}", toolbox_auth::hash_password(&password)?);
     Ok(())
