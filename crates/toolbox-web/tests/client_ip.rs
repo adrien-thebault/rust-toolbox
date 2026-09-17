@@ -1,9 +1,9 @@
 use std::net::{IpAddr, SocketAddr};
 
 use axum::extract::ConnectInfo;
-use http::{HeaderMap, Request};
+use http::{HeaderMap, HeaderValue, Request};
 use toolbox_web::client_ip::{
-    ClientIpTrustPolicy, IpNet, bucket, client_ip, client_ip_of, resolve_client_ip,
+    ClientIpTrustPolicy, IpNet, PRIVATE_RANGES, bucket, client_ip, client_ip_of, resolve_client_ip,
 };
 
 fn headers(pairs: &[&str]) -> HeaderMap {
@@ -14,8 +14,12 @@ fn headers(pairs: &[&str]) -> HeaderMap {
     h
 }
 
-fn peer() -> Option<SocketAddr> {
+fn public_peer() -> Option<SocketAddr> {
     Some("203.0.113.9:4444".parse().unwrap())
+}
+
+fn proxy_peer() -> Option<SocketAddr> {
+    Some("10.0.0.2:4444".parse().unwrap())
 }
 
 fn ip(s: &str) -> IpAddr {
@@ -26,84 +30,47 @@ fn net(s: &str) -> IpNet {
     s.parse().unwrap()
 }
 
-#[test]
-fn one_proxy_appending_one_entry_is_the_common_case() {
-    let h = headers(&["198.51.100.7"]);
-    assert_eq!(
-        resolve_client_ip(&h, peer(), &ClientIpTrustPolicy::hops(1)),
-        Some(ip("198.51.100.7"))
-    );
-}
-
-/// Counting from the right is what stops a client choosing its own bucket: a
-/// forged leftmost entry is simply not the one read.
-#[test]
-fn a_forged_leading_entry_is_ignored() {
-    let h = headers(&["1.1.1.1, 2.2.2.2, 198.51.100.7"]);
-    assert_eq!(
-        resolve_client_ip(&h, peer(), &ClientIpTrustPolicy::hops(1)),
-        Some(ip("198.51.100.7")),
-        "the entry the trusted proxy appended, not the one the client sent"
-    );
-}
-
-/// `get()` reads only the first header line, so a proxy that adds a second line
-/// is invisible; `get_all` is not.
-#[test]
-fn a_second_header_line_is_not_ignored() {
-    let h = headers(&["1.1.1.1", "198.51.100.7"]);
-    assert_eq!(
-        resolve_client_ip(&h, peer(), &ClientIpTrustPolicy::hops(1)),
-        Some(ip("198.51.100.7"))
-    );
-}
-
-#[test]
-fn a_cdn_in_front_of_a_load_balancer_needs_two_hops() {
-    let h = headers(&["9.9.9.9, 198.51.100.7, 10.0.0.1"]);
-    assert_eq!(
-        resolve_client_ip(&h, peer(), &ClientIpTrustPolicy::hops(2)),
-        Some(ip("198.51.100.7"))
-    );
-}
-
 /// With nothing in front, no entry in the header is trustworthy at all.
 #[test]
 fn peer_trust_ignores_the_header_entirely() {
     let h = headers(&["1.1.1.1, 2.2.2.2"]);
     assert_eq!(
-        resolve_client_ip(&h, peer(), &ClientIpTrustPolicy::Peer),
+        resolve_client_ip(&h, public_peer(), &ClientIpTrustPolicy::Peer),
         Some(ip("203.0.113.9"))
-    );
-    assert_eq!(
-        ClientIpTrustPolicy::hops(0),
-        ClientIpTrustPolicy::Peer,
-        "zero hops is Peer"
     );
 }
 
 #[test]
-fn a_list_shorter_than_the_hop_count_falls_back_to_the_peer() {
-    let h = headers(&["198.51.100.7"]);
+fn an_untrusted_peer_cannot_supply_a_forwarded_address() {
+    let trust = ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")]);
+    let h = headers(&["1.1.1.1"]);
     assert_eq!(
-        resolve_client_ip(&h, peer(), &ClientIpTrustPolicy::hops(3)),
+        resolve_client_ip(&h, public_peer(), &trust),
         Some(ip("203.0.113.9")),
-        "trusting whatever is there would be worse than admitting we do not know"
+        "a direct caller must not choose its own rate-limit bucket"
     );
 }
 
 #[test]
 fn no_header_falls_back_to_the_peer() {
     assert_eq!(
-        resolve_client_ip(&HeaderMap::new(), peer(), &ClientIpTrustPolicy::hops(1)),
-        Some(ip("203.0.113.9"))
+        resolve_client_ip(
+            &HeaderMap::new(),
+            proxy_peer(),
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
+        ),
+        Some(ip("10.0.0.2"))
     );
 }
 
 #[test]
 fn no_header_and_no_peer_is_none_rather_than_a_guess() {
     assert_eq!(
-        resolve_client_ip(&HeaderMap::new(), None, &ClientIpTrustPolicy::hops(1)),
+        resolve_client_ip(
+            &HeaderMap::new(),
+            None,
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
+        ),
         None
     );
 }
@@ -113,24 +80,24 @@ fn entries_with_ports_and_brackets_parse() {
     assert_eq!(
         resolve_client_ip(
             &headers(&["198.51.100.7:1234"]),
-            None,
-            &ClientIpTrustPolicy::hops(1)
+            proxy_peer(),
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
         ),
         Some(ip("198.51.100.7"))
     );
     assert_eq!(
         resolve_client_ip(
             &headers(&["[2001:db8::1]:443"]),
-            None,
-            &ClientIpTrustPolicy::hops(1)
+            proxy_peer(),
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
         ),
         Some(ip("2001:db8::1"))
     );
     assert_eq!(
         resolve_client_ip(
             &headers(&["[2001:db8::1]"]),
-            None,
-            &ClientIpTrustPolicy::hops(1)
+            proxy_peer(),
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
         ),
         Some(ip("2001:db8::1"))
     );
@@ -140,9 +107,42 @@ fn entries_with_ports_and_brackets_parse() {
 fn an_unparseable_entry_falls_back_rather_than_skipping_to_another() {
     let h = headers(&["198.51.100.7, garbage"]);
     assert_eq!(
-        resolve_client_ip(&h, peer(), &ClientIpTrustPolicy::hops(1)),
-        Some(ip("203.0.113.9")),
-        "skipping to the next entry would let a client push the real one out of position"
+        resolve_client_ip(
+            &h,
+            proxy_peer(),
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
+        ),
+        Some(ip("10.0.0.2")),
+        "skipping past a malformed entry would trust an incomplete chain"
+    );
+}
+
+#[test]
+fn a_non_text_header_falls_back_to_the_peer() {
+    let mut h = HeaderMap::new();
+    h.append(
+        "x-forwarded-for",
+        HeaderValue::from_bytes(b"\xff").expect("opaque header bytes are legal"),
+    );
+    assert_eq!(
+        resolve_client_ip(
+            &h,
+            proxy_peer(),
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
+        ),
+        Some(ip("10.0.0.2"))
+    );
+}
+
+#[test]
+fn bracketed_ipv6_rejects_trailing_junk() {
+    assert_eq!(
+        resolve_client_ip(
+            &headers(&["[2001:db8::1]junk"]),
+            proxy_peer(),
+            &ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")])
+        ),
+        Some(ip("10.0.0.2"))
     );
 }
 
@@ -153,7 +153,7 @@ fn behind_proxies_skips_the_trusted_ranges() {
     let trust = ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8"), net("172.16.0.0/12")]);
     let h = headers(&["198.51.100.7, 172.16.4.4, 10.0.0.1"]);
     assert_eq!(
-        resolve_client_ip(&h, peer(), &trust),
+        resolve_client_ip(&h, proxy_peer(), &trust),
         Some(ip("198.51.100.7"))
     );
 }
@@ -163,7 +163,7 @@ fn behind_proxies_handles_a_shorter_chain_the_same_way() {
     let trust = ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")]);
     let h = headers(&["198.51.100.7, 10.9.9.9"]);
     assert_eq!(
-        resolve_client_ip(&h, peer(), &trust),
+        resolve_client_ip(&h, proxy_peer(), &trust),
         Some(ip("198.51.100.7"))
     );
 }
@@ -173,8 +173,8 @@ fn behind_proxies_falls_back_to_the_peer_when_every_entry_is_trusted() {
     let trust = ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")]);
     let h = headers(&["10.1.1.1, 10.2.2.2"]);
     assert_eq!(
-        resolve_client_ip(&h, peer(), &trust),
-        Some(ip("203.0.113.9"))
+        resolve_client_ip(&h, proxy_peer(), &trust),
+        Some(ip("10.0.0.2"))
     );
 }
 
@@ -183,8 +183,8 @@ fn behind_proxies_stops_at_a_malformed_entry() {
     let trust = ClientIpTrustPolicy::BehindProxies(vec![net("10.0.0.0/8")]);
     let h = headers(&["198.51.100.7, garbage, 10.0.0.1"]);
     assert_eq!(
-        resolve_client_ip(&h, peer(), &trust),
-        Some(ip("203.0.113.9")),
+        resolve_client_ip(&h, proxy_peer(), &trust),
+        Some(ip("10.0.0.2")),
         "a hole in the chain is not something to skip past"
     );
 }
@@ -216,14 +216,14 @@ fn the_from_pieces_form_reads_the_peer_from_the_connect_info_extension() {
         "203.0.113.9:4444".parse::<SocketAddr>().unwrap(),
     ));
     assert_eq!(
-        client_ip_of(&HeaderMap::new(), &ext, &ClientIpTrustPolicy::hops(1)),
+        client_ip_of(&HeaderMap::new(), &ext, &ClientIpTrustPolicy::Peer),
         Some(ip("203.0.113.9"))
     );
     assert_eq!(
         client_ip_of(
             &HeaderMap::new(),
             &http::Extensions::new(),
-            &ClientIpTrustPolicy::hops(1)
+            &ClientIpTrustPolicy::Peer
         ),
         None,
         "no connect info means no peer to fall back to"
@@ -234,8 +234,14 @@ fn the_from_pieces_form_reads_the_peer_from_the_connect_info_extension() {
 fn the_from_parts_form_resolves_the_same_way() {
     let (mut parts, ()) = Request::builder().uri("/").body(()).unwrap().into_parts();
     parts.headers = headers(&["198.51.100.7"]);
+    parts
+        .extensions
+        .insert(ConnectInfo("10.0.0.2:4444".parse::<SocketAddr>().unwrap()));
     assert_eq!(
-        client_ip(&parts, &ClientIpTrustPolicy::hops(1)),
+        client_ip(
+            &parts,
+            &ClientIpTrustPolicy::BehindProxies(PRIVATE_RANGES.to_vec())
+        ),
         Some(ip("198.51.100.7"))
     );
 }

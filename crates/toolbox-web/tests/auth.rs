@@ -14,7 +14,7 @@ use toolbox_auth::{
     RefreshInfo, StoredUser, UserStore, hash_password,
 };
 use toolbox_web::{
-    ClientIpTrustPolicy,
+    ClientIpTrustPolicy, PRIVATE_RANGES,
     auth::{AuthState, auth_router, session_layer},
     rate_limit::RateLimitConfig,
 };
@@ -94,7 +94,11 @@ fn state() -> State {
 fn app(state: State) -> Router {
     app_with(
         state,
-        &RateLimitConfig::new(5, Duration::from_secs(5), ClientIpTrustPolicy::hops(1)),
+        &RateLimitConfig::new(
+            5,
+            Duration::from_secs(5),
+            ClientIpTrustPolicy::BehindProxies(PRIVATE_RANGES.to_vec()),
+        ),
     )
 }
 

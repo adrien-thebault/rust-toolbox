@@ -34,7 +34,7 @@ pub mod stack;
 
 #[cfg(feature = "auth-router")]
 pub use auth::{AuthState, auth_router, session_layer};
-pub use client_ip::{ClientIpTrustPolicy, client_ip, resolve_client_ip};
+pub use client_ip::{ClientIpTrustPolicy, PRIVATE_RANGES, client_ip, resolve_client_ip};
 pub use cors::{cors, cors_localhost};
 pub use error::{ApiError, status_for};
 #[cfg(feature = "auth-router")]

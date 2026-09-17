@@ -5,17 +5,31 @@
 //! log, the audit trail and any analytics. Four subsystems disagreeing about
 //! who the caller was is its own class of bug.
 
-use std::{
-    net::{IpAddr, SocketAddr},
-    num::NonZeroUsize,
-};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use axum::extract::ConnectInfo;
-use http::{HeaderMap, HeaderName, request::Parts};
-pub use ipnet::IpNet;
+use http::{Extensions, HeaderMap, HeaderName, request::Parts};
+pub use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 
 /// The de-facto forwarded-client header.
 pub const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+
+/// Private proxy ranges, matching Caddy's `private_ranges` shortcut.
+///
+/// This is convenient for local/container deployments, but production should
+/// prefer the exact proxy ranges when unrelated private-network workloads can
+/// reach the server.
+pub const PRIVATE_RANGES: [IpNet; 6] = [
+    IpNet::V4(Ipv4Net::new_assert(Ipv4Addr::new(192, 168, 0, 0), 16)),
+    IpNet::V4(Ipv4Net::new_assert(Ipv4Addr::new(172, 16, 0, 0), 12)),
+    IpNet::V4(Ipv4Net::new_assert(Ipv4Addr::new(10, 0, 0, 0), 8)),
+    IpNet::V4(Ipv4Net::new_assert(Ipv4Addr::new(127, 0, 0, 0), 8)),
+    IpNet::V6(Ipv6Net::new_assert(
+        Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0),
+        8,
+    )),
+    IpNet::V6(Ipv6Net::new_assert(Ipv6Addr::LOCALHOST, 128)),
+];
 
 /// How to find the client's address behind proxies.
 ///
@@ -26,26 +40,10 @@ pub const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for
 pub enum ClientIpTrustPolicy {
     /// Nothing sits in front: use the TCP peer, ignore `X-Forwarded-For`.
     Peer,
-    /// Exactly `n` proxies append one entry each, so the client is `n` entries
-    /// from the right. `Hops(1)` is a plain Caddy or nginx in front.
-    Hops(NonZeroUsize),
     /// Walk `X-Forwarded-For` right to left, skipping entries in these networks
     /// (and a peer in them); the first entry outside is the client. Robust when
     /// the hop count varies - a CDN that is only sometimes in the path.
     BehindProxies(Vec<IpNet>),
-}
-
-impl ClientIpTrustPolicy {
-    /// `n` proxy hops, or [`Peer`](Self::Peer) when `n` is zero.
-    ///
-    /// # Arguments
-    ///
-    /// * `n` - How many proxies append to `X-Forwarded-For`. Zero means nothing
-    ///   is in front and the header is not read at all.
-    #[must_use]
-    pub fn hops(n: usize) -> Self {
-        NonZeroUsize::new(n).map_or(Self::Peer, Self::Hops)
-    }
 }
 
 /// The client IP for the configured trust model, falling back to the TCP peer.
@@ -70,43 +68,30 @@ pub fn resolve_client_ip(
     trust: &ClientIpTrustPolicy,
 ) -> Option<IpAddr> {
     let peer_ip = peer.map(|p| p.ip());
-    if *trust == ClientIpTrustPolicy::Peer {
-        return peer_ip;
-    }
-
-    // Flatten every header line, since a proxy may add a second line rather
-    // than extending the first. Parsed up front so a malformed entry is a
-    // `None` in place, not a hole the list closes over.
-    let entries: Vec<Option<IpAddr>> = headers
-        .get_all(X_FORWARDED_FOR)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(','))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(parse_forwarded_entry)
-        .collect();
-
     match trust {
-        ClientIpTrustPolicy::Peer => peer_ip,
-        ClientIpTrustPolicy::Hops(n) => entries
-            .len()
-            .checked_sub(n.get())
-            .and_then(|i| entries.get(i).copied().flatten())
-            .or(peer_ip),
-        ClientIpTrustPolicy::BehindProxies(nets) => {
-            for entry in entries.iter().rev() {
-                match entry {
-                    // A trusted proxy: keep walking left.
-                    Some(ip) if nets.iter().any(|net| net.contains(ip)) => {}
-                    // The first address outside the trusted set is the client.
-                    Some(ip) => return Some(*ip),
-                    // A malformed entry: stop rather than skip past it.
-                    None => break,
+        ClientIpTrustPolicy::BehindProxies(nets)
+            if peer_ip.is_some_and(|ip| nets.iter().any(|net| net.contains(&ip))) =>
+        {
+            // Flatten every header line, since a proxy may add a second line
+            // rather than extending the first. Any malformed line or entry
+            // invalidates the forwarded chain instead of becoming a hole an
+            // attacker could make the list close over.
+            let forwarded = (|| {
+                let mut entries = Vec::new();
+                for value in headers.get_all(X_FORWARDED_FOR) {
+                    let value = value.to_str().ok()?;
+                    for entry in value.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                        entries.push(parse_forwarded_entry(entry)?);
+                    }
                 }
-            }
-            peer_ip
+                entries
+                    .into_iter()
+                    .rev()
+                    .find(|ip| !nets.iter().any(|net| net.contains(ip)))
+            })();
+            forwarded.or(peer_ip)
         }
+        ClientIpTrustPolicy::Peer | ClientIpTrustPolicy::BehindProxies(_) => peer_ip,
     }
 }
 
@@ -123,10 +108,8 @@ fn parse_forwarded_entry(entry: &str) -> Option<IpAddr> {
     if let Ok(addr) = entry.parse::<SocketAddr>() {
         return Some(addr.ip());
     }
-    // `[::1]:8080` and `[::1]` forms.
-    let inner = entry.strip_prefix('[')?;
-    let end = inner.find(']')?;
-    inner[..end].parse().ok()
+    // `SocketAddr` handled `[::1]:8080`; accept the portless `[::1]` form too.
+    entry.strip_prefix('[')?.strip_suffix(']')?.parse().ok()
 }
 
 /// The client IP of a request being extracted.
@@ -158,7 +141,7 @@ pub fn client_ip(parts: &Parts, trust: &ClientIpTrustPolicy) -> Option<IpAddr> {
 #[must_use]
 pub fn client_ip_of(
     headers: &HeaderMap,
-    extensions: &http::Extensions,
+    extensions: &Extensions,
     trust: &ClientIpTrustPolicy,
 ) -> Option<IpAddr> {
     let peer = extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
@@ -182,7 +165,7 @@ pub fn bucket(ip: IpAddr) -> IpAddr {
         IpAddr::V6(v6) => {
             let mut octets = v6.octets();
             octets[8..].fill(0);
-            IpAddr::V6(std::net::Ipv6Addr::from(octets))
+            IpAddr::V6(Ipv6Addr::from(octets))
         }
     }
 }

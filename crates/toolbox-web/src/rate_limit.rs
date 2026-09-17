@@ -22,6 +22,8 @@ use governor::{
     clock::QuantaInstant,
     middleware::{NoOpMiddleware, RateLimitingMiddleware},
 };
+use http::HeaderValue;
+use toolbox_error::ErrorKind;
 use tower_governor::{
     GovernorError, GovernorLayer,
     governor::{GovernorConfig, GovernorConfigBuilder},
@@ -142,32 +144,28 @@ impl RateLimitConfig {
 pub fn error_response_handler(err: GovernorError) -> Response {
     match err {
         GovernorError::TooManyRequests { wait_time, .. } => {
-            let mut response = ApiError::of_kind(
-                toolbox_error::ErrorKind::ResourceExhausted,
-                "Too Many Requests",
-            )
-            .with_code("RATE_LIMITED")
-            .with_detail("too many requests; slow down")
-            .with_retry_after(wait_time)
-            .into_response();
+            let mut response = ApiError::of_kind(ErrorKind::ResourceExhausted, "Too Many Requests")
+                .with_code("RATE_LIMITED")
+                .with_detail("too many requests; slow down")
+                .with_retry_after(wait_time)
+                .into_response();
 
             // The IETF draft field names, so a client that already understands
             // them needs no special case.
-            if let Ok(v) = http::HeaderValue::from_str(&wait_time.to_string()) {
+            if let Ok(v) = HeaderValue::from_str(&wait_time.to_string()) {
                 response.headers_mut().insert("ratelimit-reset", v);
             }
             response
                 .headers_mut()
-                .insert("ratelimit-remaining", http::HeaderValue::from_static("0"));
+                .insert("ratelimit-remaining", HeaderValue::from_static("0"));
             response
         }
-        GovernorError::UnableToExtractKey => ApiError::of_kind(
-            toolbox_error::ErrorKind::InvalidArgument,
-            "Invalid Argument",
-        )
-        .with_code("UNIDENTIFIED_CLIENT")
-        .with_detail("the client address could not be determined")
-        .into_response(),
+        GovernorError::UnableToExtractKey => {
+            ApiError::of_kind(ErrorKind::InvalidArgument, "Invalid Argument")
+                .with_code("UNIDENTIFIED_CLIENT")
+                .with_detail("the client address could not be determined")
+                .into_response()
+        }
         GovernorError::Other { code, msg, .. } => ApiError::new(code, "Rate Limiter Error")
             .with_code("RATE_LIMITER_ERROR")
             .with_detail(msg.unwrap_or_default())

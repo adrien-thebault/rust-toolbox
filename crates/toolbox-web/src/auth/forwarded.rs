@@ -6,8 +6,10 @@
 //! (the trust check). This module is the axum glue that reads the real request
 //! headers and the `ConnectInfo` peer and fills that struct.
 
+use std::net::SocketAddr;
+
 use axum::{
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     middleware::Next,
     response::Response,
 };
@@ -18,7 +20,6 @@ use toolbox_auth::{
 };
 
 use super::AuthState;
-use crate::client_ip::{ClientIpTrustPolicy, client_ip_of};
 
 /// What [`forwarded_auth_layer`] needs beyond the request itself.
 ///
@@ -29,9 +30,6 @@ use crate::client_ip::{ClientIpTrustPolicy, client_ip_of};
 pub struct ForwardedConfig {
     /// The header names, copied from the provider.
     headers: ForwardedHeaders,
-    /// How the peer address is resolved, matching what the rest of the process
-    /// uses. It feeds the provider's peer-trust check.
-    pub trust: ClientIpTrustPolicy,
     /// The header carrying the proxy's shared secret, when the registry's
     /// [`ForwardedIdentityProvider`] trusts a secret rather than a peer list.
     /// Its value is read into [`ForwardedIdentity::secret`]; unset means the
@@ -43,15 +41,12 @@ impl ForwardedConfig {
     /// A config reading oauth2-proxy's `X-Forwarded-*` header names.
     ///
     /// Use [`for_provider`](Self::for_provider) instead when the registry holds
-    /// a [`ForwardedIdentityProvider`] configured for different names. No
-    /// `Default`: `trust` feeds the peer-trust check, so the config is a
-    /// deliberate call.
+    /// a [`ForwardedIdentityProvider`] configured for different names.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             headers: ForwardedHeaders::default(),
-            trust: ClientIpTrustPolicy::hops(1),
             secret_header: None,
         }
     }
@@ -67,20 +62,8 @@ impl ForwardedConfig {
     pub fn for_provider(provider: &ForwardedIdentityProvider) -> Self {
         Self {
             headers: provider.headers().clone(),
-            trust: ClientIpTrustPolicy::hops(1),
             secret_header: None,
         }
-    }
-
-    /// How the peer address is resolved.
-    ///
-    /// # Arguments
-    ///
-    /// * `trust` - Must match what the rest of the process uses.
-    #[must_use]
-    pub fn trust(mut self, trust: ClientIpTrustPolicy) -> Self {
-        self.trust = trust;
-        self
     }
 
     /// The header carrying the proxy's shared secret.
@@ -138,7 +121,7 @@ pub async fn forwarded_auth_layer<S: AuthState>(
 ///
 /// * `headers` - The request headers.
 /// * `extensions` - The request extensions, where the connect info lives.
-/// * `config` - Which headers to read and how many hops to trust.
+/// * `config` - Which headers to read.
 fn forwarded_identity(
     headers: &HeaderMap,
     extensions: &Extensions,
@@ -155,7 +138,11 @@ fn forwarded_identity(
         user: read(&config.headers.user),
         groups: read(&config.headers.groups),
         email: read(&config.headers.email),
-        peer: client_ip_of(headers, extensions, &config.trust),
+        // Trust is anchored to the proxy that opened this TCP connection, not
+        // to an end-user address that proxy reported in a forwarded header.
+        peer: extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|ConnectInfo(peer)| peer.ip()),
         secret: config
             .secret_header
             .as_deref()

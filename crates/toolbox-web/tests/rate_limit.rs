@@ -3,7 +3,7 @@ use std::time::Duration;
 use axum::{Router, routing::get};
 use http::StatusCode;
 use toolbox_web::{
-    ClientIpTrustPolicy,
+    ClientIpTrustPolicy, PRIVATE_RANGES,
     rate_limit::{ForwardedForKeyExtractor, RateLimitConfig, error_response_handler},
 };
 use tower_governor::{GovernorError, key_extractor::KeyExtractor};
@@ -23,24 +23,26 @@ fn request(xff: &str, peer: [u8; 4]) -> http::Request<()> {
     req
 }
 
-/// The limiter must key on the same client IP the logs do, so counting from
-/// the right of `X-Forwarded-For` is what stops a client choosing its bucket.
+/// The limiter must key on the same client IP the logs do. Walking from the
+/// trusted proxy towards the client prevents a forged leading entry winning.
 #[test]
-fn the_extractor_keys_on_the_trusted_hop_not_the_client_supplied_entry() {
-    let extractor = ForwardedForKeyExtractor::new(ClientIpTrustPolicy::hops(1));
+fn the_extractor_stops_at_the_first_untrusted_address() {
+    let extractor =
+        ForwardedForKeyExtractor::new(ClientIpTrustPolicy::BehindProxies(PRIVATE_RANGES.to_vec()));
     let key = extractor
-        .extract(&request("1.1.1.1, 2.2.2.2", [10, 0, 0, 1]))
+        .extract(&request("1.1.1.1, 2.2.2.2, 10.0.0.2", [10, 0, 0, 1]))
         .unwrap();
     assert_eq!(key.to_string(), "2.2.2.2");
 }
 
 #[test]
-fn the_extractor_falls_back_to_the_peer_when_the_header_is_short() {
-    let extractor = ForwardedForKeyExtractor::new(ClientIpTrustPolicy::hops(2));
+fn the_extractor_ignores_headers_from_an_untrusted_peer() {
+    let extractor =
+        ForwardedForKeyExtractor::new(ClientIpTrustPolicy::BehindProxies(PRIVATE_RANGES.to_vec()));
     let key = extractor
-        .extract(&request("1.1.1.1", [10, 0, 0, 1]))
+        .extract(&request("1.1.1.1", [203, 0, 113, 1]))
         .unwrap();
-    assert_eq!(key.to_string(), "10.0.0.1");
+    assert_eq!(key.to_string(), "203.0.113.1");
 }
 
 /// A throttled request is not the one response in the API that does not look
@@ -69,7 +71,7 @@ fn an_unidentifiable_client_is_a_400_not_a_429() {
 async fn the_layer_throttles_once_the_burst_is_spent() {
     let app = Router::new()
         .route("/x", get(|| async { "ok" }))
-        .layer(RateLimitConfig::new(1, Duration::from_secs(60), ClientIpTrustPolicy::Peer).layer());
+        .layer(RateLimitConfig::new(1, Duration::from_mins(1), ClientIpTrustPolicy::Peer).layer());
 
     let req = || {
         let mut r = http::Request::builder()
