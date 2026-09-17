@@ -39,7 +39,7 @@ async fn a_first_request_claims_the_key() {
     let idem = store();
     assert!(matches!(
         idem.claim(&key("abc"), "/pay").await.unwrap(),
-        IdempotencyOutcome::Fresh
+        IdempotencyOutcome::Fresh(_)
     ));
 }
 
@@ -62,8 +62,10 @@ async fn a_second_request_while_the_first_runs_is_a_conflict() {
 #[tokio::test]
 async fn a_retry_after_completion_replays_the_recorded_response() {
     let idem = store();
-    idem.claim(&key("abc"), "/pay").await.unwrap();
-    idem.record(&key("abc"), "/pay", &response()).await.unwrap();
+    let IdempotencyOutcome::Fresh(claim) = idem.claim(&key("abc"), "/pay").await.unwrap() else {
+        panic!("expected a fresh claim");
+    };
+    idem.record(claim, &response()).await.unwrap();
 
     match idem.claim(&key("abc"), "/pay").await.unwrap() {
         IdempotencyOutcome::Replay(stored) => {
@@ -81,12 +83,14 @@ async fn a_retry_after_completion_replays_the_recorded_response() {
 #[tokio::test]
 async fn the_same_key_on_a_different_route_is_a_different_operation() {
     let idem = store();
-    idem.claim(&key("abc"), "/pay").await.unwrap();
-    idem.record(&key("abc"), "/pay", &response()).await.unwrap();
+    let IdempotencyOutcome::Fresh(claim) = idem.claim(&key("abc"), "/pay").await.unwrap() else {
+        panic!("expected a fresh claim");
+    };
+    idem.record(claim, &response()).await.unwrap();
 
     assert!(matches!(
         idem.claim(&key("abc"), "/refund").await.unwrap(),
-        IdempotencyOutcome::Fresh
+        IdempotencyOutcome::Fresh(_)
     ));
 }
 
@@ -95,29 +99,32 @@ async fn the_same_key_on_a_different_route_is_a_different_operation() {
 #[tokio::test]
 async fn releasing_a_failed_request_lets_the_caller_retry() {
     let idem = store();
-    idem.claim(&key("abc"), "/pay").await.unwrap();
-    idem.release(&key("abc"), "/pay").await.unwrap();
+    let IdempotencyOutcome::Fresh(claim) = idem.claim(&key("abc"), "/pay").await.unwrap() else {
+        panic!("expected a fresh claim");
+    };
+    idem.release(claim).await.unwrap();
 
     assert!(matches!(
         idem.claim(&key("abc"), "/pay").await.unwrap(),
-        IdempotencyOutcome::Fresh
+        IdempotencyOutcome::Fresh(_)
     ));
 }
 
-/// A record we cannot deserialise is one we cannot honour: run the handler
-/// rather than fail the retry the key was sent to enable.
+/// Corrupt state must not permit a potentially duplicate side effect.
 #[tokio::test]
-async fn an_undecodable_record_falls_through_to_running_the_handler() {
+async fn an_undecodable_record_fails_closed() {
     let kv = Arc::new(InMemoryKvStore::default());
     let idem = Idempotency::new(kv.clone());
     kv.set("toolbox:idem:/pay:abc", b"this is not json".to_vec(), None)
         .await
         .unwrap();
 
-    assert!(matches!(
-        idem.claim(&key("abc"), "/pay").await.unwrap(),
-        IdempotencyOutcome::Fresh
-    ));
+    let err = idem.claim(&key("abc"), "/pay").await.unwrap_err();
+    assert_eq!(err.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        err.problem().code.as_deref(),
+        Some("IDEMPOTENCY_RECORD_INVALID")
+    );
 }
 
 /// A store failure and a conflict lead a client to opposite behaviours, so the
@@ -134,8 +141,53 @@ async fn a_store_failure_is_a_distinct_retryable_error() {
     );
 }
 
+/// A store that repeatedly loses an entry between `add` and `get` must not
+/// make `claim` spin and hammer it forever.
+#[tokio::test]
+async fn a_perpetually_disappearing_entry_fails_after_one_retry() {
+    let idem = Idempotency::new(Arc::new(AlwaysMissing));
+    let err = idem.claim(&key("abc"), "/pay").await.unwrap_err();
+
+    assert_eq!(err.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        err.problem().code.as_deref(),
+        Some("IDEMPOTENCY_STORE_UNAVAILABLE")
+    );
+}
+
 /// A key-value store whose every operation reports a backend failure.
 struct AlwaysFails;
+
+/// A store that reports a competing write but never exposes its value.
+struct AlwaysMissing;
+
+#[async_trait::async_trait]
+impl KvStore for AlwaysMissing {
+    async fn get(&self, _: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
+        Ok(None)
+    }
+    async fn set(&self, _: &str, _: Vec<u8>, _: Option<Duration>) -> Result<(), KvStoreError> {
+        Ok(())
+    }
+    async fn add(&self, _: &str, _: Vec<u8>, _: Option<Duration>) -> Result<bool, KvStoreError> {
+        Ok(false)
+    }
+    async fn replace_if_matches(
+        &self,
+        _: &str,
+        _: &[u8],
+        _: Option<Vec<u8>>,
+        _: Option<Duration>,
+    ) -> Result<bool, KvStoreError> {
+        Ok(false)
+    }
+    async fn take(&self, _: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
+        Ok(None)
+    }
+    async fn delete(&self, _: &str) -> Result<(), KvStoreError> {
+        Ok(())
+    }
+}
 
 #[async_trait::async_trait]
 impl KvStore for AlwaysFails {
@@ -146,6 +198,15 @@ impl KvStore for AlwaysFails {
         Err(KvStoreError::Backend("down".to_owned()))
     }
     async fn add(&self, _: &str, _: Vec<u8>, _: Option<Duration>) -> Result<bool, KvStoreError> {
+        Err(KvStoreError::Backend("down".to_owned()))
+    }
+    async fn replace_if_matches(
+        &self,
+        _: &str,
+        _: &[u8],
+        _: Option<Vec<u8>>,
+        _: Option<Duration>,
+    ) -> Result<bool, KvStoreError> {
         Err(KvStoreError::Backend("down".to_owned()))
     }
     async fn take(&self, _: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
@@ -162,6 +223,31 @@ async fn different_keys_do_not_interfere() {
     idem.claim(&key("a"), "/pay").await.unwrap();
     assert!(matches!(
         idem.claim(&key("b"), "/pay").await.unwrap(),
-        IdempotencyOutcome::Fresh
+        IdempotencyOutcome::Fresh(_)
+    ));
+}
+
+#[tokio::test]
+async fn an_expired_owner_cannot_overwrite_or_release_a_new_claim() {
+    let idem = store().claim_ttl(Duration::from_millis(10));
+    let IdempotencyOutcome::Fresh(stale) = idem.claim(&key("abc"), "/pay").await.unwrap() else {
+        panic!("expected a fresh claim");
+    };
+
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    let IdempotencyOutcome::Fresh(current) = idem.claim(&key("abc"), "/pay").await.unwrap() else {
+        panic!("expected the expired claim to be replaced");
+    };
+
+    let err = idem.record(stale, &response()).await.unwrap_err();
+    assert_eq!(
+        err.problem().code.as_deref(),
+        Some("IDEMPOTENCY_CLAIM_LOST")
+    );
+
+    idem.release(current).await.unwrap();
+    assert!(matches!(
+        idem.claim(&key("abc"), "/pay").await.unwrap(),
+        IdempotencyOutcome::Fresh(_)
     ));
 }

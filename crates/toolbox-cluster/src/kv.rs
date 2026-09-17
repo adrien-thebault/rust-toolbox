@@ -22,12 +22,9 @@ pub enum KvStoreError {
 
 /// A key-value store with expiry.
 ///
-/// `add` and `take` must be genuinely atomic - not a capability an adapter may
-/// lack, a requirement every implementation carries. Without it, `add` lets
-/// two racing requests both create the same key, which is the trap an
-/// idempotency claim exists to close; without it, `take` turns single-use
-/// rotation into a race. An adapter that cannot promise this does not
-/// implement `KvStore`.
+/// `add`, `replace_if_matches` and `take` must be genuinely atomic - not
+/// capabilities an adapter may lack, but requirements every implementation
+/// carries. An adapter that cannot promise them does not implement `KvStore`.
 #[async_trait]
 pub trait KvStore: Send + Sync {
     /// Read a key.
@@ -79,6 +76,30 @@ pub trait KvStore: Send + Sync {
         &self,
         key: &str,
         value: Vec<u8>,
+        ttl: Option<Duration>,
+    ) -> Result<bool, KvStoreError>;
+
+    /// Replace or remove a key only when it still has the expected value.
+    ///
+    /// **Atomic** - the comparison and mutation are one operation. Returns
+    /// `true` only when the value matched and the mutation happened. This
+    /// prevents an expired lock owner from overwriting or deleting a newer
+    /// owner's value.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to compare and mutate.
+    /// * `expected` - The exact current bytes required for the mutation.
+    /// * `new` - The replacement bytes, or `None` to remove the key.
+    /// * `ttl` - How long a replacement lives. Ignored when removing.
+    ///
+    /// # Errors
+    /// [`KvStoreError::Backend`] when the store fails.
+    async fn replace_if_matches(
+        &self,
+        key: &str,
+        expected: &[u8],
+        new: Option<Vec<u8>>,
         ttl: Option<Duration>,
     ) -> Result<bool, KvStoreError>;
 

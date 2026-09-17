@@ -33,7 +33,7 @@ auth-router = ["rate-limit", "dep:secrecy"]
 # Captcha verification for login forms.
 captcha = ["dep:reqwest", "dep:secrecy", "dep:async-trait"]
 # Replaying the response for a repeated Idempotency-Key.
-idempotency = ["dep:toolbox-cluster"]
+idempotency = ["dep:toolbox-cluster", "dep:getrandom"]
 # Server-sent events with a fan-out hub.
 realtime = ["dep:toolbox-cluster", "dep:cloudevents-sdk", "dep:futures-core", "dep:futures-util", "axum/macros"]
 
@@ -66,6 +66,7 @@ futures-util   = { workspace = true, optional = true }
 secrecy        = { workspace = true, optional = true }
 async-trait    = { workspace = true, optional = true }
 reqwest        = { workspace = true, optional = true, features = ["json", "rustls-tls"] }
+getrandom      = { workspace = true, optional = true, features = ["std"] }
 
 [dev-dependencies]
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros"] }

@@ -11,18 +11,22 @@
 //! a wait: the correct answer to "did my first request succeed?" is not
 //! "here, have another one".
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use axum::response::{IntoResponse, Response};
 use http::{StatusCode, header::CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use toolbox_cluster::KvStore;
+use toolbox_cluster::{KvStore, KvStoreError};
+use toolbox_error::ErrorKind;
 use tracing::warn;
 
 use crate::{error::ApiError, extract::IdempotencyKey};
 
 /// How long a stored response is replayable.
-pub const DEFAULT_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const DEFAULT_TTL: Duration = Duration::from_hours(24);
+
+/// How long a handler may own a claim before a retry can take it over.
+pub const DEFAULT_CLAIM_TTL: Duration = Duration::from_mins(5);
 
 /// The key prefix, so idempotency records cannot collide with anything else in
 /// a shared store.
@@ -73,15 +77,28 @@ impl StoredResponse {
 #[derive(Debug)]
 pub enum IdempotencyOutcome {
     /// This caller owns the key and should run the handler.
-    Fresh,
+    Fresh(IdempotencyClaim),
     /// The first request finished; replay its response.
     Replay(Box<StoredResponse>),
     /// The first request is still running.
     InFlight,
 }
 
-/// The marker stored while a request is running.
-const IN_FLIGHT: &[u8] = b"\x00in-flight";
+/// Proof that this handler owns an in-flight key.
+///
+/// It is deliberately opaque. Passing the claim to [`Idempotency::record`] or
+/// [`Idempotency::release`] makes those operations conditional on the same
+/// owner still holding the key.
+#[derive(Debug)]
+pub struct IdempotencyClaim {
+    /// The fully scoped store key.
+    key: String,
+    /// A random per-attempt marker stored as the value.
+    marker: Vec<u8>,
+}
+
+/// Prefix distinguishing an owner marker from a JSON response.
+const IN_FLIGHT_PREFIX: &[u8] = b"\x00in-flight:";
 
 /// Claims keys and stores responses against them.
 pub struct Idempotency {
@@ -89,12 +106,15 @@ pub struct Idempotency {
     kv: Arc<dyn KvStore>,
     /// How long a stored response is replayable.
     ttl: Duration,
+    /// How long a handler owns an unfinished claim.
+    claim_ttl: Duration,
 }
 
-impl std::fmt::Debug for Idempotency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Idempotency {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Idempotency")
             .field("ttl", &self.ttl)
+            .field("claim_ttl", &self.claim_ttl)
             .finish_non_exhaustive()
     }
 }
@@ -111,6 +131,7 @@ impl Idempotency {
         Self {
             kv,
             ttl: DEFAULT_TTL,
+            claim_ttl: DEFAULT_CLAIM_TTL,
         }
     }
 
@@ -124,6 +145,16 @@ impl Idempotency {
     #[must_use]
     pub fn ttl(mut self, ttl: Duration) -> Self {
         self.ttl = ttl;
+        self
+    }
+
+    /// How long an unfinished handler owns its claim.
+    ///
+    /// The response TTL and claim TTL are separate: successful results usually
+    /// remain replayable much longer than a handler should be allowed to run.
+    #[must_use]
+    pub fn claim_ttl(mut self, claim_ttl: Duration) -> Self {
+        self.claim_ttl = claim_ttl;
         self
     }
 
@@ -147,56 +178,69 @@ impl Idempotency {
         // client-chosen key are two different operations - and replaying one's
         // response for the other would be worse than not replaying at all.
         let key = storage_key(route, key);
+        let mut random = [0_u8; 32];
+        getrandom::fill(&mut random).map_err(ApiError::internal)?;
+        let mut marker = Vec::with_capacity(IN_FLIGHT_PREFIX.len() + random.len());
+        marker.extend_from_slice(IN_FLIGHT_PREFIX);
+        marker.extend_from_slice(&random);
 
-        // Atomic create: two racing first requests cannot both win the claim,
-        // because exactly one `add` returns `true`.
-        if self
-            .kv
-            .add(&key, IN_FLIGHT.to_vec(), Some(self.ttl))
-            .await
-            .map_err(store_error)?
-        {
-            return Ok(IdempotencyOutcome::Fresh);
-        }
+        // One retry covers an entry expiring between the failed `add` and the
+        // following `get`. Seeing that race twice means the store cannot give
+        // this operation a stable view, so fail rather than spin forever.
+        for attempt in 0..=1 {
+            // Atomic create: two racing first requests cannot both win the
+            // claim, because exactly one `add` returns `true`.
+            if self
+                .kv
+                .add(&key, marker.clone(), Some(self.claim_ttl))
+                .await
+                .map_err(store_error)?
+            {
+                return Ok(IdempotencyOutcome::Fresh(IdempotencyClaim { key, marker }));
+            }
 
-        match self.kv.get(&key).await.map_err(store_error)? {
-            // The entry expired between the `add` and the `get`; run the
-            // handler rather than failing the request.
-            None => Ok(IdempotencyOutcome::Fresh),
-            Some(raw) if raw == IN_FLIGHT => Ok(IdempotencyOutcome::InFlight),
-            Some(raw) => match serde_json::from_slice(&raw) {
-                Ok(stored) => Ok(IdempotencyOutcome::Replay(Box::new(stored))),
-                // A record we cannot read is a record we cannot honour; run
-                // the handler rather than failing the request.
-                Err(e) => {
-                    warn!(error = %e, "an idempotency record could not be decoded");
-                    Ok(IdempotencyOutcome::Fresh)
+            match self.kv.get(&key).await.map_err(store_error)? {
+                // The entry expired between `add` and `get`. Retry the atomic
+                // add; merely returning Fresh here would run without owning it.
+                None if attempt == 0 => {}
+                None => return Err(store_unavailable_error()),
+                Some(raw) if raw.starts_with(IN_FLIGHT_PREFIX) => {
+                    return Ok(IdempotencyOutcome::InFlight);
                 }
-            },
+                Some(raw) => match serde_json::from_slice(&raw) {
+                    Ok(stored) => return Ok(IdempotencyOutcome::Replay(Box::new(stored))),
+                    Err(e) => {
+                        warn!(error = %e, "an idempotency record could not be decoded");
+                        return Err(corrupt_record_error());
+                    }
+                },
+            }
         }
+        Err(store_unavailable_error())
     }
 
     /// Record the response for a key.
     ///
     /// # Arguments
     ///
-    /// * `key` - The key being completed.
-    /// * `route` - The route it was claimed on.
+    /// * `claim` - The ownership proof returned by [`Idempotency::claim`].
     /// * `response` - The status, headers and body to replay on a repeat.
     ///
     /// # Errors
     /// [`ApiError`] when the store fails.
     pub async fn record(
         &self,
-        key: &IdempotencyKey,
-        route: &str,
+        claim: IdempotencyClaim,
         response: &StoredResponse,
     ) -> Result<(), ApiError> {
         let value = serde_json::to_vec(response).map_err(ApiError::internal)?;
-        self.kv
-            .set(&storage_key(route, key), value, Some(self.ttl))
+        let stored = self
+            .kv
+            .replace_if_matches(&claim.key, &claim.marker, Some(value), Some(self.ttl))
             .await
-            .map_err(store_error)
+            .map_err(store_error)?;
+
+        stored.ok_or_else(claim_lost_error)
     }
 
     /// Release a claim without recording a response.
@@ -207,15 +251,15 @@ impl Idempotency {
     ///
     /// # Arguments
     ///
-    /// * `key` - The key to unclaim.
-    /// * `route` - The route it was claimed on.
+    /// * `claim` - The ownership proof returned by [`Idempotency::claim`].
     ///
     /// # Errors
     /// [`ApiError`] when the store fails.
-    pub async fn release(&self, key: &IdempotencyKey, route: &str) -> Result<(), ApiError> {
+    pub async fn release(&self, claim: IdempotencyClaim) -> Result<(), ApiError> {
         self.kv
-            .delete(&storage_key(route, key))
+            .replace_if_matches(&claim.key, &claim.marker, None, None)
             .await
+            .map(|_| ())
             .map_err(store_error)
     }
 }
@@ -223,9 +267,30 @@ impl Idempotency {
 /// The error a claimed-but-unfinished key produces.
 #[must_use]
 pub fn in_flight_error() -> ApiError {
-    ApiError::of_kind(toolbox_error::ErrorKind::Conflict, "Conflict")
+    ApiError::of_kind(ErrorKind::Conflict, "Conflict")
         .with_code("IDEMPOTENCY_IN_FLIGHT")
         .with_detail("a request with this Idempotency-Key is still being processed")
+}
+
+/// A completed request can no longer publish after its ownership expired.
+fn claim_lost_error() -> ApiError {
+    ApiError::of_kind(ErrorKind::Conflict, "Conflict")
+        .with_code("IDEMPOTENCY_CLAIM_LOST")
+        .with_detail("the idempotency claim expired before the response was recorded")
+}
+
+/// Corrupt shared state is not permission to execute a potentially duplicate
+/// side effect.
+fn corrupt_record_error() -> ApiError {
+    ApiError::of_kind(ErrorKind::Unavailable, "Service Unavailable")
+        .with_code("IDEMPOTENCY_RECORD_INVALID")
+}
+
+/// An unstable store cannot safely decide whether running the handler would
+/// duplicate an operation.
+fn store_unavailable_error() -> ApiError {
+    ApiError::of_kind(ErrorKind::Unavailable, "Service Unavailable")
+        .with_code("IDEMPOTENCY_STORE_UNAVAILABLE")
 }
 
 /// The store key for a claim, prefixed so idempotency records cannot collide
@@ -245,8 +310,6 @@ fn storage_key(route: &str, key: &IdempotencyKey) -> String {
 /// # Arguments
 ///
 /// * `e` - The failure the key-value adapter reported.
-fn store_error(e: toolbox_cluster::KvStoreError) -> ApiError {
-    ApiError::of_kind(toolbox_error::ErrorKind::Unavailable, "Service Unavailable")
-        .with_code("IDEMPOTENCY_STORE_UNAVAILABLE")
-        .with_source(e)
+fn store_error(e: KvStoreError) -> ApiError {
+    store_unavailable_error().with_source(e)
 }

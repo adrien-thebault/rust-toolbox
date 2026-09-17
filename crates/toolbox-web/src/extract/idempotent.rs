@@ -7,19 +7,19 @@
 //! repeated key is [`Idempotent::json`] - gated on the `idempotency` feature,
 //! since it needs the `crate::idempotency::Idempotency` store.
 
-#[cfg(feature = "idempotency")]
-use std::future::Future;
+use std::fmt;
 
 use axum::extract::FromRequestParts;
-#[cfg(feature = "idempotency")]
-use axum::response::Response;
 use http::{HeaderName, request::Parts};
 #[cfg(feature = "idempotency")]
-use serde::Serialize;
+use {
+    crate::idempotency::{Idempotency, IdempotencyOutcome, StoredResponse, in_flight_error},
+    axum::response::Response,
+    serde::Serialize,
+    std::future::Future,
+};
 
 use crate::error::ApiError;
-#[cfg(feature = "idempotency")]
-use crate::idempotency::{Idempotency, IdempotencyOutcome, StoredResponse, in_flight_error};
 
 /// The IETF draft header name.
 pub const IDEMPOTENCY_KEY: HeaderName = HeaderName::from_static("idempotency-key");
@@ -45,8 +45,8 @@ impl IdempotencyKey {
     }
 }
 
-impl std::fmt::Display for IdempotencyKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for IdempotencyKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
@@ -139,14 +139,14 @@ impl Idempotent {
         match store.claim(&key, route).await? {
             IdempotencyOutcome::InFlight => Err(in_flight_error()),
             IdempotencyOutcome::Replay(stored) => Ok(stored.replay()),
-            IdempotencyOutcome::Fresh => match handler().await {
+            IdempotencyOutcome::Fresh(claim) => match handler().await {
                 Ok(value) => {
                     let stored = StoredResponse::json(&value)?;
-                    store.record(&key, route, &stored).await?;
+                    store.record(claim, &stored).await?;
                     Ok(stored.replay())
                 }
                 Err(e) => {
-                    store.release(&key, route).await?;
+                    store.release(claim).await?;
                     Err(e)
                 }
             },

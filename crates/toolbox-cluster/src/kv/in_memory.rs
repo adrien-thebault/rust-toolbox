@@ -1,9 +1,16 @@
 //! An in-memory store over `moka`.
 
-use std::time::{Duration, Instant};
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
-use moka::{Expiry, future::Cache};
+use moka::{
+    Expiry,
+    future::Cache,
+    ops::compute::{CompResult, Op},
+};
 
 use super::{KvStore, KvStoreError};
 
@@ -41,7 +48,7 @@ impl Expiry<String, CacheEntry> for PerEntryTtl {
         &self,
         _key: &String,
         value: &CacheEntry,
-        _created_at: std::time::Instant,
+        _created_at: Instant,
     ) -> Option<Duration> {
         value.ttl
     }
@@ -50,7 +57,7 @@ impl Expiry<String, CacheEntry> for PerEntryTtl {
         &self,
         _key: &String,
         value: &CacheEntry,
-        _updated_at: std::time::Instant,
+        _updated_at: Instant,
         _duration_until_expiry: Option<Duration>,
     ) -> Option<Duration> {
         value.ttl
@@ -68,8 +75,8 @@ pub struct InMemoryKvStore {
     cache: Cache<String, CacheEntry>,
 }
 
-impl std::fmt::Debug for InMemoryKvStore {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for InMemoryKvStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("InMemoryKvStore")
             .field("entries", &self.cache.entry_count())
             .finish()
@@ -156,6 +163,42 @@ impl KvStore for InMemoryKvStore {
             })
             .await;
         Ok(entry.is_fresh())
+    }
+
+    async fn replace_if_matches(
+        &self,
+        key: &str,
+        expected: &[u8],
+        new: Option<Vec<u8>>,
+        ttl: Option<Duration>,
+    ) -> Result<bool, KvStoreError> {
+        let expected = expected.to_vec();
+        let result = self
+            .cache
+            .entry(key.to_owned())
+            .and_compute_with(move |entry| async move {
+                let Some(entry) = entry else {
+                    return Op::Nop;
+                };
+                let current = entry.into_value();
+                if current.is_expired() || current.bytes != expected {
+                    return Op::Nop;
+                }
+                match new {
+                    Some(bytes) => Op::Put(CacheEntry {
+                        bytes,
+                        ttl,
+                        expires_at: ttl.map(|d| Instant::now() + d),
+                    }),
+                    None => Op::Remove,
+                }
+            })
+            .await;
+
+        Ok(matches!(
+            result,
+            CompResult::ReplacedWith(_) | CompResult::Removed(_)
+        ))
     }
 
     async fn take(&self, key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {

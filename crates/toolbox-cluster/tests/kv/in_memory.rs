@@ -123,6 +123,38 @@ async fn concurrent_adds_produce_exactly_one_winner() {
     assert_eq!(winners, 1, "exactly one caller created the key");
 }
 
+#[tokio::test]
+async fn replace_if_matches_only_mutates_the_expected_value() {
+    let kv = InMemoryKvStore::default();
+    kv.set("k", b"owner-a".to_vec(), None).await.unwrap();
+
+    assert!(
+        !kv.replace_if_matches("k", b"owner-b", Some(b"result".to_vec()), None)
+            .await
+            .unwrap()
+    );
+    assert_eq!(kv.get("k").await.unwrap(), Some(b"owner-a".to_vec()));
+
+    assert!(
+        kv.replace_if_matches("k", b"owner-a", Some(b"result".to_vec()), None)
+            .await
+            .unwrap()
+    );
+    assert_eq!(kv.get("k").await.unwrap(), Some(b"result".to_vec()));
+}
+
+#[tokio::test]
+async fn replace_if_matches_can_remove_the_expected_value() {
+    let kv = InMemoryKvStore::default();
+    kv.set("k", b"owner".to_vec(), None).await.unwrap();
+    assert!(
+        kv.replace_if_matches("k", b"owner", None, None)
+            .await
+            .unwrap()
+    );
+    assert_eq!(kv.get("k").await.unwrap(), None);
+}
+
 /// moka's `remove` hands back an entry that has expired but not yet been
 /// evicted, and a `take` that returns an expired single-use token is a token
 /// that never expires. Found by a realtime ticket test.
