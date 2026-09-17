@@ -16,7 +16,7 @@ path = "tests/integration.rs"
 
 [features]
 default = []
-db   = ["dep:toolbox-db", "dep:diesel", "dep:tempfile"]
+db   = ["dep:toolbox-db", "dep:diesel", "dep:tempfile", "diesel/sqlite"]
 web  = ["dep:toolbox-web", "dep:axum", "dep:axum-test"]
 grpc = ["dep:toolbox-grpc", "dep:tonic", "dep:tokio-stream"]
 

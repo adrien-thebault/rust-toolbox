@@ -1,9 +1,9 @@
 //! Throwaway databases.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
-use diesel::r2d2::R2D2Connection;
-use toolbox_db::{Db, DbPooledConn, EmbeddedMigrations, MigrationHarness, SqlitePragmas};
+use diesel::SqliteConnection;
+use toolbox_db::{Db, DbPooledConn, EmbeddedMigrations, SqlitePragmas};
 
 /// A database that deletes itself.
 ///
@@ -32,12 +32,12 @@ impl TempDb {
 /// When a temporary directory cannot be made or the pool cannot be built,
 /// which in a test is a setup failure worth failing loudly on.
 #[must_use]
-pub fn temp_db<C: R2D2Connection + 'static>() -> (Db<C>, TempDb) {
+pub fn temp_db() -> (Db<SqliteConnection>, TempDb) {
     let dir = tempfile::tempdir().expect("a temporary directory for the test database");
     let guard = TempDb { dir };
-    let db = Db::<C>::builder(guard.path().to_string_lossy().into_owned())
+    let db = Db::<SqliteConnection>::builder(guard.path().to_string_lossy().into_owned())
         .max_size(4)
-        .connect_timeout(std::time::Duration::from_secs(2))
+        .connect_timeout(Duration::from_secs(2))
         .sqlite_pragmas(SqlitePragmas::default())
         .build()
         .expect("a pool over the test database");
@@ -47,16 +47,13 @@ pub fn temp_db<C: R2D2Connection + 'static>() -> (Db<C>, TempDb) {
 /// A [`temp_db`] with `migrations` already applied.
 ///
 /// The `db()` helper at the top of every domain's `tests/common.rs`. Bind the
-/// guard: `let (db, _guard) = migrated_db::<Connection>(MIGRATIONS).await;`.
+/// guard: `let (db, _guard) = migrated_db(MIGRATIONS).await;`.
 ///
 /// # Panics
 /// When the pool cannot be built or a migration fails - a setup failure worth
 /// failing loudly on.
-pub async fn migrated_db<C>(migrations: EmbeddedMigrations) -> (Db<C>, TempDb)
-where
-    C: R2D2Connection + MigrationHarness<<C as diesel::Connection>::Backend> + 'static,
-{
-    let (db, guard) = temp_db::<C>();
+pub async fn migrated_db(migrations: EmbeddedMigrations) -> (Db<SqliteConnection>, TempDb) {
+    let (db, guard) = temp_db();
     db.migrate(migrations).await.expect("run migrations");
     (db, guard)
 }
@@ -68,10 +65,9 @@ where
 ///
 /// # Panics
 /// When the pool cannot be built, a migration fails, or no connection is free.
-pub async fn migrated_conn<C>(migrations: EmbeddedMigrations) -> (DbPooledConn<C>, TempDb)
-where
-    C: R2D2Connection + MigrationHarness<<C as diesel::Connection>::Backend> + 'static,
-{
-    let (db, guard) = migrated_db::<C>(migrations).await;
+pub async fn migrated_conn(
+    migrations: EmbeddedMigrations,
+) -> (DbPooledConn<SqliteConnection>, TempDb) {
+    let (db, guard) = migrated_db(migrations).await;
     (db.blocking_conn().expect("check out a connection"), guard)
 }

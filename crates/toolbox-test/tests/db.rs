@@ -3,8 +3,8 @@ use toolbox_test::temp_db;
 
 #[tokio::test]
 async fn a_temp_db_is_private_to_the_test_that_made_it() {
-    let (a, guard_a) = temp_db::<SqliteConnection>();
-    let (b, guard_b) = temp_db::<SqliteConnection>();
+    let (a, guard_a) = temp_db();
+    let (b, guard_b) = temp_db();
     assert_ne!(
         guard_a.path(),
         guard_b.path(),
@@ -24,7 +24,7 @@ async fn a_temp_db_is_private_to_the_test_that_made_it() {
 #[test]
 fn a_temp_db_deletes_itself() {
     let path = {
-        let (_db, guard) = temp_db::<SqliteConnection>();
+        let (_db, guard) = temp_db();
         let path = guard.path();
         assert!(path.exists());
         path
