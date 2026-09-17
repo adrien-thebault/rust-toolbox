@@ -1,7 +1,8 @@
-use toolbox_web::realtime::hub::{Hub, HubConfig, SlowConsumer};
+use futures_util::StreamExt as _;
+use toolbox_web::realtime::hub::Hub;
 
 fn hub() -> Hub<String> {
-    Hub::new(HubConfig::new(16, SlowConsumer::DropOldest))
+    Hub::new(16)
 }
 
 /// The naive implementation opens one upstream per browser connection: five
@@ -49,7 +50,7 @@ async fn publishing_with_nobody_listening_is_not_an_error() {
 /// buffer until it dies.
 #[tokio::test]
 async fn a_slow_consumer_is_bounded_rather_than_unbounded() {
-    let hub = Hub::<u32>::new(HubConfig::new(4, SlowConsumer::DropOldest));
+    let hub = Hub::<u32>::new(4);
     let mut slow = hub.subscribe("orders");
 
     for i in 0..100 {
@@ -81,11 +82,13 @@ async fn topics_nobody_listens_to_are_pruned() {
     assert_eq!(hub.topic_count(), 0);
 }
 
-/// `SlowConsumer` has no default because neither answer is right for every
-/// stream, and guessing is how you drop an audit event.
-#[test]
-fn a_hub_config_must_state_its_slow_consumer_policy() {
-    let cfg = HubConfig::new(64, SlowConsumer::Close);
-    assert_eq!(cfg.slow_consumer, SlowConsumer::Close);
-    assert_eq!(cfg.buffer, 64);
+#[tokio::test]
+async fn the_stream_closes_when_a_subscriber_falls_behind() {
+    let hub = Hub::<u32>::new(2);
+    let stream = hub.stream("orders");
+    tokio::pin!(stream);
+    for i in 0..10 {
+        hub.publish("orders", i);
+    }
+    assert!(stream.next().await.is_none());
 }

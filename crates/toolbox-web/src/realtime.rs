@@ -40,5 +40,5 @@
 pub mod hub;
 pub mod sse;
 
-pub use hub::{Hub, HubConfig, SlowConsumer};
+pub use hub::Hub;
 pub use sse::{LAST_EVENT_ID, SseConfig, resume_from, sse_from_events};

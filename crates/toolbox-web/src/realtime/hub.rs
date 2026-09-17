@@ -4,81 +4,29 @@
 //! connection. Five admin tabs is five; five hundred users is an outage, and it
 //! looks fine in development where there is one.
 
-use std::{collections::HashMap, sync::Mutex, time::Duration};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Mutex, PoisonError},
+};
 
-use tokio::sync::broadcast;
-
-/// What to do when a connection stops reading.
-///
-/// **No default.** A browser on a train stops reading, and without a bounded
-/// buffer the gateway grows one until it dies. Which of these is right depends
-/// on the stream - dropping frames of a live feed is fine, dropping an audit
-/// event is not - so there is nothing sensible to guess.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlowConsumer {
-    /// Discard the oldest buffered messages and keep the connection.
-    DropOldest,
-    /// Close the connection and let the client reconnect and resume.
-    Close,
-}
-
-/// How a hub behaves.
-#[derive(Debug, Clone, Copy)]
-pub struct HubConfig {
-    /// How many messages a connection may fall behind by.
-    pub buffer: usize,
-    /// What to do when it falls further.
-    pub slow_consumer: SlowConsumer,
-    /// How long a topic with no subscribers is kept before its upstream
-    /// subscription is dropped.
-    pub idle_timeout: Duration,
-}
-
-impl HubConfig {
-    /// A config. There is no `Default`, because [`SlowConsumer`] has no
-    /// defensible default.
-    ///
-    /// # Arguments
-    ///
-    /// * `buffer` - How many messages a connection may fall behind before the
-    ///   slow-consumer policy applies.
-    /// * `slow_consumer` - What to do when it does. There is no default,
-    ///   because a browser on a train stops reading and the right answer
-    ///   depends on the stream.
-    #[must_use]
-    pub fn new(buffer: usize, slow_consumer: SlowConsumer) -> Self {
-        Self {
-            buffer,
-            slow_consumer,
-            idle_timeout: Duration::from_secs(60),
-        }
-    }
-
-    /// How long an unsubscribed topic is kept.
-    ///
-    /// # Arguments
-    ///
-    /// * `timeout` - How long a topic with no subscribers keeps its upstream,
-    ///   so a reconnecting client does not pay to re-establish it.
-    #[must_use]
-    pub fn idle_timeout(mut self, timeout: Duration) -> Self {
-        self.idle_timeout = timeout;
-        self
-    }
-}
+use futures_core::Stream;
+use futures_util::stream;
+use tokio::sync::broadcast::{self, error::RecvError};
+use tracing::warn;
 
 /// Fans one upstream stream per topic out to many connections.
 pub struct Hub<T> {
     /// One fan-out sender per topic, created on first subscribe.
     topics: Mutex<HashMap<String, broadcast::Sender<T>>>,
-    /// Buffer size and idle timeout.
-    config: HubConfig,
+    /// Per-topic channel capacity.
+    buffer: usize,
 }
 
-impl<T> std::fmt::Debug for Hub<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T> fmt::Debug for Hub<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Hub")
-            .field("config", &self.config)
+            .field("buffer", &self.buffer)
             .finish_non_exhaustive()
     }
 }
@@ -88,19 +36,13 @@ impl<T: Clone + Send + 'static> Hub<T> {
     ///
     /// # Arguments
     ///
-    /// * `config` - Buffer size, slow-consumer policy and idle timeout.
+    /// * `buffer` - Messages retained for a slow subscriber. Clamped to one.
     #[must_use]
-    pub fn new(config: HubConfig) -> Self {
+    pub fn new(buffer: usize) -> Self {
         Self {
             topics: Mutex::new(HashMap::new()),
-            config,
+            buffer: buffer.max(1),
         }
-    }
-
-    /// How this hub is configured.
-    #[must_use]
-    pub fn config(&self) -> HubConfig {
-        self.config
     }
 
     /// Subscribe a connection to a topic.
@@ -117,6 +59,25 @@ impl<T: Clone + Send + 'static> Hub<T> {
         self.sender(topic).subscribe()
     }
 
+    /// Subscribe as a stream suitable for a long-lived response.
+    ///
+    /// A subscriber that falls behind is closed instead of silently skipping
+    /// messages. The browser then reconnects and re-queries the authoritative
+    /// resource, which is the only way an ephemeral hub can recover safely.
+    pub fn stream(&self, topic: &str) -> impl Stream<Item = T> + Send + 'static + use<T> {
+        let receiver = self.subscribe(topic);
+        stream::unfold(receiver, |mut receiver| async move {
+            match receiver.recv().await {
+                Ok(message) => Some((message, receiver)),
+                Err(RecvError::Lagged(missed)) => {
+                    warn!(missed, "closing a hub subscriber that fell behind");
+                    None
+                }
+                Err(RecvError::Closed) => None,
+            }
+        })
+    }
+
     /// Whether a topic already has an upstream.
     ///
     /// # Arguments
@@ -127,7 +88,7 @@ impl<T: Clone + Send + 'static> Hub<T> {
     pub fn has_topic(&self, topic: &str) -> bool {
         self.topics
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .contains_key(topic)
     }
 
@@ -141,9 +102,9 @@ impl<T: Clone + Send + 'static> Hub<T> {
     pub fn subscribers(&self, topic: &str) -> usize {
         self.topics
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .get(topic)
-            .map_or(0, tokio::sync::broadcast::Sender::receiver_count)
+            .map_or(0, broadcast::Sender::receiver_count)
     }
 
     /// How many topics have an upstream.
@@ -151,7 +112,7 @@ impl<T: Clone + Send + 'static> Hub<T> {
     pub fn topic_count(&self) -> usize {
         self.topics
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .len()
     }
 
@@ -173,10 +134,7 @@ impl<T: Clone + Send + 'static> Hub<T> {
     /// Without this a hub accumulates one channel per topic ever seen, which
     /// for a topic-per-entity scheme is unbounded.
     pub fn prune(&self) -> usize {
-        let mut topics = self
-            .topics
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut topics = self.topics.lock().unwrap_or_else(PoisonError::into_inner);
         let before = topics.len();
         topics.retain(|_, sender| sender.receiver_count() > 0);
         before - topics.len()
@@ -188,13 +146,10 @@ impl<T: Clone + Send + 'static> Hub<T> {
     ///
     /// * `topic` - The topic whose channel is wanted.
     fn sender(&self, topic: &str) -> broadcast::Sender<T> {
-        let mut topics = self
-            .topics
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut topics = self.topics.lock().unwrap_or_else(PoisonError::into_inner);
         topics
             .entry(topic.to_owned())
-            .or_insert_with(|| broadcast::channel(self.config.buffer).0)
+            .or_insert_with(|| broadcast::channel(self.buffer).0)
             .clone()
     }
 }
