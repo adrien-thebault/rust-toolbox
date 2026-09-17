@@ -25,7 +25,7 @@ async fn a_sleep_on_a_manual_clock_waits_for_the_clock_not_the_wall() {
     let sleeper = {
         let clock = clock.clone();
         tokio::spawn(async move {
-            clock.sleep(Duration::from_secs(3600)).await;
+            clock.sleep(Duration::from_hours(1)).await;
             clock.millis()
         })
     };
@@ -36,7 +36,7 @@ async fn a_sleep_on_a_manual_clock_waits_for_the_clock_not_the_wall() {
         "still asleep: the clock has not moved"
     );
 
-    clock.advance(Duration::from_secs(3600));
+    clock.advance(Duration::from_hours(1));
     let woke_at = tokio::time::timeout(Duration::from_secs(5), sleeper)
         .await
         .unwrap()
@@ -49,7 +49,7 @@ async fn a_partial_advance_does_not_wake_a_sleeper() {
     let clock = ManualClock::new();
     let sleeper = {
         let clock = clock.clone();
-        tokio::spawn(async move { clock.sleep(Duration::from_secs(60)).await })
+        tokio::spawn(async move { clock.sleep(Duration::from_mins(1)).await })
     };
 
     tokio::task::yield_now().await;

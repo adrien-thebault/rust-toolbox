@@ -27,6 +27,7 @@ metrics         = { workspace = true }
 thiserror       = { workspace = true }
 tokio           = { workspace = true, features = ["rt", "time", "sync", "macros"] }
 tracing         = { workspace = true }
+futures-util    = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }

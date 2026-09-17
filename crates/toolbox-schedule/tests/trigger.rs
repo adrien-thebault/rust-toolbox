@@ -45,7 +45,7 @@ fn a_malformed_expression_is_refused_at_registration() {
 
 #[test]
 fn a_fixed_rate_trigger_advances_by_its_period() {
-    let trigger = Trigger::fixed_rate(Duration::from_secs(300));
+    let trigger = Trigger::fixed_rate(Duration::from_mins(5));
     let started = at("2026-01-01T00:00:00Z");
     let next = trigger.next_after(started, started).unwrap();
     assert_eq!(next, at("2026-01-01T00:05:00Z"));
@@ -55,7 +55,7 @@ fn a_fixed_rate_trigger_advances_by_its_period() {
 /// schedule back: it counts from the start, not the end, of a run.
 #[test]
 fn a_fixed_rate_trigger_ignores_how_long_the_run_took() {
-    let trigger = Trigger::fixed_rate(Duration::from_secs(300));
+    let trigger = Trigger::fixed_rate(Duration::from_mins(5));
     let started = at("2026-01-01T00:00:00Z");
     let completed = at("2026-01-01T00:04:00Z"); // this run took 4 minutes
     assert_eq!(
@@ -66,7 +66,7 @@ fn a_fixed_rate_trigger_ignores_how_long_the_run_took() {
 
 #[test]
 fn a_fixed_delay_trigger_advances_by_its_delay_from_completion() {
-    let trigger = Trigger::fixed_delay(Duration::from_secs(60));
+    let trigger = Trigger::fixed_delay(Duration::from_mins(1));
     let started = at("2026-01-01T00:00:00Z");
     let completed = at("2026-01-01T00:04:00Z"); // this run took 4 minutes
     assert_eq!(
@@ -97,12 +97,12 @@ fn every_trigger_describes_itself_for_the_startup_log() {
             .contains("UTC")
     );
     assert!(
-        Trigger::fixed_rate(Duration::from_secs(60))
+        Trigger::fixed_rate(Duration::from_mins(1))
             .describe()
             .contains("every")
     );
     assert!(
-        Trigger::fixed_delay(Duration::from_secs(60))
+        Trigger::fixed_delay(Duration::from_mins(1))
             .describe()
             .contains("previous"),
         "the description says which of the two it is"

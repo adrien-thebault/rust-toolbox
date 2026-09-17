@@ -9,6 +9,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use tokio::sync::Notify;
 
 use super::Clock;
 
@@ -18,7 +19,7 @@ pub struct ManualClock {
     /// The current time, milliseconds since an arbitrary epoch.
     millis: Arc<AtomicU64>,
     /// Woken on every advance so pending sleeps re-check the time.
-    tick: Arc<tokio::sync::Notify>,
+    tick: Arc<Notify>,
 }
 
 impl Default for ManualClock {
@@ -33,7 +34,7 @@ impl ManualClock {
     pub fn new() -> Self {
         Self {
             millis: Arc::new(AtomicU64::new(0)),
-            tick: Arc::new(tokio::sync::Notify::new()),
+            tick: Arc::new(Notify::new()),
         }
     }
 
@@ -49,7 +50,7 @@ impl ManualClock {
             .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
         Self {
             millis: Arc::new(AtomicU64::new(millis)),
-            tick: Arc::new(tokio::sync::Notify::new()),
+            tick: Arc::new(Notify::new()),
         }
     }
 

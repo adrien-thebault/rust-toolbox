@@ -1,13 +1,13 @@
 //! What a job is, and how it is run.
 
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{error::Error, fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
 
 use crate::trigger::Trigger;
 
 /// What a job's body returns.
-pub type JobResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+pub type JobResult = Result<(), Box<dyn Error + Send + Sync>>;
 
 /// A job's body.
 pub type JobFuture = Pin<Box<dyn Future<Output = JobResult> + Send>>;
@@ -60,8 +60,8 @@ pub struct Job {
     pub body: Arc<dyn Fn() -> JobFuture + Send + Sync>,
 }
 
-impl std::fmt::Debug for Job {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Job {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Job")
             .field("name", &self.name)
             .field("trigger", &self.trigger.describe())

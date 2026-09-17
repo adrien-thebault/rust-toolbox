@@ -10,7 +10,7 @@ async fn two_jobs_cannot_share_a_name() {
     let builder = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .job(
             "dup",
-            Trigger::fixed_rate(Duration::from_secs(60)),
+            Trigger::fixed_rate(Duration::from_mins(1)),
             Duration::from_secs(5),
             (),
             |()| async { Ok(()) },
@@ -20,7 +20,7 @@ async fn two_jobs_cannot_share_a_name() {
     let err = builder
         .job(
             "dup",
-            Trigger::fixed_rate(Duration::from_secs(60)),
+            Trigger::fixed_rate(Duration::from_mins(1)),
             Duration::from_secs(5),
             (),
             |()| async { Ok(()) },

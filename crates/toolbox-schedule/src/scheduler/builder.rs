@@ -2,7 +2,9 @@
 
 use std::{
     collections::HashMap,
+    fmt,
     future::Future,
+    num::NonZeroUsize,
     sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
@@ -25,10 +27,12 @@ pub struct SchedulerBuilder {
     locks: Arc<dyn LockManager>,
     /// The clock the scheduler will use.
     clock: Arc<dyn Clock>,
+    /// Maximum jobs from one tick that may run at once.
+    max_concurrency: NonZeroUsize,
 }
 
-impl std::fmt::Debug for SchedulerBuilder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for SchedulerBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SchedulerBuilder")
             .field(
                 "jobs",
@@ -45,7 +49,19 @@ impl SchedulerBuilder {
             jobs: Vec::new(),
             locks,
             clock: Arc::new(SystemClock),
+            max_concurrency: NonZeroUsize::MIN,
         }
+    }
+
+    /// Allow up to `max` due jobs to run concurrently.
+    ///
+    /// The default is one: sequential execution is safe for jobs that touch
+    /// the same resource and cannot create a startup thundering herd. Raising
+    /// it is an explicit capacity decision by the application.
+    #[must_use]
+    pub fn max_concurrency(mut self, max: NonZeroUsize) -> Self {
+        self.max_concurrency = max;
+        self
     }
 
     /// Drive the scheduler from a different clock.
@@ -164,6 +180,7 @@ impl SchedulerBuilder {
             state,
             locks: self.locks,
             clock: self.clock,
+            max_concurrency: self.max_concurrency,
         };
         scheduler.log_schedule();
         Ok(scheduler)

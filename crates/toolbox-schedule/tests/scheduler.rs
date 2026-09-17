@@ -1,4 +1,5 @@
 use std::{
+    num::NonZeroUsize,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -20,6 +21,124 @@ async fn count(counter: Arc<AtomicUsize>) -> JobResult {
     Ok(())
 }
 
+#[derive(Clone)]
+struct GatedJob {
+    started: Arc<AtomicUsize>,
+    changed: Arc<tokio::sync::Notify>,
+    permits: Arc<tokio::sync::Semaphore>,
+}
+
+async fn gated(state: GatedJob) -> JobResult {
+    state.started.fetch_add(1, Ordering::SeqCst);
+    state.changed.notify_waiters();
+    state
+        .permits
+        .acquire()
+        .await
+        .expect("test semaphore remains open")
+        .forget();
+    Ok(())
+}
+
+async fn wait_for_started(state: &GatedJob, count: usize) {
+    while state.started.load(Ordering::SeqCst) < count {
+        state.changed.notified().await;
+    }
+}
+
+fn gated_scheduler(
+    clock: Arc<ManualClock>,
+    state: GatedJob,
+    max_concurrency: Option<NonZeroUsize>,
+) -> Scheduler {
+    let builder = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
+        .clock(clock)
+        .job(
+            "first",
+            Trigger::fixed_rate(Duration::from_mins(1)),
+            Duration::from_secs(5),
+            state.clone(),
+            gated,
+        )
+        .unwrap()
+        .mode(RunMode::Local)
+        .job(
+            "second",
+            Trigger::fixed_rate(Duration::from_mins(1)),
+            Duration::from_secs(5),
+            state.clone(),
+            gated,
+        )
+        .unwrap()
+        .mode(RunMode::Local)
+        .job(
+            "third",
+            Trigger::fixed_rate(Duration::from_mins(1)),
+            Duration::from_secs(5),
+            state,
+            gated,
+        )
+        .unwrap()
+        .mode(RunMode::Local);
+
+    let builder = match max_concurrency {
+        Some(max) => builder.max_concurrency(max),
+        None => builder,
+    };
+    builder.build().unwrap()
+}
+
+#[tokio::test]
+async fn due_jobs_run_sequentially_by_default() {
+    let clock = Arc::new(ManualClock::new());
+    let state = GatedJob {
+        started: Arc::new(AtomicUsize::new(0)),
+        changed: Arc::new(tokio::sync::Notify::new()),
+        permits: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    let mut scheduler = gated_scheduler(clock.clone(), state.clone(), None);
+    clock.advance(Duration::from_secs(61));
+    let tick = tokio::spawn(async move { scheduler.tick_once().await });
+
+    wait_for_started(&state, 1).await;
+    tokio::task::yield_now().await;
+    assert_eq!(state.started.load(Ordering::SeqCst), 1);
+    state.permits.add_permits(1);
+    wait_for_started(&state, 2).await;
+    assert_eq!(state.started.load(Ordering::SeqCst), 2);
+    state.permits.add_permits(1);
+    wait_for_started(&state, 3).await;
+    state.permits.add_permits(1);
+
+    assert_eq!(tick.await.unwrap().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn configured_concurrency_is_a_hard_upper_bound() {
+    let clock = Arc::new(ManualClock::new());
+    let state = GatedJob {
+        started: Arc::new(AtomicUsize::new(0)),
+        changed: Arc::new(tokio::sync::Notify::new()),
+        permits: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    let mut scheduler = gated_scheduler(
+        clock.clone(),
+        state.clone(),
+        Some(NonZeroUsize::new(2).unwrap()),
+    );
+    clock.advance(Duration::from_secs(61));
+    let tick = tokio::spawn(async move { scheduler.tick_once().await });
+
+    wait_for_started(&state, 2).await;
+    tokio::task::yield_now().await;
+    assert_eq!(state.started.load(Ordering::SeqCst), 2);
+    state.permits.add_permits(1);
+    wait_for_started(&state, 3).await;
+    state.permits.add_permits(2);
+
+    assert_eq!(tick.await.unwrap().unwrap().len(), 3);
+}
+
 /// **The test that keeps `Exclusive` honest.** Three schedulers sharing one
 /// lock manager, each ticked once: the job runs exactly once, not three times.
 #[tokio::test]
@@ -34,7 +153,7 @@ async fn three_schedulers_sharing_a_lock_manager_run_a_job_exactly_once() {
             .clock(clock.clone())
             .job(
                 "nightly",
-                Trigger::fixed_rate(Duration::from_secs(60)),
+                Trigger::fixed_rate(Duration::from_mins(1)),
                 Duration::from_secs(5),
                 Arc::clone(&counter),
                 count,
@@ -79,7 +198,7 @@ async fn a_local_job_runs_on_every_replica() {
                 .clock(clock.clone())
                 .job(
                     "refresh-cache",
-                    Trigger::fixed_rate(Duration::from_secs(60)),
+                    Trigger::fixed_rate(Duration::from_mins(1)),
                     Duration::from_secs(5),
                     Arc::clone(&counter),
                     count,
@@ -106,7 +225,7 @@ async fn a_job_does_not_run_before_it_is_due() {
         .clock(clock.clone())
         .job(
             "later",
-            Trigger::fixed_rate(Duration::from_secs(3600)),
+            Trigger::fixed_rate(Duration::from_hours(1)),
             Duration::from_secs(5),
             Arc::clone(&counter),
             count,
@@ -115,11 +234,11 @@ async fn a_job_does_not_run_before_it_is_due() {
         .build()
         .unwrap();
 
-    clock.advance(Duration::from_secs(60));
+    clock.advance(Duration::from_mins(1));
     assert!(scheduler.tick_once().await.unwrap().is_empty());
     assert_eq!(counter.load(Ordering::SeqCst), 0);
 
-    clock.advance(Duration::from_secs(3600));
+    clock.advance(Duration::from_hours(1));
     assert_eq!(scheduler.tick_once().await.unwrap().len(), 1);
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 }
@@ -133,7 +252,7 @@ async fn a_job_that_overruns_its_timeout_is_abandoned() {
         .clock(clock.clone())
         .job(
             "hangs",
-            Trigger::fixed_rate(Duration::from_secs(60)),
+            Trigger::fixed_rate(Duration::from_mins(1)),
             Duration::from_millis(50),
             (),
             |()| async {
@@ -157,7 +276,7 @@ async fn a_failing_job_is_reported_rather_than_swallowed() {
         .clock(clock.clone())
         .job(
             "fails",
-            Trigger::fixed_rate(Duration::from_secs(60)),
+            Trigger::fixed_rate(Duration::from_mins(1)),
             Duration::from_secs(5),
             (),
             |()| async { Err("nope".into()) },
@@ -189,7 +308,7 @@ async fn an_overrunning_job_does_not_start_a_second_run_by_default() {
         .clock(clock.clone())
         .job(
             "slow",
-            Trigger::fixed_rate(Duration::from_secs(60)),
+            Trigger::fixed_rate(Duration::from_mins(1)),
             Duration::from_secs(30),
             (Arc::clone(&gate), Arc::clone(&started)),
             |(gate, started)| async move {
@@ -276,7 +395,7 @@ async fn the_schedule_is_inspectable() {
         .job(
             "nightly",
             Trigger::cron("0 3 * * *").unwrap(),
-            Duration::from_secs(300),
+            Duration::from_mins(5),
             (),
             |()| async { Ok(()) },
         )
@@ -314,7 +433,7 @@ async fn an_exclusive_lease_outlives_the_run_it_guarded() {
         .clock(clock.clone())
         .job(
             "nightly",
-            Trigger::fixed_rate(Duration::from_secs(3600)),
+            Trigger::fixed_rate(Duration::from_hours(1)),
             Duration::from_secs(5),
             Arc::clone(&counter),
             count,

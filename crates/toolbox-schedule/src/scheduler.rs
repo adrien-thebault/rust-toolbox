@@ -4,6 +4,8 @@ mod builder;
 
 use std::{
     collections::HashMap,
+    fmt,
+    num::NonZeroUsize,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -13,6 +15,7 @@ use std::{
 
 pub use builder::SchedulerBuilder;
 use chrono::{DateTime, Utc};
+use futures_util::{StreamExt as _, stream::FuturesUnordered};
 use toolbox_cluster::LockManager;
 use tracing::{debug, error, info, warn};
 
@@ -46,6 +49,20 @@ struct JobState {
     last_success: Option<DateTime<Utc>>,
 }
 
+/// The immutable result of running one due job concurrently.
+struct CompletedDueRun {
+    /// The job's position in registration order.
+    registration_index: usize,
+    /// The registered job name.
+    name: &'static str,
+    /// How the run ended.
+    outcome: JobOutcome,
+    /// When the run began according to the scheduler clock.
+    started_at: DateTime<Utc>,
+    /// When the run ended according to the scheduler clock.
+    completed_at: DateTime<Utc>,
+}
+
 /// Runs registered jobs on a clock.
 ///
 /// **A scheduler is not a job queue.** This is the clock; a queue is a
@@ -60,10 +77,12 @@ pub struct Scheduler {
     locks: Arc<dyn LockManager>,
     /// The time source the schedule is evaluated against.
     clock: Arc<dyn Clock>,
+    /// Maximum due jobs started by one tick at once.
+    max_concurrency: NonZeroUsize,
 }
 
-impl std::fmt::Debug for Scheduler {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Scheduler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Scheduler")
             .field("jobs", &self.jobs.len())
             .finish_non_exhaustive()
@@ -142,39 +161,69 @@ impl Scheduler {
             .map(|job| job.name)
             .collect();
 
-        let mut outcomes = Vec::with_capacity(due.len());
-        for name in due {
-            let started = to_utc(self.clock.now());
+        let mut due = due.into_iter().enumerate();
+        let mut pending = FuturesUnordered::new();
+        for (index, name) in due.by_ref().take(self.max_concurrency.get()) {
+            pending.push(self.run_due(index, name));
+        }
+        let mut completed = Vec::new();
+        while let Some(result) = pending.next().await {
+            completed.push(result);
+            if let Some((index, name)) = due.next() {
+                pending.push(self.run_due(index, name));
+            }
+        }
+        drop(pending);
+        // Futures finish in arbitrary order; callers still receive outcomes in
+        // the jobs' stable registration order.
+        completed.sort_by_key(|run| run.registration_index);
 
-            // Caught rather than `?`-propagated: a lock-manager blip on one
-            // job must not abort the rest of this tick, or the whole loop.
-            let outcome = match self.run_now(name).await {
-                Ok(outcome) => outcome,
-                Err(e) => {
-                    error!(job = name, error = %e, "run_now failed before the job could run");
-                    record(name, JobOutcome::Failed, Duration::ZERO);
-                    JobOutcome::Failed
-                }
-            };
-
-            let completed = to_utc(self.clock.now());
+        let mut outcomes = Vec::with_capacity(completed.len());
+        for run in completed {
             let next_at = self
                 .jobs
                 .iter()
-                .find(|job| job.name == name)
-                .map(|job| job.trigger.next_after(started, completed))
+                .find(|job| job.name == run.name)
+                .map(|job| job.trigger.next_after(run.started_at, run.completed_at))
                 .transpose()?;
-            if let Some(state) = self.state.get_mut(name) {
+            if let Some(state) = self.state.get_mut(run.name) {
                 if let Some(next_at) = next_at {
                     state.next_at = next_at;
                 }
-                if outcome == JobOutcome::Succeeded {
-                    state.last_success = Some(completed);
+                if run.outcome == JobOutcome::Succeeded {
+                    state.last_success = Some(run.completed_at);
                 }
             }
-            outcomes.push((name, outcome));
+            outcomes.push((run.name, run.outcome));
         }
         Ok(outcomes)
+    }
+
+    /// Run one due job and calculate its next occurrence without mutating the
+    /// scheduler state, so several of these futures may be bounded in flight.
+    ///
+    /// # Arguments
+    ///
+    /// * `registration_index` - The job's position before concurrent execution
+    ///   reorders the completions.
+    /// * `name` - The registered job to run.
+    async fn run_due(&self, registration_index: usize, name: &'static str) -> CompletedDueRun {
+        let started_at = to_utc(self.clock.now());
+        let outcome = match self.run_now(name).await {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                error!(job = name, error = %e, "run_now failed before the job could run");
+                record(name, JobOutcome::Failed, Duration::ZERO);
+                JobOutcome::Failed
+            }
+        };
+        CompletedDueRun {
+            registration_index,
+            name,
+            outcome,
+            started_at,
+            completed_at: to_utc(self.clock.now()),
+        }
     }
 
     /// Run one registered job now, whether or not it is due: take the lock if
