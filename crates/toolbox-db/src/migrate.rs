@@ -12,7 +12,13 @@
 //! one `Db::run` closure on one connection; anything recurring belongs on
 //! `LockManager` instead.
 
-use diesel::connection::Connection;
+use diesel::{
+    QueryableByName, RunQueryDsl as _,
+    connection::{Connection, LoadConnection},
+    query_builder::SqlQuery,
+    query_dsl::LoadQuery,
+    sql_types::{BigInt, Nullable},
+};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
 use tracing::{info, warn};
 
@@ -36,7 +42,7 @@ pub const LOCK_NAME: &str = "toolbox_migrations";
 /// [`DbError::Migration`] when the lock cannot be taken or a migration fails.
 pub fn run_locked<C>(conn: &mut C, url: &str, migrations: EmbeddedMigrations) -> DbResult<()>
 where
-    C: Connection + MigrationHarness<<C as Connection>::Backend> + 'static,
+    C: MigrationLockConnection + MigrationHarness<<C as Connection>::Backend> + 'static,
 {
     with_lock(conn, url, LOCK_NAME, |conn| {
         conn.run_pending_migrations(migrations)
@@ -47,6 +53,34 @@ where
             })
             .map_err(|e| DbError::Migration(e.to_string()))
     })
+}
+
+/// A Diesel connection capable of taking the migration lock.
+///
+/// This hides the row shape MySQL's `GET_LOCK` returns from [`crate::Db`]'s
+/// public bounds while keeping `toolbox-db` generic over the backend selected
+/// by its consumer.
+#[doc(hidden)]
+pub trait MigrationLockConnection: Connection {
+    /// Take the migration lock selected by `url`.
+    fn acquire_migration_lock(&mut self, url: &str, name: &str) -> DbResult<()>;
+
+    /// Release the migration lock selected by `url`.
+    fn release_migration_lock(&mut self, url: &str, name: &str) -> DbResult<()>;
+}
+
+impl<C> MigrationLockConnection for C
+where
+    C: Connection + LoadConnection,
+    for<'query> SqlQuery: LoadQuery<'query, C, MysqlLockResult>,
+{
+    fn acquire_migration_lock(&mut self, url: &str, name: &str) -> DbResult<()> {
+        acquire(self, locking_for(url), name)
+    }
+
+    fn release_migration_lock(&mut self, url: &str, name: &str) -> DbResult<()> {
+        release(self, locking_for(url), name)
+    }
 }
 
 /// Which locking primitive a URL's backend offers.
@@ -106,13 +140,12 @@ fn with_lock<C, T, E>(
     f: impl FnOnce(&mut C) -> Result<T, E>,
 ) -> Result<T, E>
 where
-    C: Connection,
+    C: MigrationLockConnection,
     E: From<DbError>,
 {
-    let locking = locking_for(url);
-    acquire(conn, locking, name).map_err(E::from)?;
+    conn.acquire_migration_lock(url, name).map_err(E::from)?;
     let result = f(conn);
-    if let Err(e) = release(conn, locking, name) {
+    if let Err(e) = conn.release_migration_lock(url, name) {
         warn!(error = %e, "could not release the `{name}` lock");
     }
     result
@@ -125,12 +158,42 @@ where
 /// * `conn` - The connection that will hold the lock.
 /// * `locking` - The primitive the backend offers.
 /// * `name` - The lock name, hashed into an advisory key.
-fn acquire<C: Connection>(conn: &mut C, locking: Locking, name: &str) -> DbResult<()> {
-    if let Some(sql) = lock_sql(locking, name, true) {
-        conn.batch_execute(&sql)
+fn acquire<C>(conn: &mut C, locking: Locking, name: &str) -> DbResult<()>
+where
+    C: Connection + LoadConnection,
+    for<'query> SqlQuery: LoadQuery<'query, C, MysqlLockResult>,
+{
+    match locking {
+        Locking::PostgresAdvisory => conn
+            .batch_execute(&format!("SELECT pg_advisory_lock({})", advisory_key(name)))
+            .map_err(|e| DbError::Migration(e.to_string())),
+        Locking::MysqlNamed => {
+            let result = diesel::sql_query(format!(
+                "SELECT GET_LOCK('{}', {MYSQL_LOCK_TIMEOUT_SECS}) AS acquired",
+                mysql_lock_name(name)
+            ))
+            .get_result::<MysqlLockResult>(conn)
             .map_err(|e| DbError::Migration(e.to_string()))?;
+            match result.acquired {
+                Some(1) => Ok(()),
+                Some(0) => Err(DbError::Migration(format!(
+                    "timed out after {MYSQL_LOCK_TIMEOUT_SECS}s waiting for the migration lock"
+                ))),
+                other => Err(DbError::Migration(format!(
+                    "MySQL GET_LOCK returned {other:?} for the migration lock"
+                ))),
+            }
+        }
+        Locking::None => Ok(()),
     }
-    Ok(())
+}
+
+/// The one-row result returned by MySQL's `GET_LOCK`.
+#[derive(QueryableByName)]
+struct MysqlLockResult {
+    /// `1` acquired, `0` timed out, and `NULL` means an error.
+    #[diesel(sql_type = Nullable<BigInt>)]
+    acquired: Option<i64>,
 }
 
 /// Release the lock. Called on the error path too, so a failed critical section
@@ -143,44 +206,17 @@ fn acquire<C: Connection>(conn: &mut C, locking: Locking, name: &str) -> DbResul
 /// * `locking` - The primitive the backend offers.
 /// * `name` - The lock name.
 fn release<C: Connection>(conn: &mut C, locking: Locking, name: &str) -> DbResult<()> {
-    if let Some(sql) = lock_sql(locking, name, false) {
-        conn.batch_execute(&sql)
-            .map_err(|e| DbError::Migration(e.to_string()))?;
-    }
-    Ok(())
-}
-
-/// Raw SQL through `batch_execute` rather than `sql_query`.
-///
-/// `diesel::sql_query` needs `QueryFragment<DB>`, which is gated behind a
-/// sealed trait a generic `C::Backend` cannot name without opting into diesel's
-/// third-party-backend feature. `SimpleConnection` takes a `&str` and every
-/// connection implements it, so this stays generic.
-///
-/// # Arguments
-///
-/// * `locking` - Which primitive the backend offers. `None` for SQLite, which
-///   has nothing to lock across replicas.
-/// * `name` - The lock name, hashed into an advisory key rather than
-///   interpolated.
-/// * `acquiring` - `true` for the statement that takes the lock, `false` for
-///   the one that releases it.
-fn lock_sql(locking: Locking, name: &str, acquiring: bool) -> Option<String> {
-    match (locking, acquiring) {
-        (Locking::PostgresAdvisory, true) => {
-            Some(format!("SELECT pg_advisory_lock({})", advisory_key(name)))
-        }
-        (Locking::PostgresAdvisory, false) => {
-            Some(format!("SELECT pg_advisory_unlock({})", advisory_key(name)))
-        }
-        (Locking::MysqlNamed, true) => Some(format!(
-            "SELECT GET_LOCK('{}', {MYSQL_LOCK_TIMEOUT_SECS})",
-            mysql_lock_name(name)
-        )),
-        (Locking::MysqlNamed, false) => {
-            Some(format!("SELECT RELEASE_LOCK('{}')", mysql_lock_name(name)))
-        }
-        (Locking::None, _) => None,
+    match locking {
+        Locking::PostgresAdvisory => conn
+            .batch_execute(&format!(
+                "SELECT pg_advisory_unlock({})",
+                advisory_key(name)
+            ))
+            .map_err(|e| DbError::Migration(e.to_string())),
+        Locking::MysqlNamed => conn
+            .batch_execute(&format!("SELECT RELEASE_LOCK('{}')", mysql_lock_name(name)))
+            .map_err(|e| DbError::Migration(e.to_string())),
+        Locking::None => Ok(()),
     }
 }
 
@@ -220,7 +256,7 @@ fn mysql_lock_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Locking, advisory_key, lock_sql, locking_for, mysql_lock_name};
+    use super::{Locking, advisory_key, locking_for, mysql_lock_name};
 
     #[test]
     fn the_backend_is_read_from_the_url_scheme() {
@@ -243,13 +279,10 @@ mod tests {
     fn the_mysql_lock_name_is_hashed_never_interpolated() {
         // A name that would break or inject if it reached SQL verbatim.
         let hostile = "x', 0); DROP TABLE schema_migrations; -- ";
-        let sql = lock_sql(Locking::MysqlNamed, hostile, true).unwrap();
-        assert!(!sql.contains("DROP TABLE"), "{sql}");
-        assert!(sql.contains(&mysql_lock_name(hostile)));
-
         let name = mysql_lock_name(hostile);
         assert_eq!(name.len(), 16);
         assert!(name.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert!(!name.contains("DROP TABLE"));
         assert_eq!(name, mysql_lock_name(hostile), "stable across calls");
     }
 }

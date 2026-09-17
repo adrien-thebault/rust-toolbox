@@ -11,14 +11,18 @@
 //! blocking thread ever shows up in a profile, swap the internals and no
 //! consumer notices.
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
-use diesel::r2d2::{ConnectionManager, CustomizeConnection, Error as R2d2Error, R2D2Connection};
+use diesel::{
+    Connection, QueryResult,
+    r2d2::{ConnectionManager, CustomizeConnection, Error as R2d2Error, R2D2Connection},
+    result::Error as DieselError,
+};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
 
 use crate::{
     error::{DbError, DbResult},
-    migrate,
+    migrate::{self, MigrationLockConnection},
     sqlite::SqlitePragmas,
 };
 
@@ -47,8 +51,8 @@ impl<C: R2D2Connection + 'static> Clone for Db<C> {
     }
 }
 
-impl<C: R2D2Connection + 'static> std::fmt::Debug for Db<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C: R2D2Connection + 'static> fmt::Debug for Db<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Never the URL: it carries the password.
         f.debug_struct("Db")
             .field("connections", &self.pool.state().connections)
@@ -135,7 +139,7 @@ impl<C: R2D2Connection + 'static> Db<C> {
     /// [`DbError::Interact`] as [`Db::run`].
     pub async fn query<T, F>(&self, f: F) -> DbResult<T>
     where
-        F: FnOnce(&mut C) -> diesel::QueryResult<T> + Send + 'static,
+        F: FnOnce(&mut C) -> QueryResult<T> + Send + 'static,
         T: Send + 'static,
     {
         self.run(move |conn| f(conn).map_err(DbError::from)).await
@@ -154,7 +158,7 @@ impl<C: R2D2Connection + 'static> Db<C> {
     #[tracing::instrument(level = "debug", skip_all, fields(db.op = %name))]
     pub async fn query_named<T, F>(&self, name: &'static str, f: F) -> DbResult<T>
     where
-        F: FnOnce(&mut C) -> diesel::QueryResult<T> + Send + 'static,
+        F: FnOnce(&mut C) -> QueryResult<T> + Send + 'static,
         T: Send + 'static,
     {
         self.query(f).await
@@ -184,8 +188,7 @@ impl<C: R2D2Connection + 'static> Db<C> {
     ///
     /// Rollback semantics are diesel's: `f` returning `Err` rolls back, and a
     /// panic rolls back too. `E` needs `From<diesel::result::Error>` on top of
-    /// `run`'s bound because that is what `Connection::transaction` requires;
-    /// requires.
+    /// `run`'s bound because that is what `Connection::transaction` requires.
     ///
     /// # Arguments
     ///
@@ -198,7 +201,7 @@ impl<C: R2D2Connection + 'static> Db<C> {
     where
         F: FnOnce(&mut C) -> Result<T, E> + Send + 'static,
         T: Send + 'static,
-        E: From<DbError> + From<diesel::result::Error> + Send + 'static,
+        E: From<DbError> + From<DieselError> + Send + 'static,
     {
         self.run(move |conn| conn.transaction(f)).await
     }
@@ -241,7 +244,7 @@ impl<C: R2D2Connection + 'static> Db<C> {
     where
         F: FnOnce(&mut C) -> Result<T, E> + Send + 'static,
         T: Send + 'static,
-        E: From<DbError> + From<diesel::result::Error> + Send + 'static,
+        E: From<DbError> + From<DieselError> + Send + 'static,
     {
         self.transaction(f).await
     }
@@ -258,7 +261,7 @@ impl<C: R2D2Connection + 'static> Db<C> {
     /// fails.
     pub async fn migrate(&self, migrations: EmbeddedMigrations) -> DbResult<()>
     where
-        C: MigrationHarness<<C as diesel::Connection>::Backend>,
+        C: MigrationLockConnection + MigrationHarness<<C as Connection>::Backend>,
     {
         let url = self.url.to_string();
         self.run(move |conn| migrate::run_locked(conn, &url, migrations))
@@ -302,8 +305,8 @@ pub struct DbBuilder<C: R2D2Connection + 'static> {
     customizer: Option<Box<dyn CustomizeConnection<C, R2d2Error>>>,
 }
 
-impl<C: R2D2Connection + 'static> std::fmt::Debug for DbBuilder<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C: R2D2Connection + 'static> fmt::Debug for DbBuilder<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DbBuilder")
             .field("max_size", &self.max_size)
             .field("min_idle", &self.min_idle)

@@ -30,10 +30,10 @@ pub mod pagination;
 pub mod sqlite;
 
 pub use db::{Db, DbBuilder, DbPool, DbPooledConn};
-/// Re-exported so `#[derive(Entity)]` can name it without the consumer
-/// declaring `diesel_migrations` itself. `MigrationHarness` is the bound
-/// `Db::migrate` needs, re-exported so a helper that forwards to it (a test's
-/// `migrated_db`) can repeat that bound.
+/// Re-exported so callers use the migration types through this crate.
+/// `embed_migrations!` still expands in the caller, so invoking it also needs
+/// `diesel_migrations` as a direct dependency. `MigrationHarness` is the bound
+/// `Db::migrate` needs, re-exported so a forwarding helper can repeat it.
 pub use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 pub use entity::Entity;
 pub use error::{DbError, DbResult};
