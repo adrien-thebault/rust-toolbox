@@ -18,21 +18,23 @@ jobs:
         gateway: ["true", "false"]
         database: ["sqlite", "postgres"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
+          toolchain: stable
           components: clippy
       # rustfmt from nightly, because the generated rustfmt.toml sets
       # `group_imports`.
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
+          toolchain: nightly
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - uses: arduino/setup-protoc@v3
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: sudo apt-get update && sudo apt-get install -y libpq-dev
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-generate
 
@@ -60,7 +62,7 @@ jobs:
               feats = re.search(r'(features\s*=\s*\[[^\]]*\])', rest)
               extra = ", " + feats.group(1) if feats else ""
               return f'{name} = {{ path = "{root}/crates/{name}"{extra} }}'
-          s = re.sub(r'^(toolbox-[a-z]+)\s*=\s*\{ git = "[^"]+", tag = "[^"]+"(.*?)\}$', f, s, flags=re.M)
+          s = re.sub(r'^(toolbox(?:-[a-z]+)?)\s*=\s*\{ git = "[^"]+", tag = "[^"]+"(.*?)\}$', f, s, flags=re.M)
           open("Cargo.toml", "w").write(s)
           PY
 
