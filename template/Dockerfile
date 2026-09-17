@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.88-bookworm AS build
+FROM rust:1.98-bookworm AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       protobuf-compiler {% if database == "postgres" %}libpq-dev{% else %}libsqlite3-dev{% endif %} \
