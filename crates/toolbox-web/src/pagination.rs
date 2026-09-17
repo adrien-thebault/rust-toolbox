@@ -5,7 +5,7 @@
 //! carrying the counts; the header carries the navigation.
 
 use http::HeaderValue;
-use toolbox_pagination::{Page, PageRequest};
+use toolbox_pagination::Page;
 
 /// Build the `Link` header value for a page.
 ///
@@ -22,14 +22,9 @@ use toolbox_pagination::{Page, PageRequest};
 ///   without the paging parameters, which are appended here.
 #[must_use]
 pub fn page_links<T>(page: &Page<T>, base: &str) -> Option<HeaderValue> {
-    let PageRequest::Paged {
-        offset,
-        limit,
-        sort,
-    } = page.request()
-    else {
-        return None;
-    };
+    let request = page.request();
+    let (&offset, &limit) = request.bounds()?;
+    let sort = request.sort();
 
     let total = page.total();
     let sort = if sort.is_empty() {
@@ -41,12 +36,13 @@ pub fn page_links<T>(page: &Page<T>, base: &str) -> Option<HeaderValue> {
 
     let url = |offset: i64| format!("{base}?offset={offset}&limit={limit}{sort}");
 
-    if *offset > 0 {
+    if offset > 0 {
         links.push(format!("<{}>; rel=\"first\"", url(0)));
         links.push(format!("<{}>; rel=\"prev\"", url((offset - limit).max(0))));
     }
-    if offset + limit < total {
-        links.push(format!("<{}>; rel=\"next\"", url(offset + limit)));
+    let next = offset.saturating_add(limit);
+    if next < total {
+        links.push(format!("<{}>; rel=\"next\"", url(next)));
     }
     if total > 0 {
         // The offset of the final page, which is the largest multiple of the

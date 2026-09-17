@@ -31,9 +31,11 @@ pub use client::{
     RetryPolicy, asserting, client, is_retryable, poll_health, with_retry,
 };
 pub use limits::MessageLimits;
-pub use pagination::{PROTO_INCLUDE, PageInfo, PageRequestProto, split};
+pub use pagination::{PROTO_INCLUDE, PageInfo, PageRequestProto, into_parts};
 pub use server::{
-    GrpcServerConfig, Routes, RoutesBuilder, identity, identity::identity_layer, serve,
-    shared_secret::shared_secret_layer,
+    GrpcServerConfig, Routes, RoutesBuilder, identity,
+    identity::identity_layer,
+    serve,
+    shared_secret::{SharedSecretError, shared_secret_layer},
 };
 pub use status::{GrpcResult, code_for, from_status, kind_for, to_status};

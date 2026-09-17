@@ -8,7 +8,15 @@ use crate::{call, get as get_req};
 fn app() -> Router {
     Router::new().route(
         "/items",
-        get(|PageQuery(request): PageQuery| async move { format!("{request:?}") }),
+        get(|PageQuery(request): PageQuery| async move {
+            format!(
+                "unpaged={};offset={:?};limit={:?};sort={:?}",
+                request.is_unpaged(),
+                request.offset(),
+                request.limit(),
+                request.sort()
+            )
+        }),
     )
 }
 
@@ -16,22 +24,22 @@ fn app() -> Router {
 async fn no_parameters_means_unpaged() {
     let (res, body) = call(app(), get_req("/items")).await;
     assert_eq!(res.status(), StatusCode::OK);
-    assert!(body.contains("Unpaged"), "{body}");
+    assert!(body.contains("unpaged=true"), "{body}");
 }
 
 #[tokio::test]
 async fn offset_and_limit_produce_a_bounded_window() {
     let (res, body) = call(app(), get_req("/items?offset=20&limit=10")).await;
     assert_eq!(res.status(), StatusCode::OK);
-    assert!(body.contains("offset: 20"), "{body}");
-    assert!(body.contains("limit: 10"), "{body}");
+    assert!(body.contains("offset=Some(20)"), "{body}");
+    assert!(body.contains("limit=Some(10)"), "{body}");
 }
 
 #[tokio::test]
 async fn supplying_only_one_defaults_the_other() {
     let (_, body) = call(app(), get_req("/items?limit=5")).await;
-    assert!(body.contains("offset: 0"), "{body}");
-    assert!(body.contains("limit: 5"), "{body}");
+    assert!(body.contains("offset=Some(0)"), "{body}");
+    assert!(body.contains("limit=Some(5)"), "{body}");
 }
 
 /// A silently clamped page is a caller that thinks it has all the data and
@@ -80,5 +88,5 @@ async fn a_malformed_sort_is_a_400() {
 fn the_extractor_hands_back_the_request_it_built() {
     let q = PageQuery(PageRequest::unpaged(toolbox_pagination::Sort::unsorted()));
     assert!(q.request().offset().is_none());
-    assert!(matches!(q.into_request(), PageRequest::Unpaged { .. }));
+    assert!(q.into_request().is_unpaged());
 }

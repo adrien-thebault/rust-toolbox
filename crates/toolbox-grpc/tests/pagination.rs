@@ -1,4 +1,4 @@
-use toolbox_grpc::{PROTO_INCLUDE, PageInfo, PageRequestProto, split};
+use toolbox_grpc::{PROTO_INCLUDE, PageInfo, PageRequestProto, into_parts};
 use toolbox_pagination::{Page, PageRequest, Sort};
 
 #[test]
@@ -21,10 +21,7 @@ fn a_zero_limit_on_the_wire_means_unpaged_not_an_error() {
         limit: 0,
         sort: String::new(),
     };
-    assert!(matches!(
-        wire.to_domain().unwrap(),
-        PageRequest::Unpaged { .. }
-    ));
+    assert!(wire.to_domain().unwrap().is_unpaged());
 }
 
 #[test]
@@ -77,9 +74,9 @@ fn page_info_describes_the_page_it_came_from() {
 /// This plus `Page::try_map` is the whole ~90-line conversion block that was
 /// byte-identical in every consumer.
 #[test]
-fn split_gives_the_two_halves_a_list_response_carries() {
+fn into_parts_gives_the_two_halves_a_list_response_carries() {
     let request = PageRequest::paged(0, 2, Sort::unsorted()).unwrap();
-    let (items, info) = split(Page::new(vec!["a", "b"], request, 9));
+    let (items, info) = into_parts(Page::new(vec!["a", "b"], request, 9));
 
     assert_eq!(items, ["a", "b"]);
     assert_eq!(info.total, 9);

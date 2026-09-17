@@ -32,25 +32,9 @@ pub trait Paginate: Sized {
 
 impl<T> Paginate for T {
     fn paginate(self, request: &PageRequest) -> Paginated<Self> {
-        // Clamp non-negative before the values reach `LIMIT`/`OFFSET`: SQLite
-        // reads a negative `LIMIT` as unbounded, so a window built by a struct
-        // literal rather than the validating constructor must not become a
-        // whole-table read.
-        let request = match request {
-            PageRequest::Paged {
-                offset,
-                limit,
-                sort,
-            } => PageRequest::Paged {
-                offset: (*offset).max(0),
-                limit: (*limit).max(0),
-                sort: sort.clone(),
-            },
-            PageRequest::Unpaged { sort } => PageRequest::Unpaged { sort: sort.clone() },
-        };
         Paginated {
             query: self,
-            request,
+            request: request.clone(),
         }
     }
 }
@@ -94,7 +78,7 @@ where
         out.push_sql(" FROM (");
         self.query.walk_ast(out.reborrow())?;
         out.push_sql(") AS __toolbox_page");
-        if let PageRequest::Paged { offset, limit, .. } = &self.request {
+        if let Some((offset, limit)) = self.request.bounds() {
             out.push_sql(" LIMIT ");
             out.push_bind_param::<BigInt, _>(limit)?;
             out.push_sql(" OFFSET ");

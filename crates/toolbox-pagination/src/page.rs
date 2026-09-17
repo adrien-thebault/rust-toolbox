@@ -5,7 +5,7 @@
 //! saturating, one sort representation - that were previously re-made per call
 //! site, usually as a silent clamp.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 
 use crate::sort::Sort;
 
@@ -51,75 +51,69 @@ pub enum PageError {
     },
 }
 
-/// What a caller asked for: either a bounded window, or everything.
+/// What a caller asked for: either a validated bounded window, or everything.
 ///
-/// [`PageRequest::paged`] and deserialization both reject a negative offset, a
-/// non-positive limit or a limit past the cap, so a request that reached the
-/// query layer has already been checked. Building the `Paged` variant with a
-/// struct literal skips that check, so prefer the constructor.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", try_from = "UncheckedPageRequest")]
-pub enum PageRequest {
-    /// A bounded window.
-    Paged {
-        /// Rows to skip. Never negative.
-        offset: i64,
-        /// Rows to return. Always positive and at most the cap in force.
-        limit: i64,
-        /// The requested ordering.
-        sort: Sort,
-    },
-    /// Everything, in the requested order.
-    ///
-    /// Only safe on a set you know is bounded - a lookup table, not a log.
-    Unpaged {
-        /// The requested ordering.
-        sort: Sort,
-    },
+/// The fields are private so every bounded request must pass through
+/// [`PageRequest::paged`] or deserialization. `try_from` on serde alone cannot
+/// protect a public enum variant from direct construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageRequest {
+    /// Rows to skip and return, or `None` for an unpaged request.
+    window: Option<(i64, i64)>,
+    /// The requested ordering.
+    sort: Sort,
 }
 
-/// The unvalidated form of a [`PageRequest`]. Deserialization lands here first,
-/// then `TryFrom` runs the bounds check, so any `PageRequest` obtained through
-/// serde has already been validated.
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum UncheckedPageRequest {
-    /// A bounded window.
-    Paged {
-        /// Rows to skip.
-        offset: i64,
-        /// Rows to return.
-        limit: i64,
-        /// The order to apply.
-        sort: Sort,
-    },
-    /// Every matching row, in `sort` order.
-    Unpaged {
-        /// The order to apply.
-        sort: Sort,
-    },
+impl Serialize for PageRequest {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Output<'a> {
+            Paged {
+                offset: i64,
+                limit: i64,
+                sort: &'a Sort,
+            },
+            Unpaged {
+                sort: &'a Sort,
+            },
+        }
+
+        match self.window {
+            Some((offset, limit)) => Output::Paged {
+                offset,
+                limit,
+                sort: &self.sort,
+            },
+            None => Output::Unpaged { sort: &self.sort },
+        }
+        .serialize(serializer)
+    }
 }
 
-impl TryFrom<UncheckedPageRequest> for PageRequest {
-    type Error = PageError;
+impl<'de> Deserialize<'de> for PageRequest {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Input {
+            Paged { offset: i64, limit: i64, sort: Sort },
+            Unpaged { sort: Sort },
+        }
 
-    fn try_from(unchecked: UncheckedPageRequest) -> Result<Self, Self::Error> {
-        match unchecked {
-            UncheckedPageRequest::Paged {
+        match Input::deserialize(deserializer)? {
+            Input::Paged {
                 offset,
                 limit,
                 sort,
-            } => Self::paged(offset, limit, sort),
-            UncheckedPageRequest::Unpaged { sort } => Ok(Self::Unpaged { sort }),
+            } => Self::paged(offset, limit, sort).map_err(D::Error::custom),
+            Input::Unpaged { sort } => Ok(Self::unpaged(sort)),
         }
     }
 }
 
 impl Default for PageRequest {
     fn default() -> Self {
-        Self::Unpaged {
-            sort: Sort::unsorted(),
-        }
+        Self::unpaged(Sort::unsorted())
     }
 }
 
@@ -170,9 +164,8 @@ impl PageRequest {
                 max,
             });
         }
-        Ok(Self::Paged {
-            offset,
-            limit,
+        Ok(Self {
+            window: Some((offset, limit)),
             sort,
         })
     }
@@ -184,66 +177,60 @@ impl PageRequest {
     /// * `sort` - The ordering to apply to the whole result set.
     #[must_use]
     pub fn unpaged(sort: Sort) -> Self {
-        Self::Unpaged { sort }
+        Self { window: None, sort }
     }
 
     /// The requested ordering, whether or not the request is bounded.
     #[must_use]
     pub fn sort(&self) -> &Sort {
-        match self {
-            Self::Paged { sort, .. } | Self::Unpaged { sort } => sort,
-        }
+        &self.sort
     }
 
     /// The offset, for a bounded request.
     #[must_use]
     pub fn offset(&self) -> Option<i64> {
-        match self {
-            Self::Paged { offset, .. } => Some(*offset),
-            Self::Unpaged { .. } => None,
-        }
+        self.window.map(|(offset, _)| offset)
     }
 
     /// The limit, for a bounded request.
     #[must_use]
     pub fn limit(&self) -> Option<i64> {
-        match self {
-            Self::Paged { limit, .. } => Some(*limit),
-            Self::Unpaged { .. } => None,
-        }
+        self.window.map(|(_, limit)| limit)
+    }
+
+    /// Borrow the `(offset, limit)` pair for query builders.
+    #[must_use]
+    pub fn bounds(&self) -> Option<(&i64, &i64)> {
+        self.window.as_ref().map(|(offset, limit)| (offset, limit))
+    }
+
+    /// Whether this is an unbounded request.
+    #[must_use]
+    pub fn is_unpaged(&self) -> bool {
+        self.window.is_none()
     }
 
     /// The next window, saturating rather than wrapping at `i64::MAX`.
     #[must_use]
     pub fn next_page(&self) -> Self {
-        match self {
-            Self::Paged {
-                offset,
-                limit,
-                sort,
-            } => Self::Paged {
-                offset: offset.saturating_add(*limit),
-                limit: *limit,
-                sort: sort.clone(),
+        match self.window {
+            Some((offset, limit)) => Self {
+                window: Some((offset.saturating_add(limit), limit)),
+                sort: self.sort.clone(),
             },
-            Self::Unpaged { sort } => Self::Unpaged { sort: sort.clone() },
+            None => self.clone(),
         }
     }
 
     /// The previous window, saturating at zero.
     #[must_use]
     pub fn previous_page(&self) -> Self {
-        match self {
-            Self::Paged {
-                offset,
-                limit,
-                sort,
-            } => Self::Paged {
-                offset: offset.saturating_sub(*limit).max(0),
-                limit: *limit,
-                sort: sort.clone(),
+        match self.window {
+            Some((offset, limit)) => Self {
+                window: Some((offset.saturating_sub(limit).max(0), limit)),
+                sort: self.sort.clone(),
             },
-            Self::Unpaged { sort } => Self::Unpaged { sort: sort.clone() },
+            None => self.clone(),
         }
     }
 }
@@ -289,7 +276,7 @@ impl<T> Page<T> {
         let total = i64::try_from(items.len()).unwrap_or(i64::MAX);
         Self {
             items,
-            request: PageRequest::Unpaged { sort },
+            request: PageRequest::unpaged(sort),
             total,
         }
     }
@@ -347,41 +334,32 @@ impl<T> Page<T> {
 
     /// The zero-based index of this page, or `None` when unpaged.
     ///
-    /// A validated request never carries a non-positive limit; the `.max(1)`
-    /// only keeps a hand-built [`Page`] from dividing by zero.
+    /// A validated request never carries a non-positive limit.
     #[must_use]
     pub fn page_number(&self) -> Option<i64> {
-        match &self.request {
-            PageRequest::Paged { offset, limit, .. } => Some(offset / (*limit).max(1)),
-            PageRequest::Unpaged { .. } => None,
-        }
+        self.request.window.map(|(offset, limit)| offset / limit)
     }
 
     /// How many pages the total spans, or `None` when unpaged.
     #[must_use]
     pub fn total_pages(&self) -> Option<i64> {
-        match &self.request {
-            PageRequest::Paged { limit, .. } => {
-                let limit = (*limit).max(1);
-                Some(self.total.saturating_add(limit - 1) / limit)
-            }
-            PageRequest::Unpaged { .. } => None,
-        }
+        self.request
+            .limit()
+            .map(|limit| self.total.saturating_add(limit - 1) / limit)
     }
 
     /// Whether a further page exists.
     #[must_use]
     pub fn has_next(&self) -> bool {
-        match &self.request {
-            PageRequest::Paged { offset, limit, .. } => offset.saturating_add(*limit) < self.total,
-            PageRequest::Unpaged { .. } => false,
-        }
+        self.request
+            .window
+            .is_some_and(|(offset, limit)| offset.saturating_add(limit) < self.total)
     }
 
     /// Whether an earlier page exists.
     #[must_use]
     pub fn has_previous(&self) -> bool {
-        matches!(&self.request, PageRequest::Paged { offset, .. } if *offset > 0)
+        self.request.offset().is_some_and(|offset| offset > 0)
     }
 
     /// Convert the rows, keeping the page metadata.
@@ -407,7 +385,7 @@ impl<T> Page<T> {
     /// # Arguments
     ///
     /// * `f` - Applied to each row, stopping at the first failure. This plus
-    ///   `toolbox_grpc::pagination::split` is the whole entity-to-proto
+    ///   `toolbox_grpc::pagination::into_parts` is the whole entity-to-proto
     ///   conversion.
     ///
     /// # Errors

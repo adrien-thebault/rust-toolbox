@@ -1,6 +1,6 @@
 //! Sort terms: a field name and a direction, validated against an allowlist.
 
-use std::{fmt, str::FromStr};
+use std::{fmt, str::FromStr, vec::IntoIter};
 
 use serde::{Deserialize, Serialize};
 
@@ -230,7 +230,7 @@ impl Sort {
 
 impl IntoIterator for Sort {
     type Item = SortItem;
-    type IntoIter = std::vec::IntoIter<SortItem>;
+    type IntoIter = IntoIter<SortItem>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()

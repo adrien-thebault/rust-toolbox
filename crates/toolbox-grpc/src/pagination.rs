@@ -4,7 +4,7 @@
 //! own page type was byte-identical in every consumer. It lives here once, and
 //! consumers import `toolbox/v1/pagination.proto` instead of copying it.
 
-use toolbox_pagination::{Page, PageRequest, Sort};
+use toolbox_pagination::{Page, PageError, PageRequest, Sort};
 
 pub use crate::{
     proto,
@@ -42,10 +42,10 @@ impl PageRequestProto {
     /// Validate this into a domain [`PageRequest`].
     ///
     /// # Errors
-    /// [`toolbox_pagination::PageError`] when the offset is negative, the limit is
+    /// [`PageError`] when the offset is negative, the limit is
     /// negative, or the sort does not parse. A zero limit is unpaged, not an
     /// error.
-    pub fn to_domain(&self) -> Result<PageRequest, toolbox_pagination::PageError> {
+    pub fn to_domain(&self) -> Result<PageRequest, PageError> {
         let sort = Sort::parse(&self.sort)?;
         if self.limit == 0 {
             return Ok(PageRequest::unpaged(sort));
@@ -69,8 +69,8 @@ impl PageInfo {
     /// Rebuild the page metadata this describes.
     ///
     /// # Errors
-    /// [`toolbox_pagination::PageError`] when the values do not form a valid window.
-    pub fn to_request(&self) -> Result<PageRequest, toolbox_pagination::PageError> {
+    /// [`PageError`] when the values do not form a valid window.
+    pub fn to_request(&self) -> Result<PageRequest, PageError> {
         let sort = Sort::parse(&self.sort)?;
         if self.limit == 0 {
             return Ok(PageRequest::unpaged(sort));
@@ -85,7 +85,7 @@ impl PageInfo {
 /// to be written out per handler:
 ///
 /// ```ignore
-/// let (items, page_info) = split(page.try_map(Event::try_into)?);
+/// let (items, page_info) = into_parts(page.try_map(Event::try_into)?);
 /// Ok(Response::new(ListEventsResponse { items, page_info: Some(page_info) }))
 /// ```
 ///
@@ -94,7 +94,7 @@ impl PageInfo {
 /// * `page` - The page to take apart. Its rows become the response's repeated
 ///   field and its window becomes the `PageInfo`.
 #[must_use]
-pub fn split<T>(page: Page<T>) -> (Vec<T>, PageInfo) {
+pub fn into_parts<T>(page: Page<T>) -> (Vec<T>, PageInfo) {
     let info = PageInfo::from(&page);
     (page.into_items(), info)
 }
