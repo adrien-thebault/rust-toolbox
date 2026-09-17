@@ -4,14 +4,13 @@
 //! a wire shape and the handler that returns it change together, and splitting
 //! them puts a file boundary between two edits that are always one edit.
 
-use std::convert::Infallible;
+use std::{convert::Infallible, future::Future, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::{StatusCode, header::CONTENT_TYPE},
     response::{
-        IntoResponse, Response,
+        Response,
         sse::{Event, Sse},
     },
     routing::{get, post},
@@ -21,22 +20,75 @@ use garde::Validate;
 use serde::{Deserialize, Serialize};
 use todo_grpc::proto::{
     CompleteTodoRequest, CreateTodoRequest, DeleteTodoRequest, GetTodoRequest, ListTodosRequest,
-    Todo, todo_service_client::TodoServiceClient,
+    Todo, WatchTodosRequest, todo_service_client::TodoServiceClient,
 };
-use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
-use toolbox_auth::AssertedPrincipal;
-use toolbox_grpc::{client::asserting, with_retry};
-use toolbox_web::{
-    ApiError, Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson,
-    idempotency::{IdempotencyOutcome, StoredResponse, in_flight_error},
-    realtime::{SseConfig, sse_from_events},
+use toolbox::{
+    auth::AssertedPrincipal,
+    cluster::{CloudEvent, event},
+    grpc::{ClientChannel, ClientService, PageRequestProto, client::asserting, with_retry},
+    web::{
+        ApiError, Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson,
+        realtime::{Hub, SseConfig, sse_from_events},
+    },
 };
+use tracing::{debug, info, warn};
 
-use crate::{
-    auth::Admin,
-    routes::from_backend,
-    state::{AppState, TODOS_TOPIC},
-};
+use crate::{auth::Admin, routes::from_backend, state::AppState};
+
+/// The hub topic every todo change is fanned out on, and every SSE connection
+/// subscribes to.
+pub const TODOS_TOPIC: &str = "todos";
+
+/// Relay the backend's one todo stream into every local browser subscriber.
+pub async fn forward_events(todos: ClientChannel, hub: Arc<Hub<CloudEvent>>) {
+    loop {
+        match TodoServiceClient::new(todos.channel())
+            .watch_todos(WatchTodosRequest {})
+            .await
+        {
+            Ok(response) => {
+                info!("attached to the backend todo event stream");
+                let mut stream = response.into_inner();
+                loop {
+                    match stream.message().await {
+                        Ok(Some(event_message)) => {
+                            debug!(
+                                r#type = %event_message.r#type,
+                                id = event_message.id,
+                                "relaying a todo event to the hub"
+                            );
+                            let id = event_message.id;
+                            match event(
+                                event_message.r#type,
+                                todo_grpc::EVENT_SOURCE,
+                                &serde_json::json!({ "id": id }),
+                            ) {
+                                Ok(envelope) => {
+                                    hub.publish(TODOS_TOPIC, envelope);
+                                }
+                                Err(error) => {
+                                    warn!(%error, id, "could not rebuild a todo event");
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            info!("the backend todo event stream ended; reconnecting");
+                            break;
+                        }
+                        Err(error) => {
+                            warn!(%error, "the backend todo event stream failed; reconnecting");
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                warn!(%error, "could not attach to the todo event stream; retrying");
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
 
 /// A todo as the HTTP API presents it.
 ///
@@ -100,7 +152,7 @@ pub fn router() -> Router<AppState> {
 }
 
 /// The realtime routes, kept apart from [`router`] because they need
-/// `realtime_stack` rather than `http_stack` - no timeout, no body limit.
+/// `apply_realtime_stack` rather than `apply_http_stack` - no timeout or body limit.
 pub fn realtime_router() -> Router<AppState> {
     Router::new().route("/api/todos/events", get(events))
 }
@@ -120,9 +172,7 @@ pub fn realtime_router() -> Router<AppState> {
 pub(crate) async fn events(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>> + Send> {
-    let rx = state.hub.subscribe(TODOS_TOPIC);
-    let stream = BroadcastStream::new(rx).filter_map(Result::ok);
-    sse_from_events(stream, SseConfig::default())
+    sse_from_events(state.hub.stream(TODOS_TOPIC), SseConfig::default())
 }
 
 /// A client for the backend, with the channel's negotiated message limits.
@@ -131,7 +181,7 @@ pub(crate) async fn events(
 ///
 /// * `state` - Read for the channel and its limits. Built per request because
 ///   a tonic client is a cheap wrapper around a cloned channel.
-fn client(state: &AppState) -> TodoServiceClient<toolbox_grpc::ClientService> {
+fn client(state: &AppState) -> TodoServiceClient<ClientService> {
     TodoServiceClient::new(state.todos.channel())
         .max_decoding_message_size(state.todos.limits().max_decoding)
         .max_encoding_message_size(state.todos.limits().max_encoding)
@@ -174,7 +224,7 @@ pub(crate) async fn list(
     PageQuery(page): PageQuery,
 ) -> Result<Json<TodoPageResponse>, ApiError> {
     let request = ListTodosRequest {
-        page: Some(toolbox_grpc::PageRequestProto::from(&page)),
+        page: Some(PageRequestProto::from(&page)),
         title_contains: String::new(),
     };
     let response = assert_caller(&principal, async {
@@ -242,35 +292,14 @@ pub(crate) async fn fetch(
 pub(crate) async fn create(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
-    Idempotent(key): Idempotent,
+    idempotent: Idempotent,
     ValidJson(body): ValidJson<NewTodoRequest>,
 ) -> Result<Response, ApiError> {
-    let Some(key) = key else {
-        let todo = do_create(&state, &principal, body).await?;
-        return Ok(Json(todo).into_response());
-    };
-
-    match state.idempotency.claim(&key, "create_todo").await? {
-        IdempotencyOutcome::InFlight => Err(in_flight_error()),
-        IdempotencyOutcome::Replay(stored) => Ok(replay(&stored)),
-        IdempotencyOutcome::Fresh => match do_create(&state, &principal, body).await {
-            Ok(todo) => {
-                let stored = stored_json(&todo)?;
-                state
-                    .idempotency
-                    .record(&key, "create_todo", &stored)
-                    .await?;
-                Ok(replay(&stored))
-            }
-            Err(e) => {
-                // A failed attempt is not an outcome worth replaying, and
-                // leaving the key claimed would make the retry - the entire
-                // point of sending one - impossible.
-                state.idempotency.release(&key, "create_todo").await?;
-                Err(e)
-            }
-        },
-    }
+    idempotent
+        .json(&state.idempotency, "create_todo", || {
+            do_create(&state, &principal, body)
+        })
+        .await
 }
 
 /// The actual creation, shared by the keyed and unkeyed paths.
@@ -347,24 +376,4 @@ pub(crate) async fn remove(
     .into_inner()
     .deleted;
     Ok(Json(serde_json::json!({ "deleted": deleted })))
-}
-
-/// Turn a successful response into what an idempotent replay stores.
-fn stored_json(todo: &TodoDto) -> Result<StoredResponse, ApiError> {
-    Ok(StoredResponse {
-        status: StatusCode::OK.as_u16(),
-        body: serde_json::to_vec(todo).map_err(ApiError::internal)?,
-        content_type: "application/json".to_owned(),
-    })
-}
-
-/// Rebuild the response a stored record describes.
-fn replay(stored: &StoredResponse) -> Response {
-    let status = StatusCode::from_u16(stored.status).unwrap_or(StatusCode::OK);
-    (
-        status,
-        [(CONTENT_TYPE, stored.content_type.clone())],
-        stored.body.clone(),
-    )
-        .into_response()
 }

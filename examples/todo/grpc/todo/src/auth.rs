@@ -2,10 +2,10 @@
 //!
 //! The gateway resolves who the end user is; this domain only decides what an
 //! already-resolved caller may do to *its* data. It never sees a password or a
-//! bearer token - only the [`toolbox_auth::AssertedPrincipal`] the gateway
-//! attached, gated by [`toolbox_grpc::server::shared_secret::shared_secret_layer`].
+//! bearer token - only the [`toolbox::auth::AssertedPrincipal`] the gateway
+//! attached, gated by [`toolbox::grpc::server::shared_secret::shared_secret_layer`].
 
-use toolbox_auth::Role;
+use toolbox::auth::Role;
 
 /// The one role this domain checks.
 ///

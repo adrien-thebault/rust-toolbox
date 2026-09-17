@@ -15,17 +15,10 @@ name = "todo_grpc"
 path = "src/lib.rs"
 
 [dependencies]
-toolbox-auth    = { workspace = true }
-toolbox-cluster = { workspace = true }
-toolbox-error   = { workspace = true, features = ["derive"] }
-toolbox-pagination = { workspace = true }
-toolbox-db      = { workspace = true, features = ["clap"] }
-toolbox-grpc    = { workspace = true }
-toolbox-schedule = { workspace = true }
-toolbox-server  = { workspace = true, features = ["clap"] }
+toolbox         = { workspace = true, features = ["db", "grpc", "auth", "schedule"] }
 
 diesel     = { workspace = true, features = ["r2d2", "sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
-# Required by `toolbox_db::embed_migrations!`, which expands to a path in it.
+# Required by `toolbox::db::embed_migrations!`, whose expansion names it.
 diesel_migrations = { workspace = true }
 chrono     = { workspace = true, features = ["clock", "std"] }
 clap       = { workspace = true, features = ["derive", "env"] }
@@ -42,7 +35,7 @@ tracing    = { workspace = true }
 
 [build-dependencies]
 tonic-prost-build = { workspace = true }
-toolbox-grpc      = { workspace = true }
+toolbox           = { workspace = true, features = ["grpc"] }
 
 [lints]
 workspace = true

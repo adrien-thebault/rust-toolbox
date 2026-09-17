@@ -3,6 +3,7 @@ name        = "{{project-name}}-web"
 description = "The HTTP gateway: it owns authentication and calls the domains."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 autoexamples = false
 
@@ -15,13 +16,13 @@ path = "src/main.rs"
 name = "dump-openapi"
 path = "examples/dump_openapi.rs"
 
+[[example]]
+name = "seed-password"
+path = "examples/hash_password.rs"
+
 [dependencies]
-toolbox-cluster = { workspace = true }
-toolbox-auth    = { workspace = true }
-toolbox-grpc    = { workspace = true }
-toolbox-server  = { workspace = true }
-toolbox-web     = { workspace = true }
-{{project-name}}-todo = { path = "../grpc/todo" }
+toolbox         = { workspace = true, features = ["web", "grpc"] }
+todo            = { package = "{{project-name}}-todo", path = "../grpc/todo" }
 
 async-trait = { workspace = true }
 axum        = { workspace = true }
@@ -31,13 +32,15 @@ garde       = { workspace = true }
 secrecy     = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
-thiserror   = { workspace = true }
 tokio       = { workspace = true }
 tokio-stream = { workspace = true }
 tonic       = { workspace = true }
 tower       = { workspace = true }
 tracing     = { workspace = true }
 utoipa      = { workspace = true }
+
+[dev-dependencies]
+rpassword = { workspace = true }
 
 [lints]
 workspace = true

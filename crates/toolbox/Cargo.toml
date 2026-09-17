@@ -16,17 +16,24 @@ path = "tests/integration.rs"
 
 [features]
 default = ["error", "pagination"]
-error      = ["dep:toolbox-error"]
+error      = ["dep:toolbox-error", "toolbox-error/derive"]
 pagination = ["dep:toolbox-pagination"]
-db      = ["error", "pagination", "dep:toolbox-db", "dep:toolbox-macros"]
+db      = ["error", "pagination", "dep:toolbox-db", "dep:toolbox-macros", "toolbox-db/clap"]
 cluster = ["dep:toolbox-cluster"]
-server  = ["cluster", "dep:toolbox-server"]
-auth    = ["error", "dep:toolbox-auth"]
-web     = ["server", "auth", "error", "pagination", "dep:toolbox-web", "dep:axum", "dep:axum-extra"]
+schedule = ["cluster", "dep:toolbox-schedule"]
+server  = ["cluster", "dep:toolbox-server", "toolbox-server/clap"]
+auth    = ["error", "dep:toolbox-auth", "toolbox-auth/password"]
+web     = [
+  "server", "auth", "error", "pagination", "dep:toolbox-web", "dep:axum", "dep:axum-extra",
+  "toolbox-web/rate-limit", "toolbox-web/governor-tracing", "toolbox-web/auth-router",
+  "toolbox-web/captcha", "toolbox-web/openapi", "toolbox-web/idempotency",
+  "toolbox-web/realtime",
+]
 grpc    = ["server", "error", "pagination", "dep:toolbox-grpc", "dep:tonic"]
+
 # Everything. Named rather than relying on --all-features so a consumer can ask
 # for it explicitly.
-full    = ["db", "web", "grpc"]
+full = ["db", "web", "grpc", "schedule"]
 
 [dependencies]
 toolbox-error   = { workspace = true, optional = true }
@@ -34,6 +41,7 @@ toolbox-pagination = { workspace = true, optional = true }
 toolbox-db      = { workspace = true, optional = true }
 toolbox-macros  = { workspace = true, optional = true }
 toolbox-cluster = { workspace = true, optional = true }
+toolbox-schedule = { workspace = true, optional = true }
 toolbox-server  = { workspace = true, optional = true }
 toolbox-auth    = { workspace = true, optional = true }
 toolbox-web     = { workspace = true, optional = true }

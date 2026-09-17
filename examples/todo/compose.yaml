@@ -3,7 +3,7 @@
 # official image, so there is no Dockerfile here to keep in step with the
 # template's - that one is the shape you actually deploy.
 x-rust: &rust
-  image: rust:1.88-bookworm
+  image: rust:1.98-bookworm
   working_dir: /work
   env_file: [.env]
   volumes:

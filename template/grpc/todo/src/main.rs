@@ -1,20 +1,23 @@
 //! The todo service process.
 
-use std::{sync::Arc, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
+use chrono::Utc;
 use clap::Parser;
-use {{crate_name}}_todo::{Connection, MIGRATIONS, TodoService, proto};
-{% if gateway %}use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
-{% endif %}use toolbox_cluster::{EventBus, InMemoryEventBus, InMemoryLockManager};
-{% if database == "postgres" %}use toolbox_db::{Db, args::DatabaseArgs};
-{% else %}use toolbox_db::{Db, SqlitePragmas, args::DatabaseArgs};
-{% endif %}{% if gateway %}use toolbox_grpc::{
-    GrpcServerConfig, Routes, serve,
-    server::{identity, shared_secret::shared_secret_layer},
+use todo::{Connection, MIGRATIONS, TodoService, proto};
+use toolbox::{
+{% if gateway %}    auth::{AssertedPrincipalProvider, ProviderRegistry},
+{% endif %}    cluster::{EventBus, InMemoryEventBus, InMemoryLockManager},
+{% if database == "postgres" %}    db::{Db, args::DatabaseArgs},
+{% else %}    db::{Db, SqlitePragmas, args::DatabaseArgs},
+{% endif %}{% if gateway %}    grpc::{
+        GrpcServerConfig, Routes, serve,
+        server::{identity, shared_secret::shared_secret_layer},
+    },
+{% else %}    grpc::{GrpcServerConfig, Routes, serve},
+{% endif %}    schedule::{Scheduler, Trigger},
+    server::{ServerBuilder, args::ServerArgs, poll_check, telemetry::TelemetryArgs},
 };
-{% else %}use toolbox_grpc::{GrpcServerConfig, Routes, serve};
-{% endif %}use toolbox_schedule::{Scheduler, Trigger};
-use toolbox_server::{ServerBuilder, args::ServerArgs, poll_check, telemetry::TelemetryArgs};
 {% if gateway %}use tower::Layer;
 {% endif %}
 /// Command-line arguments.
@@ -38,7 +41,7 @@ struct Args {
 {% endif %}}
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     args.telemetry.init()?;
 
@@ -61,11 +64,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let events: Arc<dyn EventBus> = Arc::new(InMemoryEventBus::default());
     let todos = TodoService::new(db, events);
 
-    // Sweeps completed todos nobody has touched in a month, emitting a
-    // `todo.deleted` per row. Exclusive, so three replicas do not all
-    // soft-delete the same rows - the point of `toolbox-schedule` existing at
-    // all. Every minute so a freshly generated service shows the scheduler
-    // working; set your real cadence (e.g. `0 3 * * *`) before deploying.
+    // Sweeps every completed todo, emitting a `todo.deleted` per row.
+    // Exclusive, so three replicas do not all soft-delete the same rows - the
+    // point of `toolbox-schedule` existing at all. It deliberately runs every
+    // minute with no retention period so a generated service demonstrates the
+    // machinery; a real service might run `0 3 * * *` with a 30-day cutoff.
     // Handed to the server as a task, so it is aborted cleanly on `SIGTERM`.
     let scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .job(
@@ -74,12 +77,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Duration::from_secs(30),
             todos.clone(),
             |todos| async move {
-                let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(30);
-                todos.purge_completed(cutoff).await?;
+                todos.purge_completed(Utc::now().naive_utc()).await?;
                 Ok(())
             },
         )?
         .build()?;
+{% if gateway %}    let config = GrpcServerConfig::default()
+        .reflection(proto::DESCRIPTOR)
+        // So the gateway's own `poll_health` proves the secret is right,
+        // not just that this process is up.
+        .health_secret(args.service_secret.clone());
+{% else %}    let config = GrpcServerConfig::default().reflection(proto::DESCRIPTOR);
+{% endif %}    let limits = config.message_limits();
+    let todos = todos
+        .into_server()
+        .max_decoding_message_size(limits.max_decoding)
+        .max_encoding_message_size(limits.max_encoding);
 {% if gateway %}
     // Only the gateway may call this service: `shared_secret_layer` refuses
     // anything that does not present the secret, and `identity_layer` reads
@@ -87,18 +100,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // reach this port could call `DeleteTodo` directly.
     let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
     let routes = Routes::new(
-        shared_secret_layer(args.service_secret.clone()).layer(
+        shared_secret_layer(args.service_secret.clone())?.layer(
             identity::identity_layer(registry)
                 .extracting(identity::asserted_principal)
-                .layer(todos.into_server()),
+                .layer(todos),
         ),
     );
 {% else %}
     // No gateway in front of this service - a caller reaches it directly, so
     // there is no shared secret to check and nothing to assert an identity
-    // from. Add `toolbox_grpc::server::shared_secret::shared_secret_layer` and
+    // from. Add `toolbox::grpc::server::shared_secret::shared_secret_layer` and
     // your own identity extraction here if that changes.
-    let routes = Routes::new(todos.into_server());
+    let routes = Routes::new(todos);
 {% endif %}
     // Graceful shutdown, health, reflection and the standard stack all come
     // from serve; none of it is written here. A second domain is one more
@@ -106,19 +119,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // if not.
     let server = ServerBuilder::listening_on(args.server.listen_addr)
         .check(db_probe)
-        .task(scheduler.into_task(Duration::from_secs(60)))
+        .task(scheduler.into_task(Duration::from_mins(1)))
         .build()
         .await?;
-    serve(
-        server,
-{% if gateway %}        GrpcServerConfig::default()
-            .reflection(proto::DESCRIPTOR)
-            // So the gateway's own `poll_health` proves the secret is right,
-            // not just that this process is up.
-            .health_secret(args.service_secret),
-{% else %}        GrpcServerConfig::default().reflection(proto::DESCRIPTOR),
-{% endif %}        routes,
-    )
-    .await?;
+    serve(server, config, routes).await?;
     Ok(())
 }

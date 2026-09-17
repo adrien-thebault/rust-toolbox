@@ -5,14 +5,16 @@ use diesel::connection::SimpleConnection;
 use secrecy::SecretString;
 use todo_grpc::{Connection, MIGRATIONS, TodoService};
 use todo_web::{auth::AuthConfig, routes::router};
-use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
-use toolbox_cluster::InMemoryEventBus;
-use toolbox_grpc::{
-    ClientConfig, client,
-    server::{identity, shared_secret::shared_secret_layer},
+use toolbox::{
+    auth::{AssertedPrincipalProvider, ProviderRegistry, hash_password},
+    cluster::InMemoryEventBus,
+    grpc::{
+        ClientConfig, client,
+        server::{identity, shared_secret::shared_secret_layer},
+    },
+    web::{ClientIpTrustPolicy, PRIVATE_RANGES, rate_limit::RateLimitConfig},
 };
 use toolbox_test::{TestCluster, TestGateway, assert_problem, temp_db};
-use toolbox_web::{ClientIpTrustPolicy, rate_limit::RateLimitConfig};
 use tower::Layer as _;
 
 /// The seeded account's password. Hashed at test time rather than committed,
@@ -28,7 +30,7 @@ fn config() -> AuthConfig {
         session_secret: SecretString::from("0123456789abcdef0123456789abcdef"),
         issuer: "todo-web".to_owned(),
         admin_username: "admin".to_owned(),
-        admin_password_hash: toolbox_auth::hash_password(PASSWORD).expect("argon2 accepted it"),
+        admin_password_hash: hash_password(PASSWORD).expect("argon2 accepted it"),
     }
 }
 
@@ -38,7 +40,7 @@ async fn cluster() -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
     cluster_with(RateLimitConfig::new(
         5,
         Duration::from_secs(5),
-        ClientIpTrustPolicy::hops(1),
+        ClientIpTrustPolicy::BehindProxies(PRIVATE_RANGES.to_vec()),
     ))
     .await
 }
@@ -47,7 +49,7 @@ async fn cluster() -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
 async fn cluster_with(
     login: RateLimitConfig,
 ) -> (TestGateway, TestCluster, toolbox_test::db::TempDb) {
-    let (db, guard) = temp_db::<Connection>();
+    let (db, guard) = temp_db();
     db.migrate(MIGRATIONS).await.expect("migrations");
 
     // The same shared-secret-then-identity chain `main.rs` wires, so a test
@@ -59,11 +61,13 @@ async fn cluster_with(
             let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
             let events = Arc::new(InMemoryEventBus::default());
             routes.add_service(
-                shared_secret_layer(SERVICE_SECRET).layer(
-                    identity::identity_layer(registry)
-                        .extracting(identity::asserted_principal)
-                        .layer(TodoService::new(service_db, events).into_server()),
-                ),
+                shared_secret_layer(SERVICE_SECRET)
+                    .expect("a non-empty test secret")
+                    .layer(
+                        identity::identity_layer(registry)
+                            .extracting(identity::asserted_principal)
+                            .layer(TodoService::new(service_db, events).into_server()),
+                    ),
             );
         })
         .await
@@ -76,7 +80,7 @@ async fn cluster_with(
             .service_secret(SERVICE_SECRET),
     );
 
-    let state = todo_web::auth::state(channel, &config()).expect("the gateway configured");
+    let state = todo_web::state::state(channel, &config()).expect("the gateway configured");
 
     (TestGateway::new(router(state, &login)), cluster, guard)
 }
@@ -325,7 +329,7 @@ async fn a_repeated_idempotency_key_replays_the_first_response() {
 /// gateway entirely, can prove that.
 #[tokio::test]
 async fn bypassing_the_gateway_and_calling_the_backend_directly_is_refused() {
-    let (db, _guard) = temp_db::<Connection>();
+    let (db, _guard) = temp_db();
     db.migrate(MIGRATIONS).await.expect("migrations");
 
     let cluster = TestCluster::new()
@@ -333,11 +337,13 @@ async fn bypassing_the_gateway_and_calling_the_backend_directly_is_refused() {
             let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
             let events = Arc::new(InMemoryEventBus::default());
             routes.add_service(
-                shared_secret_layer(SERVICE_SECRET).layer(
-                    identity::identity_layer(registry)
-                        .extracting(identity::asserted_principal)
-                        .layer(TodoService::new(db, events).into_server()),
-                ),
+                shared_secret_layer(SERVICE_SECRET)
+                    .expect("a non-empty test secret")
+                    .layer(
+                        identity::identity_layer(registry)
+                            .extracting(identity::asserted_principal)
+                            .layer(TodoService::new(db, events).into_server()),
+                    ),
             );
         })
         .await
@@ -380,12 +386,13 @@ async fn an_asserted_non_admin_principal_still_cannot_delete() {
     let mut raw = todo_grpc::proto::todo_service_client::TodoServiceClient::new(channel.channel());
 
     let encoded =
-        toolbox_auth::AssertedPrincipal::from(&toolbox_auth::Principal::new("mallory", "test"))
+        toolbox::auth::AssertedPrincipal::from(&toolbox::auth::Principal::new("mallory", "test"))
             .encode();
     let mut request = tonic::Request::new(todo_grpc::proto::DeleteTodoRequest { id: 1 });
-    request
-        .metadata_mut()
-        .insert(toolbox_grpc::X_ASSERTED_PRINCIPAL, encoded.parse().unwrap());
+    request.metadata_mut().insert(
+        toolbox::grpc::X_ASSERTED_PRINCIPAL,
+        encoded.parse().unwrap(),
+    );
 
     let refused = raw.delete_todo(request).await;
     assert_eq!(
@@ -401,9 +408,9 @@ async fn an_asserted_non_admin_principal_still_cannot_delete() {
 #[tokio::test]
 async fn a_backend_mutation_reaches_every_hub_subscriber() {
     use todo_grpc::proto::{CreateTodoRequest, todo_service_client::TodoServiceClient};
-    use toolbox_web::realtime::{Hub, HubConfig, SlowConsumer};
+    use toolbox::web::realtime::Hub;
 
-    let (db, _guard) = temp_db::<Connection>();
+    let (db, _guard) = temp_db();
     db.migrate(MIGRATIONS).await.expect("migrations");
 
     let cluster = TestCluster::new()
@@ -419,10 +426,13 @@ async fn a_backend_mutation_reaches_every_hub_subscriber() {
         &ClientConfig::new(&cluster.backend_uri("todo")).expect("a valid uri"),
     );
 
-    // `forward_events` is what `main.rs` spawns over `auth::state`; this drives
+    // `forward_events` is what `main.rs` spawns over `state`; this drives
     // the same wiring against a real backend stream.
-    let hub = Arc::new(Hub::new(HubConfig::new(8, SlowConsumer::DropOldest)));
-    tokio::spawn(todo_web::auth::forward_events(channel.clone(), hub.clone()));
+    let hub = Arc::new(Hub::new(8));
+    tokio::spawn(todo_web::routes::todo::forward_events(
+        channel.clone(),
+        hub.clone(),
+    ));
     // Let the WatchTodos stream attach before anything is published.
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -496,8 +506,8 @@ async fn a_refresh_token_redeems_for_a_usable_session() {
 async fn repeated_login_attempts_are_throttled_and_the_rest_of_the_api_is_not() {
     let (app, _cluster, _guard) = cluster_with(RateLimitConfig::new(
         2,
-        Duration::from_secs(60),
-        ClientIpTrustPolicy::hops(1),
+        Duration::from_mins(1),
+        ClientIpTrustPolicy::BehindProxies(PRIVATE_RANGES.to_vec()),
     ))
     .await;
 
@@ -531,7 +541,7 @@ async fn repeated_login_attempts_are_throttled_and_the_rest_of_the_api_is_not() 
 /// lock. Calling it twice must be a no-op rather than an error.
 #[tokio::test]
 async fn migrations_are_idempotent() {
-    let (db, _guard) = temp_db::<Connection>();
+    let (db, _guard) = temp_db();
     db.migrate(MIGRATIONS).await.expect("first run");
     db.migrate(MIGRATIONS).await.expect("second run is a no-op");
 
@@ -547,7 +557,7 @@ async fn migrations_are_idempotent() {
 
 #[tokio::test]
 async fn the_schema_the_migration_creates_matches_the_entity() {
-    let (db, _guard) = temp_db::<Connection>();
+    let (db, _guard) = temp_db();
     db.migrate(MIGRATIONS).await.expect("migrations");
     // A mismatch between the migration and the derive shows up as a query
     // error rather than at compile time, so it is worth one assertion.
@@ -562,7 +572,7 @@ async fn the_schema_the_migration_creates_matches_the_entity() {
 /// The deadline has to reach the backend, or a gateway that times out leaves
 /// it working on a request nobody is waiting for.
 ///
-/// This is the regression test for a real defect: `toolbox_server::deadline`
+/// This is the regression test for a real defect: `toolbox::server::deadline`
 /// was written, exported and documented, and attached to nothing.
 #[tokio::test]
 async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
@@ -589,7 +599,7 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
         }
     }
 
-    let (db, _guard) = temp_db::<Connection>();
+    let (db, _guard) = temp_db();
     db.migrate(MIGRATIONS).await.expect("migrations");
 
     let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -624,9 +634,9 @@ async fn a_caller_deadline_reaches_the_backend_as_grpc_timeout() {
     );
 
     // With one, the backend is told how long it has.
-    let sent = toolbox_server::deadline::DEADLINE
+    let sent = toolbox::server::deadline::DEADLINE
         .scope(
-            std::time::Instant::now() + std::time::Duration::from_secs(10),
+            Some(std::time::Instant::now() + std::time::Duration::from_secs(10)),
             async {
                 let mut client = todo_grpc::proto::todo_service_client::TodoServiceClient::new(
                     channel.channel(),

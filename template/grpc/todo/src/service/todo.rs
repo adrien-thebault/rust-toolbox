@@ -9,12 +9,14 @@ use chrono::NaiveDateTime;
 use cloudevents::AttributesReader as _;
 use tokio_stream::{Stream, StreamExt as _};
 use tonic::{Request, Response, Status};
-use toolbox_cluster::{EventBus, Topic, event, payload};
-use toolbox_db::{Db, DbError};
-use toolbox_error::ServiceError;
-{% if gateway %}use toolbox_grpc::{GrpcResult, server::identity};
-{% else %}use toolbox_grpc::GrpcResult;
-{% endif %}use tracing::{info, trace, warn};
+use toolbox::{
+    cluster::{EventBus, Topic, event, payload},
+    db::{Db, DbError},
+    error::ServiceError,
+{% if gateway %}    grpc::{GrpcResult, into_parts, server::identity},
+{% else %}    grpc::{GrpcResult, into_parts},
+{% endif %}};
+use tracing::{info, trace, warn};
 
 use crate::{
     Connection, EVENT_SOURCE, TODOS_TOPIC,
@@ -149,9 +151,9 @@ impl todo_service_server::TodoService for TodoService {
             })
             .await?;
 
-        // Page::try_map plus split is the whole conversion block that used to
+        // Page::try_map plus into_parts is the whole conversion block that used to
         // be written out per handler.
-        let (items, page) = toolbox_grpc::split(page.map(proto::Todo::from));
+        let (items, page) = into_parts(page.map(proto::Todo::from));
         Ok(Response::new(ListTodosResponse {
             items,
             page: Some(page),

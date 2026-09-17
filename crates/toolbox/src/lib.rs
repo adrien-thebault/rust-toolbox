@@ -26,6 +26,8 @@ pub use toolbox_grpc as grpc;
 pub use toolbox_macros as macros;
 #[cfg(feature = "pagination")]
 pub use toolbox_pagination as pagination;
+#[cfg(feature = "schedule")]
+pub use toolbox_schedule as schedule;
 #[cfg(feature = "server")]
 pub use toolbox_server as server;
 #[cfg(feature = "web")]

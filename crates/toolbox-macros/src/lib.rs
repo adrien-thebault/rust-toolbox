@@ -14,7 +14,37 @@ mod entity;
 mod service_error;
 
 use proc_macro::TokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
+use proc_macro2::TokenStream as TokenStream2;
+use quote::{format_ident, quote};
 use syn::{DeriveInput, parse_macro_input};
+
+/// Resolve a generated path through a direct leaf dependency when present,
+/// otherwise through the facade crate's domain re-export.
+fn toolbox_path(package: &str, module: &str) -> TokenStream2 {
+    match crate_name(package) {
+        Ok(FoundCrate::Itself) => quote!(crate),
+        Ok(FoundCrate::Name(name)) => {
+            let name = format_ident!("{name}");
+            quote!(::#name)
+        }
+        Err(_) => match crate_name("toolbox") {
+            Ok(FoundCrate::Itself) => {
+                let module = format_ident!("{module}");
+                quote!(crate::#module)
+            }
+            Ok(FoundCrate::Name(name)) => {
+                let name = format_ident!("{name}");
+                let module = format_ident!("{module}");
+                quote!(::#name::#module)
+            }
+            Err(_) => {
+                let package = format_ident!("{}", package.replace('-', "_"));
+                quote!(::#package)
+            }
+        },
+    }
+}
 
 /// Generate inherent CRUD methods on a diesel entity.
 ///

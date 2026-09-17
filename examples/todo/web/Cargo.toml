@@ -21,16 +21,16 @@ path = "src/lib.rs"
 name = "dump-openapi"
 path = "examples/dump_openapi.rs"
 
+[[example]]
+name = "seed-password"
+path = "examples/hash_password.rs"
+
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
-toolbox-cluster = { workspace = true }
-toolbox-auth    = { workspace = true, features = ["password"] }
-toolbox-web     = { workspace = true, features = ["rate-limit", "openapi", "auth-router", "idempotency", "realtime"] }
-toolbox-grpc    = { workspace = true }
-toolbox-server  = { workspace = true, features = ["clap"] }
+toolbox         = { workspace = true, features = ["web", "grpc"] }
 todo-grpc    = { path = "../grpc/todo" }
 
 async-trait = { workspace = true }
@@ -42,7 +42,6 @@ secrecy    = { workspace = true }
 utoipa     = { workspace = true, features = ["axum_extras", "macros"] }
 serde      = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-thiserror  = { workspace = true }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
 tokio-stream = { workspace = true }
 tonic      = { workspace = true }
@@ -55,6 +54,7 @@ cloudevents-sdk = { workspace = true }
 diesel       = { workspace = true, features = ["r2d2", "sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
 tempfile     = { workspace = true }
 tokio        = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+rpassword    = { workspace = true }
 
 [lints]
 workspace = true

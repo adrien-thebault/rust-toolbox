@@ -13,6 +13,7 @@ docker compose up                     # both services, port 8080
 docker compose run --rm test          # the end-to-end test, no toolchain needed
 cargo test -p todo-grpc -p todo-web   # the same test on the host
 ./openapi.sh                          # regenerate the committed openapi.json
+cargo run -p todo-web --example seed-password # hash the seeded password
 ```
 
 On the host, `cargo run -p todo-grpc` and `cargo run -p todo-web` take
@@ -49,10 +50,10 @@ web/
     lib.rs
     state.rs          AppState: the backend channel, idempotency, the event bus
     auth.rs           who may log in, the one role this example has, and the
-                       event bus -> hub wiring behind the SSE route
+                       session refresh policy
     routes.rs         the router, the OpenAPI doc, the Status -> ApiError seam
     routes/
-      todo.rs         the DTOs, the five todo routes and the SSE route
+      todo.rs         the DTOs, the routes, and backend event -> SSE forwarding
   static/
     index.html        a plain HTML client against the running gateway
   tests/

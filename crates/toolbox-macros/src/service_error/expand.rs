@@ -7,22 +7,30 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::parse::{Classify, Config, FieldShape, MetaSource, SingleField, Variant, single_field};
+use super::{
+    super::toolbox_path,
+    parse::{Classify, Config, FieldShape, MetaSource, SingleField, Variant, single_field},
+};
 
 /// Build the `impl ServiceError` (and optionally `impl From<_> for
 /// tonic::Status`) for `cfg`.
 pub fn expand(cfg: &Config) -> TokenStream {
+    let error = toolbox_path("toolbox-error", "error");
+    let grpc = toolbox_path("toolbox-grpc", "grpc");
     let ident = &cfg.ident;
     let (impl_generics, ty_generics, where_clause) = cfg.generics.split_for_impl();
     let domain = &cfg.domain;
 
-    let code_arms = cfg.variants.iter().map(code_arm);
-    let kind_arms = cfg.variants.iter().map(kind_arm);
-    let metadata_arms = cfg.variants.iter().map(metadata_arm);
+    let code_arms = cfg.variants.iter().map(|variant| code_arm(variant, &error));
+    let kind_arms = cfg.variants.iter().map(|variant| kind_arm(variant, &error));
+    let metadata_arms = cfg
+        .variants
+        .iter()
+        .map(|variant| metadata_arm(variant, &error));
 
     let service_error_impl = quote! {
         #[automatically_derived]
-        impl #impl_generics ::toolbox_error::ServiceError for #ident #ty_generics #where_clause {
+        impl #impl_generics #error::ServiceError for #ident #ty_generics #where_clause {
             fn code(&self) -> &'static str {
                 match self { #(#code_arms),* }
             }
@@ -31,7 +39,7 @@ pub fn expand(cfg: &Config) -> TokenStream {
                 #domain
             }
 
-            fn kind(&self) -> ::toolbox_error::ErrorKind {
+            fn kind(&self) -> #error::ErrorKind {
                 match self { #(#kind_arms),* }
             }
 
@@ -46,7 +54,7 @@ pub fn expand(cfg: &Config) -> TokenStream {
             #[automatically_derived]
             impl #impl_generics ::core::convert::From<#ident #ty_generics> for ::tonic::Status #where_clause {
                 fn from(err: #ident #ty_generics) -> Self {
-                    ::toolbox_grpc::to_status(err)
+                    #grpc::to_status(err)
                 }
             }
         }
@@ -69,11 +77,11 @@ fn discriminant_pattern(variant: &Variant) -> TokenStream {
 }
 
 /// `Pattern => "CODE"`, or delegation for a transparent variant.
-fn code_arm(variant: &Variant) -> TokenStream {
+fn code_arm(variant: &Variant, error: &TokenStream) -> TokenStream {
     match &variant.classify {
         Classify::Transparent => {
             let (pat, binding) = transparent_pattern(variant);
-            quote!(#pat => ::toolbox_error::ServiceError::code(#binding))
+            quote!(#pat => #error::ServiceError::code(#binding))
         }
         Classify::Explicit { code, .. } => {
             let pat = discriminant_pattern(variant);
@@ -83,25 +91,25 @@ fn code_arm(variant: &Variant) -> TokenStream {
 }
 
 /// `Pattern => ErrorKind::_`, or delegation for a transparent variant.
-fn kind_arm(variant: &Variant) -> TokenStream {
+fn kind_arm(variant: &Variant, error: &TokenStream) -> TokenStream {
     match &variant.classify {
         Classify::Transparent => {
             let (pat, binding) = transparent_pattern(variant);
-            quote!(#pat => ::toolbox_error::ServiceError::kind(#binding))
+            quote!(#pat => #error::ServiceError::kind(#binding))
         }
         Classify::Explicit { kind, .. } => {
             let pat = discriminant_pattern(variant);
-            quote!(#pat => ::toolbox_error::ErrorKind::#kind)
+            quote!(#pat => #error::ErrorKind::#kind)
         }
     }
 }
 
 /// `Pattern => <map>`: delegation, an empty map, or one built from `meta(..)`.
-fn metadata_arm(variant: &Variant) -> TokenStream {
+fn metadata_arm(variant: &Variant, error: &TokenStream) -> TokenStream {
     match &variant.classify {
         Classify::Transparent => {
             let (pat, binding) = transparent_pattern(variant);
-            quote!(#pat => ::toolbox_error::ServiceError::metadata(#binding))
+            quote!(#pat => #error::ServiceError::metadata(#binding))
         }
         Classify::Explicit { meta, .. } if meta.is_empty() => {
             let pat = discriminant_pattern(variant);

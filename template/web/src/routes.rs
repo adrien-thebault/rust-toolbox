@@ -6,11 +6,14 @@
 pub mod todo;
 
 use axum::{Router, middleware::from_fn_with_state};
-use toolbox_web::{
-    ApiError,
-    auth::{ForwardedConfig, auth_router, forwarded_auth_layer, session_layer},
-    openapi::{bearer_security, with_standard_errors},
-    rate_limit::RateLimitConfig,
+use toolbox::{
+    grpc::{from_status, kind_for},
+    web::{
+        ApiError,
+        auth::{ForwardedConfig, auth_router, forwarded_auth_layer, session_layer},
+        openapi::{bearer_security, with_standard_errors},
+        rate_limit::RateLimitConfig,
+    },
 };
 
 use crate::state::AppState;
@@ -55,7 +58,7 @@ pub fn router(state: AppState, login: &RateLimitConfig) -> Router {
     // A forwarded-identity fallback for a proxy on the same host - see
     // `auth::providers`, which is what makes this live rather than harmless.
     // `session_layer` is the outer layer, so a real bearer token wins.
-    let forwarded = ForwardedConfig::new().trust(login.trust.clone());
+    let forwarded = ForwardedConfig::new();
     Router::new()
         .merge(todo::router())
         .merge(auth_router::<AppState>(login))
@@ -67,8 +70,8 @@ pub fn router(state: AppState, login: &RateLimitConfig) -> Router {
         .with_state(state)
 }
 
-/// The realtime routes, meant to be layered with `realtime_stack` rather than
-/// `http_stack`: no timeout and no body limit, because an SSE connection is
+/// The realtime routes, meant for `apply_realtime_stack` rather than
+/// `apply_http_stack`: no timeout and no body limit, because an SSE connection is
 /// long-lived by design.
 ///
 /// # Arguments
@@ -90,8 +93,8 @@ pub fn realtime_router(state: AppState) -> Router {
 ///   originating service's error code.
 #[must_use]
 pub fn from_backend(status: &tonic::Status) -> ApiError {
-    let kind = toolbox_grpc::kind_for(status.code());
-    toolbox_grpc::from_status(status).map_or_else(
+    let kind = kind_for(status.code());
+    from_status(status).map_or_else(
         || ApiError::of_kind(kind, "Backend Error").with_detail(status.message().to_owned()),
         |info| ApiError::from_error_info(info, kind),
     )

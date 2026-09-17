@@ -4,20 +4,22 @@
 //! reflection and locked migrations - none of which any hand-written binary
 //! had.
 
-use std::{sync::Arc, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
 use chrono::Utc;
 use clap::Parser;
 use todo_grpc::{Connection, MIGRATIONS, TodoService, proto};
-use toolbox_auth::{AssertedPrincipalProvider, ProviderRegistry};
-use toolbox_cluster::{EventBus, InMemoryEventBus, InMemoryLockManager};
-use toolbox_db::{Db, SqlitePragmas, args::DatabaseArgs};
-use toolbox_grpc::{
-    GrpcServerConfig, Routes, serve,
-    server::{identity, shared_secret::shared_secret_layer},
+use toolbox::{
+    auth::{AssertedPrincipalProvider, ProviderRegistry},
+    cluster::{EventBus, InMemoryEventBus, InMemoryLockManager},
+    db::{Db, SqlitePragmas, args::DatabaseArgs},
+    grpc::{
+        GrpcServerConfig, Routes, serve,
+        server::{identity, shared_secret::shared_secret_layer},
+    },
+    schedule::{Scheduler, Trigger},
+    server::{ServerBuilder, args::ServerArgs, poll_check, telemetry::TelemetryArgs},
 };
-use toolbox_schedule::{Scheduler, Trigger};
-use toolbox_server::{ServerBuilder, args::ServerArgs, poll_check, telemetry::TelemetryArgs};
 use tower::Layer;
 
 /// Command-line arguments.
@@ -41,7 +43,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     args.telemetry.init()?;
 
@@ -63,13 +65,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let events: Arc<dyn EventBus> = Arc::new(InMemoryEventBus::default());
     let todos = TodoService::new(db, events);
 
-    // Sweeps completed todos nobody has touched in a month, emitting a
-    // `todo.deleted` per row. Exclusive, so three replicas do not all
-    // soft-delete the same rows - the point of `toolbox-schedule` existing at
-    // all. Every minute so the machinery is visible when you run the example;
-    // a real service would pick something like `0 3 * * *`. Handed to the
-    // server as a task, so it is aborted cleanly on `SIGTERM` rather than left
-    // running by a detached `tokio::spawn`.
+    // Sweeps every completed todo, emitting a `todo.deleted` per row.
+    // Exclusive, so three replicas do not all soft-delete the same rows - the
+    // point of `toolbox-schedule` existing at all. It deliberately runs every
+    // minute with no retention period so the machinery is visible in this
+    // example; a real service might run `0 3 * * *` with a 30-day cutoff.
+    // Handed to the server as a task, so it is aborted cleanly on `SIGTERM`
+    // rather than left running by a detached `tokio::spawn`.
     let scheduler = Scheduler::builder(Arc::new(InMemoryLockManager::new()))
         .job(
             "purge-completed-todos",
@@ -87,12 +89,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // anything that does not present the secret, and `identity_layer` reads
     // who the gateway is asking on behalf of. Without both, anyone who can
     // reach this port could call `DeleteTodo` directly.
+    let config = GrpcServerConfig::default()
+        .reflection(proto::DESCRIPTOR)
+        // So the gateway's own `poll_health` proves the secret is right,
+        // not just that this process is up.
+        .health_secret(args.service_secret.clone());
+    let limits = config.message_limits();
+    let todos = todos
+        .into_server()
+        .max_decoding_message_size(limits.max_decoding)
+        .max_encoding_message_size(limits.max_encoding);
     let registry = Arc::new(ProviderRegistry::new().with(AssertedPrincipalProvider::new()));
     let routes = Routes::new(
-        shared_secret_layer(args.service_secret.clone()).layer(
+        shared_secret_layer(args.service_secret.clone())?.layer(
             identity::identity_layer(registry)
                 .extracting(identity::asserted_principal)
-                .layer(todos.into_server()),
+                .layer(todos),
         ),
     );
 
@@ -102,18 +114,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // if not.
     let server = ServerBuilder::listening_on(args.server.listen_addr)
         .check(db_probe)
-        .task(scheduler.into_task(Duration::from_secs(60)))
+        .task(scheduler.into_task(Duration::from_mins(1)))
         .build()
         .await?;
-    serve(
-        server,
-        GrpcServerConfig::default()
-            .reflection(proto::DESCRIPTOR)
-            // So the gateway's own `poll_health` proves the secret is right,
-            // not just that this process is up.
-            .health_secret(args.service_secret),
-        routes,
-    )
-    .await?;
+
+    serve(server, config, routes).await?;
     Ok(())
 }

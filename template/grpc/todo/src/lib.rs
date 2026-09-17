@@ -17,8 +17,8 @@ pub use service::{TodoService, TodoServiceError};
 // backends is this line plus the connection URL, because every entity says
 // `backend = crate::Backend` rather than naming a diesel type. Timestamp
 // columns are plain `chrono::NaiveDateTime`.
-{% if database == "postgres" %}toolbox_db::postgres_backend!();
-{% else %}toolbox_db::sqlite_backend!();
+{% if database == "postgres" %}toolbox::db::postgres_backend!();
+{% else %}toolbox::db::sqlite_backend!();
 {% endif %}
 /// The event-bus topic every todo mutation is published on, and `WatchTodos`
 /// subscribes to.
@@ -28,7 +28,8 @@ pub const TODOS_TOPIC: &str = "todos";
 pub const EVENT_SOURCE: &str = "/todo-service";
 
 /// This domain's migrations, applied by the binary at startup.
-pub const MIGRATIONS: toolbox_db::EmbeddedMigrations = toolbox_db::embed_migrations!("migrations");
+pub const MIGRATIONS: toolbox::db::EmbeddedMigrations =
+    toolbox::db::embed_migrations!("migrations");
 
 /// The generated protobuf types and service stubs.
 pub mod proto {

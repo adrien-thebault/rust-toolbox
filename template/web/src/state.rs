@@ -2,19 +2,15 @@
 
 use std::sync::Arc;
 
-use secrecy::{ExposeSecret, SecretString};
-use toolbox_auth::{
-    AuthError, JwtIdentityProvider, Principal, ProviderRegistry, RefreshInfo, UserStore, auth_epoch,
+use secrecy::SecretString;
+use toolbox::{
+    auth::{AuthError, JwtIdentityProvider, ProviderRegistry},
+    cluster::{CloudEvent, InMemoryKvStore},
+    grpc::ClientChannel,
+    web::{idempotency::Idempotency, realtime::Hub},
 };
-use toolbox_grpc::ClientChannel;
-use toolbox_web::{auth::AuthState, idempotency::Idempotency, realtime::Hub};
 
-use crate::auth::SeededAdmin;
-
-/// The hub topic every todo change is fanned out on, and every SSE connection
-/// subscribes to. `forward_events` relays the backend's `WatchTodos` stream
-/// onto it.
-pub const TODOS_TOPIC: &str = "todos";
+use crate::auth::{AuthConfig, SeededAdmin, providers, session_issuer};
 
 /// Everything a handler can reach.
 #[derive(Clone)]
@@ -32,69 +28,23 @@ pub struct AppState {
     /// Claims `Idempotency-Key`s for the create route, backed by a `KvStore`.
     pub idempotency: Arc<Idempotency>,
     /// Fans the one upstream `WatchTodos` stream out to every connected
-    /// browser. `forward_events` fills it; the SSE route reads it.
-    pub hub: Arc<Hub<toolbox_cluster::CloudEvent>>,
+    /// browser. `routes::todo::forward_events` fills it; the SSE route reads it.
+    pub hub: Arc<Hub<CloudEvent>>,
 }
 
-/// The accessors `auth_router` needs. Implementing this is what mounts login,
-/// refresh, logout and `/auth/me` without writing any of them.
-impl AuthState for AppState {
-    fn providers(&self) -> &ProviderRegistry {
-        &self.providers
-    }
-
-    fn session_issuer(&self) -> &JwtIdentityProvider {
-        &self.issuer
-    }
-
-    fn refresh_epoch(
-        &self,
-        principal: &Principal,
-    ) -> impl std::future::Future<Output = Option<String>> + Send {
-        // Bind the refresh token to the stored credential: a password change
-        // re-fingerprints, so every refresh token issued against the old hash
-        // stops verifying.
-        let secret = self.session_secret.clone();
-        let users = self.users.clone();
-        let subject = principal.subject.clone();
-        async move {
-            let user = users.lookup(&subject).await.ok().flatten()?;
-            Some(auth_epoch(
-                secret.expose_secret().as_bytes(),
-                &user.password_hash,
-            ))
-        }
-    }
-
-    fn resolve_refresh(
-        &self,
-        info: RefreshInfo,
-    ) -> impl std::future::Future<Output = Result<Principal, AuthError>> + Send {
-        // Re-read the user so roles and account status are current, and reject
-        // if the bound credential fingerprint no longer matches.
-        let secret = self.session_secret.clone();
-        let users = self.users.clone();
-        async move {
-            let Some(user) = users
-                .lookup(&info.subject)
-                .await
-                .map_err(|_| AuthError::Unauthenticated)?
-            else {
-                return Err(AuthError::Unauthenticated);
-            };
-            if let Some(bound) = info.epoch.as_deref()
-                && bound != auth_epoch(secret.expose_secret().as_bytes(), &user.password_hash)
-            {
-                return Err(AuthError::Unauthenticated);
-            }
-            Ok(Principal {
-                subject: user.subject,
-                issuer: info.idp,
-                roles: user.roles.into_iter().collect(),
-                display_name: user.display_name,
-                email: user.email,
-                attributes: user.attributes,
-            })
-        }
-    }
+/// Assemble the state the gateway runs on.
+///
+/// # Errors
+/// [`AuthError`] when the session issuer rejects the signing secret.
+pub fn state(todos: ClientChannel, config: &AuthConfig) -> Result<AppState, AuthError> {
+    let issuer = Arc::new(session_issuer(config)?);
+    Ok(AppState {
+        todos,
+        providers: Arc::new(providers(config, Arc::clone(&issuer))),
+        issuer,
+        users: SeededAdmin::new(config),
+        session_secret: config.session_secret.clone(),
+        idempotency: Arc::new(Idempotency::new(Arc::new(InMemoryKvStore::default()))),
+        hub: Arc::new(Hub::new(64)),
+    })
 }

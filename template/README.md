@@ -23,8 +23,7 @@ Once it is up, open `web/static/index.html` from a plain local static server
 backend and per gateway choice.
 {% if gateway %}
 One account is seeded from `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH`. Produce
-the hash with `cargo run -p toolbox-auth --features password --example
-hash-password`, then:
+the hash with `cargo run -p {{project-name}}-web --example seed-password`, then:
 
 ```sh
 TOKEN=$(curl -s localhost:8080/auth/login \
@@ -61,10 +60,10 @@ web/
     lib.rs
     state.rs          AppState: the service channel, idempotency, the event bus
     auth.rs           who may log in, the roles this project has, and the
-                       event bus -> hub wiring behind the SSE route
+                       session refresh policy
     routes.rs         the router, the OpenAPI doc, the Status -> ApiError seam
     routes/
-      todo.rs         the DTOs, the todo routes and the SSE route
+      todo.rs         the DTOs, the routes, and backend event -> SSE forwarding
   static/
     index.html        a plain HTML client against the running gateway
   examples/
@@ -90,7 +89,7 @@ one place the database backend is named; timestamp columns are plain
 
 1. A migration in `grpc/todo/migrations/`.
 2. A `table!` in `grpc/todo/src/schema.rs`.
-3. A file in `grpc/todo/src/model/` with `#[derive(toolbox_db::Entity)]` and
+3. A file in `grpc/todo/src/model/` with `#[derive(toolbox::db::Entity)]` and
    `#[entity(backend = crate::Backend, ...)]`, and a line in `model.rs`.
 
 The derive generates `find_by_id`, `find_by_ids`, `exists`, `count`, `page`,

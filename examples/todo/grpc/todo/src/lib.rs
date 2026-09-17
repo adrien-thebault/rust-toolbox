@@ -18,7 +18,7 @@ pub use model::Todo;
 pub use service::{TodoService, TodoServiceError};
 
 // `Backend` and `Connection`, named **once** for the whole crate.
-toolbox_db::sqlite_backend!();
+toolbox::db::sqlite_backend!();
 
 /// The event-bus topic every todo mutation is published on, and `WatchTodos`
 /// subscribes to.
@@ -28,7 +28,8 @@ pub const TODOS_TOPIC: &str = "todos";
 pub const EVENT_SOURCE: &str = "/todo-service";
 
 /// This domain's migrations, applied by the caller at startup.
-pub const MIGRATIONS: toolbox_db::EmbeddedMigrations = toolbox_db::embed_migrations!("migrations");
+pub const MIGRATIONS: toolbox::db::EmbeddedMigrations =
+    toolbox::db::embed_migrations!("migrations");
 
 /// The generated protobuf types and service stubs.
 pub mod proto {

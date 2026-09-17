@@ -2,8 +2,10 @@
 
 use chrono::NaiveDateTime;
 use diesel::{connection::LoadConnection, prelude::*};
-use toolbox_db::{DbError, pagination};
-use toolbox_pagination::{Page, PageRequest};
+use toolbox::{
+    db::{DbError, Paginate as _, pagination},
+    pagination::{Page, PageRequest},
+};
 
 use crate::{Backend, proto, schema::todos};
 
@@ -12,7 +14,7 @@ use crate::{Backend, proto, schema::todos};
 /// Every option on the derive is exercised here on purpose: this is what
 /// stands between the macro and a silent regression.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, AsChangeset, toolbox_db::Entity,
+    Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, AsChangeset, toolbox::db::Entity,
 )]
 #[diesel(table_name = todos)]
 #[diesel(check_for_backend(Backend))]
@@ -88,8 +90,6 @@ impl Todo {
     where
         C: LoadConnection<Backend = Backend>,
     {
-        use toolbox_db::Paginate as _;
-
         pagination::validate(request.sort(), Self::sortable_fields())?;
         Self::query()
             .filter(todos::title.like(format!("%{needle}%")))

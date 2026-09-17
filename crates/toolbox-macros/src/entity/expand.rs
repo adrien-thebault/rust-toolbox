@@ -8,7 +8,10 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use super::parse::{EntityConfig, KeyReadback};
+use super::{
+    super::toolbox_path,
+    parse::{EntityConfig, KeyReadback},
+};
 
 // A `quote!` block is one expression however long the code it emits is, so the
 // line-count lint measures the wrong thing here.
@@ -20,6 +23,8 @@ use super::parse::{EntityConfig, KeyReadback};
 /// * `cfg` - Everything the `#[entity(..)]` attribute declared, already
 ///   resolved against the struct.
 pub fn expand(cfg: &EntityConfig) -> TokenStream {
+    let db = toolbox_path("toolbox-db", "db");
+    let pagination = toolbox_path("toolbox-pagination", "pagination");
     let EntityConfig {
         ident,
         table,
@@ -69,11 +74,11 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   error.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
+            /// [`#db::DbError::Query`] when the statement fails.
             pub fn find_by_id<__C>(
                 conn: &mut __C,
                 id: &#id_type,
-            ) -> ::toolbox_db::DbResult<::core::option::Option<Self>>
+            ) -> #db::DbResult<::core::option::Option<Self>>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -98,11 +103,11 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   id, which is the whole reason this exists.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
+            /// [`#db::DbError::Query`] when the statement fails.
             pub fn find_by_ids<__C>(
                 conn: &mut __C,
                 ids: &[#id_type],
-            ) -> ::toolbox_db::DbResult<::std::vec::Vec<Self>>
+            ) -> #db::DbResult<::std::vec::Vec<Self>>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -126,8 +131,8 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   when the row itself is not needed.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
-            pub fn exists<__C>(conn: &mut __C, id: &#id_type) -> ::toolbox_db::DbResult<bool>
+            /// [`#db::DbError::Query`] when the statement fails.
+            pub fn exists<__C>(conn: &mut __C, id: &#id_type) -> #db::DbResult<bool>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -148,8 +153,8 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   pools.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
-            pub fn count<__C>(conn: &mut __C) -> ::toolbox_db::DbResult<i64>
+            /// [`#db::DbError::Query`] when the statement fails.
+            pub fn count<__C>(conn: &mut __C) -> #db::DbResult<i64>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -168,20 +173,20 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   against the entity's allowlist, never interpolated into SQL.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::InvalidSortField`] when the request
+            /// [`#db::DbError::InvalidSortField`] when the request
             /// sorts by a field this entity does not declare sortable, or
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
+            /// [`#db::DbError::Query`] when the statement fails.
             pub fn page<__C>(
                 conn: &mut __C,
-                request: &::toolbox_pagination::PageRequest,
-            ) -> ::toolbox_db::DbResult<::toolbox_pagination::Page<Self>>
+                request: &#pagination::PageRequest,
+            ) -> #db::DbResult<#pagination::Page<Self>>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
                 use ::diesel::prelude::*;
-                use ::toolbox_db::Paginate as _;
+                use #db::Paginate as _;
 
-                ::toolbox_db::pagination::validate(request.sort(), Self::sortable_fields())?;
+                #db::pagination::validate(request.sort(), Self::sortable_fields())?;
                 let mut __q = Self::query();
                 for __item in request.sort().items() {
                     __q = match (__item.field.as_str(), __item.direction) {
@@ -189,7 +194,7 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
                         _ => __q,
                     };
                 }
-                let __page: ::toolbox_pagination::Page<Self> = __q
+                let __page: #pagination::Page<Self> = __q
                     .select(<Self as ::diesel::SelectableHelper<#backend>>::as_select())
                     .paginate(request)
                     .load_page::<Self, __C>(conn)?;
@@ -199,7 +204,7 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
                     // the soft-delete one, so the table count is the real total.
                     let __total = Self::count(conn)?;
                     if __total != __page.total() {
-                        return ::core::result::Result::Ok(::toolbox_pagination::Page::new(
+                        return ::core::result::Result::Ok(#pagination::Page::new(
                             ::std::vec::Vec::new(),
                             ::core::clone::Clone::clone(request),
                             __total,
@@ -224,10 +229,10 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   pools.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Conflict`] when an optimistic-locking
+            /// [`#db::DbError::Conflict`] when an optimistic-locking
             /// check matched no rows, or
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
-            pub fn save<__C>(&self, conn: &mut __C) -> ::toolbox_db::DbResult<Self>
+            /// [`#db::DbError::Query`] when the statement fails.
+            pub fn save<__C>(&self, conn: &mut __C) -> #db::DbResult<Self>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>
                     + ::diesel::Connection<Backend = #backend>,
@@ -254,7 +259,7 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             pub fn save_all<__C>(
                 conn: &mut __C,
                 items: &[Self],
-            ) -> ::toolbox_db::DbResult<::std::vec::Vec<Self>>
+            ) -> #db::DbResult<::std::vec::Vec<Self>>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>
                     + ::diesel::Connection<Backend = #backend>,
@@ -279,11 +284,11 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   soft-deletes, a `DELETE` otherwise.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
+            /// [`#db::DbError::Query`] when the statement fails.
             pub fn delete_by_id<__C>(
                 conn: &mut __C,
                 id: &#id_type,
-            ) -> ::toolbox_db::DbResult<usize>
+            ) -> #db::DbResult<usize>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -302,11 +307,11 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   round trip per row.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
+            /// [`#db::DbError::Query`] when the statement fails.
             pub fn delete_by_ids<__C>(
                 conn: &mut __C,
                 ids: &[#id_type],
-            ) -> ::toolbox_db::DbResult<usize>
+            ) -> #db::DbResult<usize>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -323,8 +328,8 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
             ///   pools.
             ///
             /// # Errors
-            /// [`::toolbox_db::DbError::Query`] when the statement fails.
-            pub fn truncate<__C>(conn: &mut __C) -> ::toolbox_db::DbResult<usize>
+            /// [`#db::DbError::Query`] when the statement fails.
+            pub fn truncate<__C>(conn: &mut __C) -> #db::DbResult<usize>
             where
                 __C: ::diesel::connection::LoadConnection<Backend = #backend>,
             {
@@ -334,7 +339,7 @@ pub fn expand(cfg: &EntityConfig) -> TokenStream {
         }
 
         #[automatically_derived]
-        impl ::toolbox_db::Entity for #ident {
+        impl #db::Entity for #ident {
             type Id = #id_type;
             type Table = #table::table;
 
@@ -368,15 +373,16 @@ fn alive_filter(cfg: &EntityConfig) -> TokenStream {
 /// * `cfg` - Everything the `#[entity(..)]` attribute declared, already
 ///   resolved against the struct.
 fn sort_arms(cfg: &EntityConfig) -> Vec<TokenStream> {
+    let pagination = toolbox_path("toolbox-pagination", "pagination");
     let table = &cfg.table;
     cfg.sortable
         .iter()
         .map(|col| {
             let name = col.to_string();
             quote! {
-                (#name, ::toolbox_pagination::SortDirection::Asc) =>
+                (#name, #pagination::SortDirection::Asc) =>
                     __q.then_order_by(#table::#col.asc()),
-                (#name, ::toolbox_pagination::SortDirection::Desc) =>
+                (#name, #pagination::SortDirection::Desc) =>
                     __q.then_order_by(#table::#col.desc()),
             }
         })
@@ -418,6 +424,7 @@ fn touch_updated(cfg: &EntityConfig) -> TokenStream {
 /// * `cfg` - Everything the `#[entity(..)]` attribute declared, already
 ///   resolved against the struct.
 fn save_body(cfg: &EntityConfig) -> TokenStream {
+    let db = toolbox_path("toolbox-db", "db");
     let table = &cfg.table;
     let id_field = &cfg.id_field;
     let backend = &cfg.backend;
@@ -439,7 +446,7 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
                 if __changed == 0 {
                     // The row was there for the existence probe and gone by the
                     // time we wrote it.
-                    return ::core::result::Result::Err(::toolbox_db::DbError::NotFound);
+                    return ::core::result::Result::Err(#db::DbError::NotFound);
                 }
             }
         },
@@ -450,7 +457,7 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
                     // The version column has run out of room; optimistic locking
                     // cannot continue on a value it would have to reuse.
                     return ::core::result::Result::Err(
-                        ::toolbox_db::DbError::VersionOverflow,
+                        #db::DbError::VersionOverflow,
                     );
                 };
                 __row.#v = __next;
@@ -464,7 +471,7 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
                 if __changed == 0 {
                     // Zero rows matched: either the row vanished or someone else
                     // wrote first. Both are a lost update from this caller's view.
-                    return ::core::result::Result::Err(::toolbox_db::DbError::Conflict);
+                    return ::core::result::Result::Err(#db::DbError::Conflict);
                 }
             }
         },
@@ -476,7 +483,7 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
     let updated_row = quote! { ::core::result::Result::Ok(__row) };
     let reload = quote! {
         Self::find_by_id(conn, &__row.#id_field)?
-            .ok_or(::toolbox_db::DbError::NotFound)
+            .ok_or(#db::DbError::NotFound)
     };
 
     if let Some(readback) = cfg.autoincrement {
@@ -512,7 +519,7 @@ fn save_body(cfg: &EntityConfig) -> TokenStream {
             },
         };
         quote! {
-            if <Self as ::toolbox_db::Entity>::id(&__row).is_none() {
+            if <Self as #db::Entity>::id(&__row).is_none() {
                 #fetch_inserted
             } else {
                 #touch_updated
