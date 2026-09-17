@@ -4,6 +4,8 @@
 //! the step everyone omits, and the one that drops requests on every rolling
 //! deploy.
 
+#[cfg(not(unix))]
+use std::future::pending;
 use std::time::Duration;
 
 #[cfg(unix)]
@@ -55,7 +57,7 @@ pub async fn shutdown_signal() {
     // No SIGTERM off Unix: pending() leaves Ctrl-C as the only trigger and keeps
     // the select! below well-typed.
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    let terminate = pending::<()>();
 
     tokio::select! {
         () = ctrl_c => info!("received Ctrl-C, shutting down"),

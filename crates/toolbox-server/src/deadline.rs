@@ -5,13 +5,19 @@
 //! is waiting for any more.
 
 use std::{
+    future::Future,
+    marker::PhantomData,
+    pin::Pin,
     task::{Context, Poll},
     time::{Duration, Instant},
 };
 
 use http::{HeaderName, HeaderValue, Request, Response, StatusCode};
 use pin_project_lite::pin_project;
-use tokio::{task::futures::TaskLocalFuture, time::Sleep};
+use tokio::{
+    task::futures::TaskLocalFuture,
+    time::{Sleep, sleep},
+};
 use tower::{Layer, Service};
 
 /// The gRPC deadline header, which this reads on the way in and
@@ -19,25 +25,26 @@ use tower::{Layer, Service};
 pub const GRPC_TIMEOUT: HeaderName = HeaderName::from_static("grpc-timeout");
 
 tokio::task_local! {
-    /// When the request being handled must be finished.
+    /// When the request being handled must be finished, if it has a deadline.
     ///
-    /// Set whenever a deadline applies. Code that fans out to a backend reads
-    /// it to decide how long the call downstream may take.
-    pub static DEADLINE: Instant;
+    /// Scoped for every request. Code that fans out to a backend reads the
+    /// optional instant to decide how long the call downstream may take.
+    pub static DEADLINE: Option<Instant>;
 }
 
 /// How long the request being handled has left, when it has a deadline.
 #[must_use]
 pub fn time_remaining() -> Option<Duration> {
     DEADLINE
-        .try_with(|d| d.saturating_duration_since(Instant::now()))
+        .try_with(|deadline| deadline.map(|d| d.saturating_duration_since(Instant::now())))
         .ok()
+        .flatten()
 }
 
 /// The deadline of the request being handled, when it has one.
 #[must_use]
 pub fn current_deadline() -> Option<Instant> {
-    DEADLINE.try_with(|d| *d).ok()
+    DEADLINE.try_with(|deadline| *deadline).ok().flatten()
 }
 
 /// Parse a gRPC `grpc-timeout` value: a positive integer and a unit character.
@@ -164,19 +171,13 @@ where
             (None, None) => None,
         };
 
-        // Always scope the task-local so there is one future type. Without a
-        // deadline the value is far enough out that `time_remaining` is
-        // effectively unbounded, and the sleep never fires.
-        let deadline = budget.map_or_else(
-            || Instant::now() + Duration::from_secs(86_400 * 365),
-            |d| Instant::now() + d,
-        );
+        let deadline = budget.map(|d| Instant::now() + d);
 
         DeadlineFuture {
             inner: DEADLINE.scope(deadline, self.inner.call(req)),
-            sleep: budget.map(|d| Box::pin(tokio::time::sleep(d))),
+            sleep: budget.map(|d| Box::pin(sleep(d))),
             grpc_status: self.grpc_status,
-            _body: std::marker::PhantomData,
+            _body: PhantomData,
         }
     }
 }
@@ -185,10 +186,10 @@ pin_project! {
     /// The future of [`DeadlineService`].
     pub struct DeadlineFuture<F, B> {
         #[pin]
-        inner: TaskLocalFuture<Instant, F>,
-        sleep: Option<std::pin::Pin<Box<Sleep>>>,
+        inner: TaskLocalFuture<Option<Instant>, F>,
+        sleep: Option<Pin<Box<Sleep>>>,
         grpc_status: bool,
-        _body: std::marker::PhantomData<fn() -> B>,
+        _body: PhantomData<fn() -> B>,
     }
 }
 
@@ -199,7 +200,7 @@ where
 {
     type Output = Result<Response<ResBody>, E>;
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         if let Poll::Ready(res) = this.inner.poll(cx) {
             return Poll::Ready(res);

@@ -1,6 +1,7 @@
 //! The health contract and the readiness probe.
 
 use std::{
+    fmt,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -91,8 +92,8 @@ pub struct Probe {
     pub poll: Task,
 }
 
-impl std::fmt::Debug for Probe {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Probe {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Probe")
             .field("check", &self.check.name())
             .finish_non_exhaustive()

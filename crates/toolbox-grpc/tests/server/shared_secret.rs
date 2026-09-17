@@ -16,7 +16,7 @@ fn grpc_status(res: &Response<()>) -> Option<&str> {
 
 #[tokio::test]
 async fn shared_secret_layer_rejects_a_missing_or_wrong_secret() {
-    let svc = shared_secret_layer("s3cr3t").layer(service_fn(ok));
+    let svc = shared_secret_layer("s3cr3t").unwrap().layer(service_fn(ok));
 
     let missing = svc.clone().oneshot(Request::new(())).await.unwrap();
     assert_eq!(grpc_status(&missing), Some("16"), "unauthenticated");
@@ -33,4 +33,9 @@ async fn shared_secret_layer_rejects_a_missing_or_wrong_secret() {
         .insert(X_SHARED_SECRET, "s3cr3t".parse().unwrap());
     let good = svc.oneshot(good).await.unwrap();
     assert!(grpc_status(&good).is_none(), "the inner service answered");
+}
+
+#[test]
+fn an_empty_shared_secret_is_rejected_at_configuration_time() {
+    assert!(shared_secret_layer("").is_err());
 }

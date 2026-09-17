@@ -28,6 +28,29 @@ pub struct RealtimeStack {
     trace_level: Level,
 }
 
+impl RealtimeStack {
+    /// Build the long-lived HTTP middleware stack.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            trace_level: Level::INFO,
+        }
+    }
+
+    /// Set the level used for request spans.
+    #[must_use]
+    pub const fn trace_level(mut self, trace_level: Level) -> Self {
+        self.trace_level = trace_level;
+        self
+    }
+}
+
+impl Default for RealtimeStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<S> Layer<S> for RealtimeStack {
     type Service = RealtimeStacked<S>;
 
@@ -37,13 +60,5 @@ impl<S> Layer<S> for RealtimeStack {
             .layer(TraceContextLayer::new())
             .layer(TraceLayer::new_for_http().make_span_with(MakeTracedSpan::new(self.trace_level)))
             .service(inner)
-    }
-}
-
-/// The stack for long-lived streams. See [`RealtimeStack`].
-#[must_use]
-pub fn realtime_stack() -> RealtimeStack {
-    RealtimeStack {
-        trace_level: Level::INFO,
     }
 }

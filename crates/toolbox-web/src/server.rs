@@ -6,16 +6,17 @@
 //!
 //! `serve` merges `/health` and `/ready` at the root itself, and - when the
 //! [`WebServerConfig`] carries a spec - `/openapi.json` and `/docs` too, with
-//! CORS as the outermost layer. It does **not** apply `http_stack`: a router
-//! with realtime routes needs `realtime_stack` on those and `http_stack` on
-//! the rest, which a whole-router layer makes impossible.
+//! CORS as the outermost layer. It does **not** apply `apply_http_stack`: a
+//! router with realtime routes needs `apply_realtime_stack` on those and
+//! `apply_http_stack` on the rest, which a whole-router layer makes impossible.
 
-use std::net::SocketAddr;
+use std::{fmt, future::IntoFuture as _, net::SocketAddr};
 
 use axum::Router;
+use tokio::sync::oneshot;
 use toolbox_server::{Server, ServerError, server::shutdown_signal};
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     cors,
@@ -39,8 +40,8 @@ pub struct WebServerConfig {
     openapi: Option<utoipa::openapi::OpenApi>,
 }
 
-impl std::fmt::Debug for WebServerConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for WebServerConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = f.debug_struct("WebServerConfig");
         s.field("cors", &self.cors.is_some());
         #[cfg(feature = "openapi")]
@@ -110,9 +111,9 @@ impl WebServerConfig {
 ///   listener, the spawned probe loops and tasks, and the drain handle. Its
 ///   probe checks are what `/ready` reports on.
 /// * `config` - CORS and, optionally, the OpenAPI surface.
-/// * `app` - The router, with its own layers (`http_stack`, `realtime_stack`)
-///   already applied. `/health`, `/ready` and the OpenAPI routes are merged
-///   onto it here.
+/// * `app` - The router, with its own layers (`apply_http_stack`,
+///   `apply_realtime_stack`) already applied. `/health`, `/ready` and the
+///   OpenAPI routes are merged onto it here.
 ///
 /// # Errors
 /// [`ServerError::Io`] when the server fails while running.
@@ -131,8 +132,8 @@ pub async fn serve(
 
     // Health at the root, always: liveness/readiness and the drain contract
     // are not something a gateway opts out of. Merged after the caller's `app`,
-    // so their `http_stack` never wraps it - otherwise the trace layer would
-    // log the drain 503s `/ready` returns as errors on every rolling deploy.
+    // so their HTTP stack never wraps it - otherwise the trace layer would log
+    // the drain 503s `/ready` returns as errors on every rolling deploy.
     // CORS (below) is the one thing layered over health, so preflights are
     // still answered.
     #[cfg_attr(not(feature = "openapi"), allow(unused_mut))]
@@ -154,7 +155,9 @@ pub async fn serve(
     // ConnectInfo so `client_ip` has a peer address to fall back to.
     let service = app.into_make_service_with_connect_info::<SocketAddr>();
 
-    axum::serve(listener, service)
+    let drain_timeout = drain.drain_timeout;
+    let (draining_tx, draining_rx) = oneshot::channel();
+    let serving = axum::serve(listener, service)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
             // A scheduler has no reason to keep ticking through a drain.
@@ -162,8 +165,30 @@ pub async fn serve(
             // Fail readiness, keep serving for drain_delay so the load
             // balancer notices, and only then stop accepting.
             shutdown_handle.drain(drain).await;
+            let _ = draining_tx.send(());
         })
-        .await?;
+        .into_future();
+    tokio::pin!(serving);
+
+    // Wait for the first of the server and shutdown futures to finish.
+    let result = tokio::select! {
+        // The server stopped by itself.
+        result = &mut serving => result,
+        // Shutdown finished its readiness delay; give in-flight requests a
+        // bounded period to finish.
+        _ = draining_rx => {
+            if let Ok(result) = tokio::time::timeout(drain_timeout, &mut serving).await {
+                // The server drained before the deadline.
+                result
+            } else {
+                // The drain deadline expired first.
+                warn!(timeout_ms = u64::try_from(drain_timeout.as_millis()).unwrap_or(u64::MAX),
+                    "graceful shutdown timed out; terminating in-flight requests");
+                return Ok(());
+            }
+        },
+    };
+    result?;
 
     info!("listener closed, waiting for in-flight requests");
     Ok(())

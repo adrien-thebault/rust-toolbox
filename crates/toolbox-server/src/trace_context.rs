@@ -7,7 +7,8 @@
 
 use std::{
     fmt,
-    task::{Context, Poll},
+    pin::Pin,
+    task::{Context, Poll, ready},
     time::Duration,
 };
 
@@ -326,9 +327,9 @@ where
 {
     type Output = Result<Response<ResBody>, E>;
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let mut res = std::task::ready!(this.inner.poll(cx))?;
+        let mut res = ready!(this.inner.poll(cx))?;
         if let Some(v) = this.traceparent.take() {
             res.headers_mut().insert(TRACEPARENT, v);
         }

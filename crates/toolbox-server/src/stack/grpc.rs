@@ -41,6 +41,14 @@ pub struct GrpcStack {
     cfg: StackConfig,
 }
 
+impl GrpcStack {
+    /// Build the gRPC middleware stack.
+    #[must_use]
+    pub const fn new(cfg: StackConfig) -> Self {
+        Self { cfg }
+    }
+}
+
 impl<S> Layer<S> for GrpcStack {
     type Service = GrpcStacked<S>;
 
@@ -58,14 +66,4 @@ impl<S> Layer<S> for GrpcStack {
             .layer(DeadlineLayer::new(self.cfg.timeout).grpc())
             .service(inner)
     }
-}
-
-/// The standard gRPC stack. See [`GrpcStack`].
-///
-/// # Arguments
-///
-/// * `cfg` - Timeout, body limit and trace level for this server.
-#[must_use]
-pub fn grpc_stack(cfg: StackConfig) -> GrpcStack {
-    GrpcStack { cfg }
 }

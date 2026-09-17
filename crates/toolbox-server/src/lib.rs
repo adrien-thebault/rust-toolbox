@@ -17,9 +17,7 @@ pub use server::{
     Health, HealthCheck, LifecycleHandle, Probe, Server, ServerBuilder, ServerError, Shutdown,
     ShutdownConfig, Task, TaskGuard, poll_check, shutdown_signal, wait_until_healthy,
 };
-pub use stack::{
-    GrpcStack, HttpStack, RealtimeStack, StackConfig, grpc_stack, http_stack, realtime_stack,
-};
+pub use stack::{GrpcStack, HttpStack, RealtimeStack, StackConfig};
 pub use telemetry::{LogFormat, TelemetryError};
 pub use trace_context::{
     CURRENT_TRACE, MakeTracedSpan, TRACEPARENT, TraceContext, TraceContextLayer, X_REQUEST_ID,

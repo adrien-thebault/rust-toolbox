@@ -19,6 +19,7 @@ mod pagination;
 mod rate_limit;
 mod realtime;
 mod server;
+mod stack;
 
 use axum::{Router, body::Body};
 use http::{Request, Response};

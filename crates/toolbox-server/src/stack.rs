@@ -6,10 +6,11 @@
 //! Composing inside a single builder means `Router::layer` and `Server::layer`
 //! behave identically.
 //!
-//! One file per transport, each holding its stack, the service type it
-//! produces and the function that builds it. [`StackConfig`] is what they
-//! share, and the three files sitting side by side is what makes a difference
-//! between two stacks a diff rather than a hunt.
+//! One file per transport, each holding its stack and the service type it
+//! produces. [`StackConfig`] is what they share, and the three files sitting
+//! side by side is what makes a difference between two stacks a diff rather
+//! than a hunt. Transport crates own the convenience functions that apply
+//! these stacks to axum routers or tonic servers.
 
 mod grpc;
 mod http;
@@ -17,9 +18,9 @@ mod realtime;
 
 use std::time::Duration;
 
-pub use grpc::{GrpcStack, GrpcStacked, grpc_stack};
-pub use http::{HttpStack, HttpStacked, http_stack};
-pub use realtime::{RealtimeStack, RealtimeStacked, realtime_stack};
+pub use grpc::{GrpcStack, GrpcStacked};
+pub use http::{HttpStack, HttpStacked};
+pub use realtime::{RealtimeStack, RealtimeStacked};
 use tracing::Level;
 
 /// What the standard stacks do, and what they refuse to do by default.

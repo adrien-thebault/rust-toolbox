@@ -7,6 +7,8 @@
 
 use std::str::FromStr;
 
+#[cfg(feature = "clap")]
+use tracing::Level;
 use tracing_subscriber::{
     EnvFilter, fmt::format::FmtSpan, layer::SubscriberExt as _, util::SubscriberInitExt as _,
 };
@@ -76,13 +78,13 @@ pub struct TelemetryArgs {
 impl TelemetryArgs {
     /// The level `-v`/`-q` select, before `log_filter` overrides it.
     #[must_use]
-    pub fn level(&self) -> tracing::Level {
+    pub fn level(&self) -> Level {
         match i16::from(self.verbose) - i16::from(self.quiet) {
-            i16::MIN..=-2 => tracing::Level::ERROR,
-            -1 => tracing::Level::WARN,
-            0 => tracing::Level::INFO,
-            1 => tracing::Level::DEBUG,
-            _ => tracing::Level::TRACE,
+            i16::MIN..=-2 => Level::ERROR,
+            -1 => Level::WARN,
+            0 => Level::INFO,
+            1 => Level::DEBUG,
+            _ => Level::TRACE,
         }
     }
 

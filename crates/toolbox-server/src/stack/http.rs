@@ -44,6 +44,14 @@ pub struct HttpStack {
     cfg: StackConfig,
 }
 
+impl HttpStack {
+    /// Build the HTTP middleware stack.
+    #[must_use]
+    pub const fn new(cfg: StackConfig) -> Self {
+        Self { cfg }
+    }
+}
+
 impl<S> Layer<S> for HttpStack {
     type Service = HttpStacked<S>;
 
@@ -61,14 +69,4 @@ impl<S> Layer<S> for HttpStack {
             .layer(DeadlineLayer::new(self.cfg.timeout))
             .service(inner)
     }
-}
-
-/// The standard HTTP stack. See [`HttpStack`].
-///
-/// # Arguments
-///
-/// * `cfg` - Timeout, body limit and trace level for this server.
-#[must_use]
-pub fn http_stack(cfg: StackConfig) -> HttpStack {
-    HttpStack { cfg }
 }

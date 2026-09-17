@@ -77,8 +77,15 @@ async fn the_remaining_budget_is_visible_to_the_handler() {
 }
 
 #[tokio::test]
-async fn without_a_deadline_the_handler_still_runs() {
-    let svc = DeadlineLayer::new(None).layer(tower::service_fn(crate::ok));
+async fn without_a_deadline_the_handler_sees_no_deadline() {
+    async fn handler(
+        _req: http::Request<TestBody>,
+    ) -> Result<http::Response<TestBody>, std::convert::Infallible> {
+        assert_eq!(time_remaining(), None);
+        Ok(http::Response::new(TestBody::default()))
+    }
+
+    let svc = DeadlineLayer::new(None).layer(tower::service_fn(handler));
     let res = svc.oneshot(req()).await.unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
 }

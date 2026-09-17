@@ -7,6 +7,7 @@
 //! `not draining && every check passes`.
 
 use std::{
+    fmt,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -34,8 +35,8 @@ pub struct LifecycleHandle {
     checks: Arc<Vec<Box<dyn HealthCheck>>>,
 }
 
-impl std::fmt::Debug for LifecycleHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for LifecycleHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LifecycleHandle")
             .field("checks", &self.checks.len())
             .finish_non_exhaustive()

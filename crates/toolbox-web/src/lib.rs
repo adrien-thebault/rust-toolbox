@@ -30,6 +30,7 @@ pub mod rate_limit;
 #[cfg(feature = "realtime")]
 pub mod realtime;
 pub mod server;
+pub mod stack;
 
 #[cfg(feature = "auth-router")]
 pub use auth::{AuthState, auth_router, session_layer};
@@ -41,10 +42,13 @@ pub use extract::QueryAuthenticated;
 pub use extract::{Authenticated, Idempotent, MaybeAuthenticated, PageQuery, ValidJson};
 pub use health::{HealthCheck, HealthCheckResult, HealthResponse, HealthState, health_router};
 #[cfg(feature = "idempotency")]
-pub use idempotency::{Idempotency, IdempotencyOutcome, StoredResponse, in_flight_error};
+pub use idempotency::{
+    Idempotency, IdempotencyClaim, IdempotencyOutcome, StoredResponse, in_flight_error,
+};
 #[cfg(feature = "openapi")]
 pub use openapi::{OpenApiConfig, openapi_router, serialize_openapi, with_standard_errors};
 pub use pagination::{attach_page_headers, page_links};
 #[cfg(feature = "rate-limit")]
 pub use rate_limit::RateLimitConfig;
 pub use server::{WebServerConfig, serve};
+pub use stack::{apply_http_stack, apply_realtime_stack};

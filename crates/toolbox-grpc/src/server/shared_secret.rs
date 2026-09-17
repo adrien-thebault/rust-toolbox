@@ -6,6 +6,7 @@
 //! user is, on top.
 
 use std::{
+    fmt,
     future::Future,
     marker::PhantomData,
     pin::Pin,
@@ -28,11 +29,27 @@ use crate::X_SHARED_SECRET;
 ///
 /// * `secret` - The value a caller must present in `x-shared-secret`, compared
 ///   in constant time.
-#[must_use]
-pub fn shared_secret_layer(secret: impl Into<String>) -> SharedSecretLayer {
-    SharedSecretLayer {
-        expected: SecretString::from(secret.into()),
+///
+/// # Errors
+/// [`SharedSecretError`] when `secret` is empty.
+pub fn shared_secret_layer(
+    secret: impl Into<String>,
+) -> Result<SharedSecretLayer, SharedSecretError> {
+    let secret = secret.into();
+    if secret.is_empty() {
+        return Err(SharedSecretError::Empty);
     }
+    Ok(SharedSecretLayer {
+        expected: SecretString::from(secret),
+    })
+}
+
+/// Invalid shared-secret layer configuration.
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum SharedSecretError {
+    /// An empty shared secret would allow an empty header to authenticate.
+    #[error("the shared service secret must not be empty")]
+    Empty,
 }
 
 /// The layer [`shared_secret_layer`] produces.
@@ -42,8 +59,8 @@ pub struct SharedSecretLayer {
     expected: SecretString,
 }
 
-impl std::fmt::Debug for SharedSecretLayer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for SharedSecretLayer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("SharedSecretLayer")
     }
 }
@@ -95,6 +112,8 @@ where
                 _body: PhantomData,
             }
         } else {
+            // Only trusted services can reach this server, so a rejection
+            // normally means one of them is misconfigured or unauthorized.
             warn!("refused a request with a missing or invalid shared service secret");
             SharedSecretFuture {
                 inner: None,

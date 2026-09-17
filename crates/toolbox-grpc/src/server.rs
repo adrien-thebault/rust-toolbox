@@ -11,16 +11,17 @@
 pub mod identity;
 pub mod shared_secret;
 
-use std::time::Duration;
+use std::{fmt, io, time::Duration};
 
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::sync::oneshot;
 use tokio_stream::wrappers::TcpListenerStream;
 pub use tonic::service::{Routes, RoutesBuilder};
 use tonic::transport::Server as TonicServer;
 use toolbox_server::{
     LifecycleHandle, Server, ServerError,
     server::shutdown_signal,
-    stack::{StackConfig, grpc_stack},
+    stack::{GrpcStack, StackConfig},
 };
 use tower::Layer as _;
 use tracing::warn;
@@ -39,26 +40,6 @@ const READINESS_POLL: Duration = Duration::from_secs(2);
 /// process serving both transports registers each dependency once.
 #[derive(Clone)]
 pub struct GrpcServerConfig {
-    /// Message limits, as the single value both ends read.
-    ///
-    /// **Applied by you, on each service.** tonic puts
-    /// `max_decoding_message_size` on the generated server type and there is no
-    /// trait to reach it through, so this cannot be applied for you:
-    ///
-    /// ```ignore
-    /// let cfg = GrpcServerConfig::default();
-    /// let routes = Routes::new(
-    ///     TodoServiceServer::new(svc)
-    ///         .max_decoding_message_size(cfg.limits.max_decoding)
-    ///         .max_encoding_message_size(cfg.limits.max_encoding),
-    /// );
-    /// serve(server, cfg, routes).await?;
-    /// ```
-    ///
-    /// Carrying it here is still worth it: the client half reads the same value
-    /// from `ClientChannel::limits()`, so the two ends drift only if somebody
-    /// passes different configs, rather than by forgetting one.
-    pub limits: MessageLimits,
     /// Timeout, trace level and body limit for the standard stack this server
     /// wraps every service in.
     pub stack: StackConfig,
@@ -79,10 +60,9 @@ pub struct GrpcServerConfig {
     pub reflection: Option<&'static [u8]>,
 }
 
-impl std::fmt::Debug for GrpcServerConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for GrpcServerConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GrpcServerConfig")
-            .field("limits", &self.limits)
             .field("stack", &self.stack)
             .field("health", &self.health)
             .field("health_secret", &self.health_secret.is_some())
@@ -94,7 +74,6 @@ impl std::fmt::Debug for GrpcServerConfig {
 impl Default for GrpcServerConfig {
     fn default() -> Self {
         Self {
-            limits: MessageLimits::default(),
             stack: StackConfig::default(),
             health: true,
             health_secret: None,
@@ -104,6 +83,19 @@ impl Default for GrpcServerConfig {
 }
 
 impl GrpcServerConfig {
+    /// The tonic limits derived from [`StackConfig::max_body_bytes`].
+    ///
+    /// Apply these to each generated server before moving this config into
+    /// [`serve`]; tonic exposes message limits only on generated service types.
+    #[must_use]
+    pub fn message_limits(&self) -> MessageLimits {
+        let max = self.stack.body_limit();
+        MessageLimits {
+            max_decoding: max,
+            max_encoding: max,
+        }
+    }
+
     /// Serve reflection from a `tonic-build`-generated descriptor set.
     ///
     /// # Arguments
@@ -145,8 +137,8 @@ impl GrpcServerConfig {
 
 /// Serve `server` and drain gracefully on `SIGTERM`.
 ///
-/// The standard gRPC stack (`grpc_stack`) is applied for you, unlike the axum
-/// side where `http_stack` is the caller's to place: a router with realtime
+/// The standard [`GrpcStack`] is applied for you, unlike the axum side where
+/// the caller places each stack: a router with realtime
 /// routes needs a different stack on those, whereas every service in one tonic
 /// server gets the same treatment.
 ///
@@ -187,7 +179,9 @@ pub async fn serve(
             .set_service_status("", tonic_health::ServingStatus::Serving)
             .await;
         routes = if let Some(secret) = &config.health_secret {
-            routes.add_service(shared_secret_layer(secret.expose_secret()).layer(health))
+            let layer = shared_secret_layer(secret.expose_secret())
+                .map_err(|e| ServerError::Config(e.to_string()))?;
+            routes.add_service(layer.layer(health))
         } else {
             routes.add_service(health)
         };
@@ -216,8 +210,10 @@ pub async fn serve(
         other => (None, other),
     };
 
-    let serve = TonicServer::builder()
-        .layer(grpc_stack(config.stack))
+    let drain_timeout = drain.drain_timeout;
+    let (draining_tx, draining_rx) = oneshot::channel();
+    let serving = TonicServer::builder()
+        .layer(GrpcStack::new(config.stack))
         .add_routes(routes)
         .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
             shutdown_signal().await;
@@ -232,17 +228,47 @@ pub async fn serve(
                     .await;
             }
             shutdown_handle.drain(drain).await;
+            let _ = draining_tx.send(());
         });
 
-    let result = if let Some(poll) = poll {
+    // Wrap tonic's server so the in-flight timeout starts only after the
+    // readiness delay has elapsed.
+    let serve = async move {
+        tokio::pin!(serving);
+        // Wait for the first of the server and shutdown futures to finish.
         tokio::select! {
+            // The server stopped by itself.
+            result = &mut serving => result,
+            // Shutdown finished its readiness delay; give in-flight requests
+            // a bounded period to finish.
+            _ = draining_rx => {
+                if let Ok(result) = tokio::time::timeout(drain_timeout, &mut serving).await {
+                    // The server drained before the deadline.
+                    result
+                } else {
+                    // The drain deadline expired first.
+                    warn!(timeout_ms = u64::try_from(drain_timeout.as_millis()).unwrap_or(u64::MAX),
+                        "graceful shutdown timed out; terminating in-flight requests");
+                    Ok(())
+                }
+            },
+        }
+    };
+
+    let result = if let Some(poll) = poll {
+        // The readiness poller is tied to this server and is dropped when the
+        // serving future completes.
+        tokio::select! {
+            // Serving ended normally or through the bounded drain above.
             r = serve => r,
+            // A readiness poller is normally endless; treat an unexpected
+            // completion as a clean server stop.
             () = poll => Ok(()),
         }
     } else {
         serve.await
     };
-    result.map_err(|e| ServerError::Io(std::io::Error::other(e.to_string())))?;
+    result.map_err(|e| ServerError::Io(io::Error::other(e.to_string())))?;
 
     Ok(())
 }

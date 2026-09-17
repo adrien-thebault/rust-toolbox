@@ -12,7 +12,7 @@ mod health;
 mod lifecycle;
 mod shutdown;
 
-use std::{future::Future, net::SocketAddr, pin::Pin};
+use std::{fmt, future::Future, io, net::SocketAddr, pin::Pin, time::Duration};
 
 pub use health::{Health, HealthCheck, Probe, poll_check};
 pub use lifecycle::{LifecycleHandle, wait_until_healthy};
@@ -30,7 +30,10 @@ pub type Task = Pin<Box<dyn Future<Output = ()> + Send>>;
 pub enum ServerError {
     /// The listener could not be bound, or the server failed while running.
     #[error("server io: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
+    /// Static server configuration is invalid.
+    #[error("server configuration: {0}")]
+    Config(String),
 }
 
 /// Gathers everything a transport `serve` needs that is not the application
@@ -55,8 +58,8 @@ pub struct ServerBuilder {
     tasks: Vec<Task>,
 }
 
-impl std::fmt::Debug for ServerBuilder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for ServerBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ServerBuilder")
             .field("listen_addr", &self.listen_addr)
             .field("shutdown", &self.shutdown)
@@ -92,7 +95,7 @@ impl ServerBuilder {
     ///
     /// * `delay` - The gap between failing readiness and closing the listener.
     #[must_use]
-    pub fn drain_after(mut self, delay: std::time::Duration) -> Self {
+    pub fn drain_after(mut self, delay: Duration) -> Self {
         self.shutdown.drain_delay = delay;
         self
     }

@@ -1,4 +1,5 @@
-use toolbox_grpc::MessageLimits;
+use toolbox_grpc::{GrpcServerConfig, MessageLimits};
+use toolbox_server::stack::StackConfig;
 
 /// tonic defaults to 4 MiB decoding and *unlimited* encoding, which is the
 /// asymmetry that produces "it works from the gateway but not the backend".
@@ -22,4 +23,22 @@ fn the_two_ends_read_one_value() {
     let server = limits;
     assert_eq!(client.max_decoding, server.max_decoding);
     assert_eq!(client.max_encoding, server.max_encoding);
+}
+
+#[test]
+fn server_message_limits_come_from_the_stack_config() {
+    let config =
+        GrpcServerConfig::default().stack(StackConfig::default().max_body_bytes(Some(1234)));
+
+    let limits = config.message_limits();
+    assert_eq!(limits.max_decoding, 1234);
+    assert_eq!(limits.max_encoding, 1234);
+}
+
+#[test]
+fn an_unbounded_stack_produces_unbounded_message_limits() {
+    let config = GrpcServerConfig::default().stack(StackConfig::unbounded());
+
+    assert_eq!(config.message_limits().max_decoding, usize::MAX);
+    assert_eq!(config.message_limits().max_encoding, usize::MAX);
 }
