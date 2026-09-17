@@ -52,14 +52,14 @@ fn a_ttl_override_does_not_change_the_configured_default() {
     codec
         .issue_with_ttl(&principal(), Duration::from_secs(30))
         .unwrap();
-    assert_eq!(codec.token_ttl(), Duration::from_secs(15 * 60));
+    assert_eq!(codec.token_ttl(), Duration::from_mins(15));
 }
 
 /// A JWT cannot be revoked, so its lifetime is the revocation window. The
 /// obvious implementation used twelve hours.
 #[test]
 fn the_default_lifetime_is_short() {
-    assert_eq!(codec().token_ttl(), Duration::from_secs(15 * 60));
+    assert_eq!(codec().token_ttl(), Duration::from_mins(15));
 }
 
 #[test]

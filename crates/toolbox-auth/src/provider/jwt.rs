@@ -23,16 +23,26 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt,
+    future::Future,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, EncodingKey, Header, Validation,
+    errors::{Error, ErrorKind},
+};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 #[cfg(feature = "jwks")]
-use tracing::warn;
+use {
+    jsonwebtoken::jwk::{Jwk, JwkSet},
+    std::sync::Arc,
+    tokio::sync::RwLock,
+    tracing::warn,
+};
 
 use super::{Credential, IdentityProvider};
 use crate::principal::{AuthError, Principal, mapping::PrincipalMapping};
@@ -41,13 +51,13 @@ use crate::principal::{AuthError, Principal, mapping::PrincipalMapping};
 ///
 /// Short on purpose. A JWT cannot be revoked, so its lifetime *is* the
 /// revocation window.
-pub const DEFAULT_TTL: Duration = Duration::from_secs(15 * 60);
+pub const DEFAULT_TTL: Duration = Duration::from_mins(15);
 
 /// Default refresh-token lifetime.
 ///
 /// How long a token survives a `resolve` closure that does not re-read the
 /// user, and - re-read or not - how long a leaked one stays useful.
-pub const DEFAULT_REFRESH_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+pub const DEFAULT_REFRESH_TTL: Duration = Duration::from_hours(168);
 
 /// Clock-skew leeway, in seconds. Enough for ordinary drift between replicas,
 /// not enough to meaningfully extend a token's life.
@@ -273,8 +283,8 @@ pub struct JwtIdentityProvider {
     validation: Validation,
 }
 
-impl std::fmt::Debug for JwtIdentityProvider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for JwtIdentityProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let strategy = match self.key {
             Key::Hmac { .. } => "hmac",
             Key::Public(_) => "public_key",
@@ -368,8 +378,10 @@ impl JwtIdentityProvider {
 
     /// A verify-only provider over a third party's published JWKS.
     ///
-    /// The document is fetched lazily, cached, and re-fetched when a token
-    /// presents an unknown key id or the cache is stale.
+    /// The document is fetched now, so a missing issuer is a startup failure
+    /// rather than latency or an outage on the first user request. Register
+    /// [`JwtIdentityProvider::jwks_refresh_task`] as a server task to refresh
+    /// it proactively while the process runs.
     ///
     /// # Arguments
     ///
@@ -377,15 +389,19 @@ impl JwtIdentityProvider {
     ///   discovery URL: give the `jwks_uri` directly.
     /// * `issuer` - The `iss` every token must carry.
     /// * `mapping` - How to read a principal out of the issuer's claims.
+    ///
+    /// # Errors
+    /// [`AuthError`] when the initial JWKS request or document is invalid.
     #[cfg(feature = "jwks")]
-    #[must_use]
-    pub fn jwks(
+    pub async fn jwks(
         jwks_url: impl Into<String>,
         issuer: impl Into<String>,
         mapping: PrincipalMapping,
-    ) -> Self {
-        Self::from_parts(
-            Key::Jwks(JwksKeys::new(jwks_url.into())),
+    ) -> Result<Self, AuthError> {
+        let keys = JwksKeys::new(jwks_url.into());
+        keys.refresh().await?;
+        Ok(Self::from_parts(
+            Key::Jwks(keys),
             issuer.into(),
             mapping,
             vec![
@@ -399,7 +415,41 @@ impl JwtIdentityProvider {
                 Algorithm::ES384,
                 Algorithm::EdDSA,
             ],
-        )
+        ))
+    }
+
+    /// Refresh a JWKS cache once.
+    ///
+    /// # Errors
+    /// [`AuthError::Malformed`] when this is not a JWKS provider, or the fetch
+    /// or document fails.
+    #[cfg(feature = "jwks")]
+    pub async fn refresh_jwks(&self) -> Result<(), AuthError> {
+        match &self.key {
+            Key::Jwks(keys) => keys.refresh().await,
+            _ => Err(AuthError::Malformed(
+                "only a JWKS provider can refresh JWKS".to_owned(),
+            )),
+        }
+    }
+
+    /// Refresh this provider's JWKS periodically without involving requests.
+    ///
+    /// Failed refreshes retain the last good set and are logged; the next tick
+    /// tries again. Keycloak publishes new keys before it starts signing with
+    /// them, so a regular refresh picks them up before the `kid` changes.
+    #[cfg(feature = "jwks")]
+    pub async fn jwks_refresh_task(self: Arc<Self>, interval: Duration) {
+        let mut ticker = tokio::time::interval(interval);
+        // The constructor already fetched once; do not immediately repeat
+        // the request on the interval's eager first tick.
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            if let Err(e) = self.refresh_jwks().await {
+                warn!(error = %e, "a JWKS refresh failed");
+            }
+        }
     }
 
     /// Assemble a provider from a key strategy and its accepted algorithms,
@@ -586,7 +636,7 @@ impl JwtIdentityProvider {
     pub async fn refresh<F, Fut>(&self, token: &str, resolve: F) -> Result<Refreshed, AuthError>
     where
         F: FnOnce(RefreshInfo) -> Fut,
-        Fut: std::future::Future<Output = Result<Principal, AuthError>> + Send,
+        Fut: Future<Output = Result<Principal, AuthError>> + Send,
     {
         let claims = self.decode(token)?;
         if claims.token_use != TokenUse::Refresh {
@@ -704,8 +754,8 @@ impl IdentityProvider for JwtIdentityProvider {
 /// # Arguments
 ///
 /// * `e` - The decode error.
-fn map_jwt_err(e: &jsonwebtoken::errors::Error) -> AuthError {
-    if matches!(e.kind(), jsonwebtoken::errors::ErrorKind::ExpiredSignature) {
+fn map_jwt_err(e: &Error) -> AuthError {
+    if matches!(e.kind(), ErrorKind::ExpiredSignature) {
         return AuthError::Expired;
     }
     debug!(error = %e, "a bearer token did not verify");
@@ -757,68 +807,53 @@ struct JwksKeys {
     /// The client used to fetch it.
     http: reqwest::Client,
     /// The last document fetched, if any.
-    cache: tokio::sync::RwLock<Option<CachedJwks>>,
+    cache: RwLock<Option<CachedJwks>>,
 }
 
-/// One cached JWKS document and when it was fetched.
+/// One cached JWKS document.
 #[cfg(feature = "jwks")]
 struct CachedJwks {
-    /// When [`JwksKeys::fetch`] last succeeded.
-    fetched_at: std::time::Instant,
     /// The keys it returned.
-    set: jsonwebtoken::jwk::JwkSet,
+    set: JwkSet,
 }
-
-/// How long a fetched JWKS is trusted before a refetch.
-#[cfg(feature = "jwks")]
-const JWKS_TTL: Duration = Duration::from_secs(3600);
 
 #[cfg(feature = "jwks")]
 impl JwksKeys {
-    /// An empty cache over a JWKS URL; nothing is fetched until first use.
+    /// An empty cache over a JWKS URL. The constructor fills it before this is
+    /// exposed through a provider.
     fn new(url: String) -> Self {
         Self {
             url,
             http: reqwest::Client::new(),
-            cache: tokio::sync::RwLock::new(None),
+            cache: RwLock::new(None),
         }
     }
 
-    /// The decoding key for a token's `kid`, refetching the set on a miss.
+    /// The decoding key for a token's `kid`, without network I/O.
     async fn decoding_for(&self, token: &str) -> Result<DecodingKey, AuthError> {
         let kid = jsonwebtoken::decode_header(token)
             .map_err(|e| map_jwt_err(&e))?
             .kid
             .ok_or(AuthError::Unauthenticated)?;
 
-        if let Some(key) = self.cached(&kid).await {
-            return Ok(key);
-        }
-        // An unknown kid or a stale cache: the signer may have rotated.
-        let set = self.fetch().await?;
-        let key = set
-            .find(&kid)
+        self.cache
+            .read()
+            .await
+            .as_ref()
+            .and_then(|cached| cached.set.find(&kid))
             .ok_or(AuthError::Unauthenticated)
-            .and_then(jwk_to_key)?;
-        *self.cache.write().await = Some(CachedJwks {
-            fetched_at: std::time::Instant::now(),
-            set,
-        });
-        Ok(key)
+            .and_then(jwk_to_key)
     }
 
-    /// The key for `kid` from a fresh-enough cached set, or `None`.
-    async fn cached(&self, kid: &str) -> Option<DecodingKey> {
-        let guard = self.cache.read().await;
-        let cached = guard.as_ref()?;
-        if cached.fetched_at.elapsed() >= JWKS_TTL {
-            return None;
-        }
-        cached.set.find(kid).and_then(|jwk| jwk_to_key(jwk).ok())
+    /// Fetch and atomically install a new JWKS document.
+    async fn refresh(&self) -> Result<(), AuthError> {
+        let set = self.fetch().await?;
+        *self.cache.write().await = Some(CachedJwks { set });
+        Ok(())
     }
 
     /// Fetch the JWKS document over HTTP.
-    async fn fetch(&self) -> Result<jsonwebtoken::jwk::JwkSet, AuthError> {
+    async fn fetch(&self) -> Result<JwkSet, AuthError> {
         self.http
             .get(&self.url)
             .send()
@@ -828,7 +863,7 @@ impl JwksKeys {
                 warn!(error = %e, "a JWKS fetch failed");
                 AuthError::Unauthenticated
             })?
-            .json::<jsonwebtoken::jwk::JwkSet>()
+            .json::<JwkSet>()
             .await
             .map_err(|e| AuthError::Malformed(format!("jwks document: {e}")))
     }
@@ -840,6 +875,6 @@ impl JwksKeys {
 ///
 /// * `jwk` - The key from the fetched set.
 #[cfg(feature = "jwks")]
-fn jwk_to_key(jwk: &jsonwebtoken::jwk::Jwk) -> Result<DecodingKey, AuthError> {
+fn jwk_to_key(jwk: &Jwk) -> Result<DecodingKey, AuthError> {
     DecodingKey::from_jwk(jwk).map_err(|e| AuthError::Malformed(format!("jwk: {e}")))
 }
