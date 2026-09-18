@@ -3,6 +3,11 @@
 use std::{error::Error, time::Duration};
 
 use clap::Parser;
+use {{crate_name}}_web::{
+    auth::AuthConfig,
+    routes::{openapi, realtime_router, router, todo::forward_events},
+    state::state,
+};
 use toolbox::{
     grpc::{BackoffConfig, ClientConfig, RetryPolicy, client, client::poll_health},
     server::{ServerBuilder, args::ServerArgs, stack::StackConfig, telemetry::TelemetryArgs},
@@ -10,11 +15,6 @@ use toolbox::{
         ClientIpTrustPolicy, PRIVATE_RANGES, WebServerConfig, apply_http_stack,
         apply_realtime_stack, rate_limit::RateLimitConfig, serve,
     },
-};
-use {{crate_name}}_web::{
-    auth::AuthConfig,
-    routes::{openapi, realtime_router, router, todo::forward_events},
-    state::state,
 };
 
 /// Command-line arguments.
