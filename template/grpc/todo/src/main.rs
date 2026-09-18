@@ -8,8 +8,8 @@ use todo::{Connection, MIGRATIONS, TodoService, proto};
 use toolbox::{
 {% if gateway %}    auth::{AssertedPrincipalProvider, ProviderRegistry},
 {% endif %}    cluster::{EventBus, InMemoryEventBus, InMemoryLockManager},
-{% if database == "postgres" %}    db::{Db, args::DatabaseArgs},
-{% else %}    db::{Db, SqlitePragmas, args::DatabaseArgs},
+{% if database == "sqlite" %}    db::{Db, SqlitePragmas, args::DatabaseArgs},
+{% else %}    db::{Db, args::DatabaseArgs},
 {% endif %}{% if gateway %}    grpc::{
         GrpcServerConfig, Routes, serve,
         server::{identity, shared_secret::shared_secret_layer},
@@ -45,12 +45,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     args.telemetry.init()?;
 
-{% if database == "postgres" %}    let db = args.database.builder::<Connection>().build()?;
-{% else %}    let db = args
+{% if database == "sqlite" %}    let db = args
         .database
         .builder::<Connection>()
         .sqlite_pragmas(SqlitePragmas::default())
         .build()?;
+{% else %}    let db = args.database.builder::<Connection>().build()?;
 {% endif %}    // Locked, so three replicas starting together do not race.
     db.migrate(MIGRATIONS).await?;
 

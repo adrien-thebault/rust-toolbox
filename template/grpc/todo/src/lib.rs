@@ -18,6 +18,7 @@ pub use service::{TodoService, TodoServiceError};
 // `backend = crate::Backend` rather than naming a diesel type. Timestamp
 // columns are plain `chrono::NaiveDateTime`.
 {% if database == "postgres" %}toolbox::db::postgres_backend!();
+{% elsif database == "mariadb" %}toolbox::db::mysql_backend!();
 {% else %}toolbox::db::sqlite_backend!();
 {% endif %}
 /// The event-bus topic every todo mutation is published on, and `WatchTodos`

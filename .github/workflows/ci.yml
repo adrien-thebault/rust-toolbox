@@ -152,20 +152,20 @@ jobs:
       - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: sudo apt-get update && sudo apt-get install -y libpq-dev default-libmysqlclient-dev
+      - run: sudo apt-get update && sudo apt-get install -y libpq-dev libmariadb-dev
       - run: cargo test --workspace --all-features
 
-  test-mysql:
+  test-mariadb:
     runs-on: ubuntu-latest
     services:
-      mysql:
-        image: mysql:8
+      mariadb:
+        image: mariadb:11.4
         env:
-          MYSQL_ROOT_PASSWORD: toolbox
-          MYSQL_DATABASE: toolbox
+          MARIADB_ROOT_PASSWORD: toolbox
+          MARIADB_DATABASE: toolbox
         ports: ["3306:3306"]
         options: >-
-          --health-cmd "mysqladmin ping -ptoolbox"
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -180,5 +180,5 @@ jobs:
       - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev libpq-dev
+      - run: sudo apt-get update && sudo apt-get install -y libmariadb-dev libpq-dev
       - run: cargo test --workspace --all-features

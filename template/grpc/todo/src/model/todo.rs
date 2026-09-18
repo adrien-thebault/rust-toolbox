@@ -18,8 +18,9 @@ use crate::{Backend, proto, schema::todos};
 #[entity(
     backend = crate::Backend,
     id = id,
-    autoincrement,
-    timestamps,
+{% if database == "mariadb" %}    autoincrement = last_insert_id,
+{% else %}    autoincrement,
+{% endif %}    timestamps,
     soft_delete = deleted_at,
     version = version,
     sortable(id, title, created_at),
@@ -115,9 +116,23 @@ impl Todo {
         cutoff: NaiveDateTime,
     ) -> Result<Vec<i32>, DbError>
     where
-        C: LoadConnection<Backend = Backend>,
+        C: LoadConnection<Backend = Backend> + Connection<Backend = Backend>,
     {
-        diesel::update(
+{% if database == "mariadb" %}        conn.transaction(|conn| {
+            let ids = todos::table
+                .filter(todos::done.eq(true))
+                .filter(todos::updated_at.lt(cutoff))
+                .filter(todos::deleted_at.is_null())
+                .select(todos::id)
+                .for_update()
+                .load::<i32>(conn)?;
+            if !ids.is_empty() {
+                diesel::update(todos::table.filter(todos::id.eq_any(&ids)))
+                    .set(todos::deleted_at.eq(chrono::Utc::now().naive_utc()))
+                    .execute(conn)?;
+            }
+            Ok(ids)
+        }){% else %}        diesel::update(
             todos::table
                 .filter(todos::done.eq(true))
                 .filter(todos::updated_at.lt(cutoff))
@@ -126,7 +141,7 @@ impl Todo {
         .set(todos::deleted_at.eq(chrono::Utc::now().naive_utc()))
         .returning(todos::id)
         .get_results::<i32>(conn)
-        .map_err(DbError::from)
+        .map_err(DbError::from){% endif %}
     }
 }
 

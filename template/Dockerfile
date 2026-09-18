@@ -2,7 +2,7 @@
 FROM rust:1.98-bookworm AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      protobuf-compiler {% if database == "postgres" %}libpq-dev{% else %}libsqlite3-dev{% endif %} \
+      protobuf-compiler {% if database == "postgres" %}libpq-dev{% elsif database == "mariadb" %}libmariadb-dev{% else %}libsqlite3-dev{% endif %} \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -17,7 +17,7 @@ COPY grpc ./grpc
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates {% if database == "postgres" %}libpq5{% else %}libsqlite3-0{% endif %} \
+      ca-certificates {% if database == "postgres" %}libpq5{% elsif database == "mariadb" %}libmariadb3{% else %}libsqlite3-0{% endif %} \
     && rm -rf /var/lib/apt/lists/*
 
 # Not root. A container that runs as root is one container escape away from

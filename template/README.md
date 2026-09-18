@@ -44,7 +44,7 @@ grpc/                 a grouping directory, not a crate
     migrations/
     src/
       main.rs         the process that serves this domain
-      lib.rs          sqlite_backend!() -> Backend/Connection, MIGRATIONS, proto
+      lib.rs          database backend -> Backend/Connection, MIGRATIONS, proto
       auth.rs         the Admin role this domain checks on its own caller
       schema.rs
       model.rs
@@ -81,8 +81,9 @@ Three units:
 - An **entity** is a file under `model/`. A `TodoList` regrouping several todos
   is `model/todo_list.rs`.
 
-`grpc/todo/src/lib.rs`'s `sqlite_backend!()` (or `postgres_backend!()`) is the
-one place the database backend is named; timestamp columns are plain
+`grpc/todo/src/lib.rs`'s `sqlite_backend!()`, `postgres_backend!()` or
+`mysql_backend!()` is the one place the database backend is named. MariaDB
+uses Diesel's MySQL-compatible backend; timestamp columns are plain
 `chrono::NaiveDateTime`.
 
 ## Adding an entity

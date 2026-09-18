@@ -9,14 +9,14 @@ env:
 
 jobs:
   # A template that is not generated and built is a template that is broken and
-  # nobody knows. All four variants, every commit.
+  # nobody knows. All six variants, every commit.
   generate:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         gateway: ["true", "false"]
-        database: ["sqlite", "postgres"]
+        database: ["sqlite", "postgres", "mariadb"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
@@ -33,7 +33,7 @@ jobs:
       - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: sudo apt-get update && sudo apt-get install -y libpq-dev
+      - run: sudo apt-get update && sudo apt-get install -y libpq-dev libmariadb-dev
       - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-generate

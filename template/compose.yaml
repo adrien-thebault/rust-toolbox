@@ -7,7 +7,7 @@ services:
       LISTEN_ADDR: 0.0.0.0:50051
     volumes:
       - data:/data
-    {% if database == "postgres" %}
+    {% if database != "sqlite" %}
     depends_on:
       db:
         condition: service_healthy
@@ -47,8 +47,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+{% elsif database == "mariadb" %}
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_USER: app
+      MARIADB_PASSWORD: app
+      MARIADB_DATABASE: app
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - mariadbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 {% endif %}
 
 volumes:
   data:
 {% if database == "postgres" %}  pgdata:{% endif %}
+{% if database == "mariadb" %}  mariadbdata:{% endif %}

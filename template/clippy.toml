@@ -3,7 +3,7 @@
 # rather than sprinkling backticks through the documentation.
 doc-valid-idents = [
   "..DEFAULT..",
-  "SQLite", "PostgreSQL", "MySQL",
+  "SQLite", "PostgreSQL", "MySQL", "MariaDB",
   "OpenAPI", "OIDC", "Keycloak", "Kubernetes", "CloudEvents",
   "IPv4", "IPv6", "KiB", "MiB", "GiB",
 ]

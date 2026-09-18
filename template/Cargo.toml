@@ -18,6 +18,7 @@ toolbox         = { git = "https://github.com/adrien-thebault/rust-toolbox.git",
 # Declared directly, not through toolbox::deps: their derives emit absolute
 # `diesel::` and `serde::` paths.
 {% if database == "postgres" %}diesel = { version = "2.3", features = ["r2d2", "chrono", "postgres"] }
+{% elsif database == "mariadb" %}diesel = { version = "2.3", features = ["r2d2", "chrono", "mysql"] }
 {% else %}diesel = { version = "2.3", features = ["r2d2", "chrono", "sqlite", "returning_clauses_for_sqlite_3_35"] }
 {% endif %}# Required by `toolbox::db::embed_migrations!`, which expands to a path in it.
 diesel_migrations = "2.3"
