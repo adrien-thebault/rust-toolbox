@@ -6,6 +6,7 @@ service, a server that serves one.
 | Module                  | What it is                                                                     |
 | ----------------------- | ------------------------------------------------------------------------------ |
 | `client`                | connecting to another service and health-polling it                            |
+| `client::health`        | a background gRPC health probe for server readiness                            |
 | `client::interceptor`   | what every outgoing request carries: deadline, trace context, secret, identity |
 | `client::retry`         | the retry policy                                                               |
 | `client::error`         | the client error type                                                          |
@@ -14,4 +15,5 @@ service, a server that serves one.
 | `server::identity`      | the end-user identity layer                                                    |
 | `status`                | conversion between the service-error trait and a tonic status                  |
 | `pagination`            | the shared pagination messages and helpers                                     |
+| `proto`                 | the generated shared protobuf types                                            |
 | `limits`                | the message size limits both ends read                                         |

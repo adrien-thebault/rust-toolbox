@@ -1,7 +1,8 @@
 # toolbox-macros
 
-The `#[derive(Entity)]` procedural macro.
+The toolbox's procedural derives.
 
-| Module   | What it is                                                 |
-| -------- | ---------------------------------------------------------- |
-| `entity` | the `Entity` derive: attribute parsing and code generation |
+| Derive         | What it generates                                                    |
+| -------------- | -------------------------------------------------------------------- |
+| `Entity`       | Diesel entity CRUD, pagination, timestamps, soft delete, and locking |
+| `ServiceError` | `toolbox_error::ServiceError`, with optional tonic status conversion |
