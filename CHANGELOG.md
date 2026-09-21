@@ -3,6 +3,40 @@
 All notable changes to this project are documented here, generated from
 Conventional Commit history by [git-cliff](https://git-cliff.org/).
 
+## [0.2.1] - 2026-09-21
+
+### Bug Fixes
+
+- *(cluster,web)* Make idempotency claims ownership-safe (04811de)
+- *(db)* Implement backend-specific migration locking (7d4424f)
+- *(auth)* Refresh JWKS independently of requests (c8b6512)
+- *(server,grpc,web)* Enforce bounded serving limits (aaba3e6)
+- *(web)* [**breaking**] Replace trusted hop counts with proxy networks (81cbae6)
+- *(ci)* Allow the transitive toml_datetime version split (c4a07f2)
+- *(template)* Keep generated imports formatted (730ae13)
+
+### Documentation
+
+- Update crate READMEs (d0556c8)
+
+### Features
+
+- *(schedule)* Bound concurrent job execution (37d4c7e)
+- *(template)* Add MariaDB backend support (1a83241)
+
+### Miscellaneous
+
+- *(workspace)* [**breaking**] Raise MSRV to Rust 1.98 (38dd1b2)
+- *(ci)* Pin actions and group dependency updates (384597d)
+
+### Refactor
+
+- *(web)* [**breaking**] Simplify realtime hub configuration (dcc2833)
+- *(pagination)* [**breaking**] Make page requests valid by construction (ff50fc5)
+- *(test)* Specialize temporary databases for SQLite (66896f2)
+- *(toolbox,examples,template)* Adopt the facade crate (7e062be)
+- *(workspace)* Simplify imports and remove dead dependencies (c523e49)
+
 ## [0.2.0] - 2026-09-14
 
 ### Bug Fixes

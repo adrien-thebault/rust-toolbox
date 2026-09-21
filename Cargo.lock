@@ -3310,7 +3310,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "todo-grpc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "clap",
@@ -3332,7 +3332,7 @@ dependencies = [
 
 [[package]]
 name = "todo-web"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -3601,7 +3601,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "axum-extra",
@@ -3623,7 +3623,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-auth"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "argon2",
  "async-trait",
@@ -3648,7 +3648,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-cluster"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3666,7 +3666,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-db"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "clap",
@@ -3683,7 +3683,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-error"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3694,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-grpc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "getrandom 0.3.4",
  "http",
@@ -3721,7 +3721,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-macros"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "diesel",
@@ -3738,7 +3738,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-pagination"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3747,7 +3747,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-schedule"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3763,7 +3763,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "clap",
@@ -3784,7 +3784,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-test"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "axum-test",
@@ -3806,7 +3806,7 @@ dependencies = [
 
 [[package]]
 name = "toolbox-web"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "axum",

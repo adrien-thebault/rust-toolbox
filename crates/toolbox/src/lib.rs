@@ -5,7 +5,7 @@
 //! compiles less.
 //!
 //! ```toml
-//! toolbox = { git = "...", tag = "v0.2.0", features = ["db", "web"] }
+//! toolbox = { git = "...", tag = "v0.2.1", features = ["db", "web"] }
 //! ```
 //!
 //! Each feature pulls in the crate of the same name. The dependency order is

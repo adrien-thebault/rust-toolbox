@@ -27,7 +27,7 @@ use crate::state::AppState;
 #[openapi(
     paths(todo::list, todo::fetch, todo::create, todo::remove),
     components(schemas(todo::TodoDto, todo::NewTodoRequest, todo::TodoPageResponse)),
-    info(title = "Todo API", version = "0.2.0")
+    info(title = "Todo API", version = "0.2.1")
 )]
 pub struct ApiDoc;
 

@@ -14,7 +14,7 @@ publish = false
 [workspace.dependencies]
 # Pinned to a tag, never a branch: a branch means the next `cargo update` can
 # bring a breaking change nobody chose.
-toolbox         = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.0" }
+toolbox         = { git = "https://github.com/adrien-thebault/rust-toolbox.git", tag = "v0.2.1" }
 # Declared directly, not through toolbox::deps: their derives emit absolute
 # `diesel::` and `serde::` paths.
 {% if database == "postgres" %}diesel = { version = "2.3", features = ["r2d2", "chrono", "postgres"] }

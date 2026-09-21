@@ -8,7 +8,7 @@ members  = ["crates/*", "examples/*/grpc/*", "examples/*/web"]
 exclude  = ["template"]
 
 [workspace.package]
-version      = "0.2.0"
+version      = "0.2.1"
 edition      = "2024"
 rust-version = "1.98"   # floor used by the workspace and checked in CI
 license      = "MIT"
@@ -18,18 +18,18 @@ publish      = false    # never crates.io
 
 [workspace.dependencies]
 # internal crates are added by the work package that creates each one.
-toolbox-error  = { version = "0.2.0", path = "crates/toolbox-error" }
-toolbox-pagination = { version = "0.2.0", path = "crates/toolbox-pagination" }
-toolbox-server = { version = "0.2.0", path = "crates/toolbox-server" }
-toolbox-db     = { version = "0.2.0", path = "crates/toolbox-db" }
-toolbox-macros = { version = "0.2.0", path = "crates/toolbox-macros" }
-toolbox-cluster = { version = "0.2.0", path = "crates/toolbox-cluster" }
-toolbox-schedule = { version = "0.2.0", path = "crates/toolbox-schedule" }
-toolbox-auth   = { version = "0.2.0", path = "crates/toolbox-auth" }
-toolbox-web    = { version = "0.2.0", path = "crates/toolbox-web" }
-toolbox-grpc   = { version = "0.2.0", path = "crates/toolbox-grpc" }
-toolbox        = { version = "0.2.0", path = "crates/toolbox" }
-toolbox-test   = { version = "0.2.0", path = "crates/toolbox-test" }
+toolbox-error  = { version = "0.2.1", path = "crates/toolbox-error" }
+toolbox-pagination = { version = "0.2.1", path = "crates/toolbox-pagination" }
+toolbox-server = { version = "0.2.1", path = "crates/toolbox-server" }
+toolbox-db     = { version = "0.2.1", path = "crates/toolbox-db" }
+toolbox-macros = { version = "0.2.1", path = "crates/toolbox-macros" }
+toolbox-cluster = { version = "0.2.1", path = "crates/toolbox-cluster" }
+toolbox-schedule = { version = "0.2.1", path = "crates/toolbox-schedule" }
+toolbox-auth   = { version = "0.2.1", path = "crates/toolbox-auth" }
+toolbox-web    = { version = "0.2.1", path = "crates/toolbox-web" }
+toolbox-grpc   = { version = "0.2.1", path = "crates/toolbox-grpc" }
+toolbox        = { version = "0.2.1", path = "crates/toolbox" }
+toolbox-test   = { version = "0.2.1", path = "crates/toolbox-test" }
 
 # external crates: ONE version per crate, workspace-wide.
 serde      = { version = "1.0" }
