@@ -169,7 +169,7 @@ pub fn realtime_router() -> Router<AppState> {
 /// # Arguments
 ///
 /// * `state` - The gateway's state, for the hub every change is published to.
-pub(crate) async fn events(
+pub(super) async fn events(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>> + Send> {
     sse_from_events(state.hub.stream(TODOS_TOPIC), SseConfig::default())
@@ -218,7 +218,7 @@ async fn assert_caller<F: Future>(principal: &MaybeAuthenticated, f: F) -> F::Ou
     params(("offset" = Option<i64>, Query,), ("limit" = Option<i64>, Query,), ("sort" = Option<String>, Query,)),
     responses((status = 200, body = TodoPageResponse))
 )]
-pub(crate) async fn list(
+pub(super) async fn list(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     PageQuery(page): PageQuery,
@@ -258,7 +258,7 @@ pub(crate) async fn list(
     params(("id" = i32, Path,)),
     responses((status = 200, body = TodoDto))
 )]
-pub(crate) async fn fetch(
+pub(super) async fn fetch(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     Path(id): Path<i32>,
@@ -289,7 +289,7 @@ pub(crate) async fn fetch(
 /// * `body` - The new todo, rejected here if invalid so no hop is made.
 #[utoipa::path(post, path = "/api/todos", request_body = NewTodoRequest,
     responses((status = 200, body = TodoDto)))]
-pub(crate) async fn create(
+pub(super) async fn create(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     idempotent: Idempotent,
@@ -327,7 +327,7 @@ async fn do_create(
 /// * `principal` - The caller, attached to the backend call if there is one.
 /// * `id` - Which todo.
 /// * `body` - The version the caller read.
-pub(crate) async fn complete(
+pub(super) async fn complete(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     Path(id): Path<i32>,
@@ -362,7 +362,7 @@ pub(crate) async fn complete(
 /// * `id` - Which todo.
 #[utoipa::path(delete, path = "/api/todos/{id}", params(("id" = i32, Path,)),
     responses((status = 200)), security(("bearer" = [])))]
-pub(crate) async fn remove(
+pub(super) async fn remove(
     caller: Authenticated<Admin>,
     State(state): State<AppState>,
     Path(id): Path<i32>,
