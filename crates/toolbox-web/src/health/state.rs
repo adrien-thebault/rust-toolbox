@@ -10,7 +10,7 @@ use toolbox_server::{LifecycleHandle, Shutdown};
 #[derive(Clone)]
 pub struct HealthState {
     /// The drain state and the registered readiness checks, combined.
-    pub(super) lifecycle: LifecycleHandle,
+    pub lifecycle: LifecycleHandle,
 }
 
 impl fmt::Debug for HealthState {

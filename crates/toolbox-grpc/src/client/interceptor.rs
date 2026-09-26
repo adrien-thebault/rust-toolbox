@@ -67,7 +67,7 @@ impl ClientInterceptor {
     /// * `secret` - The shared secret to present, or `None` for a client that
     ///   presents none. A secret that is not a legal header value is dropped
     ///   here rather than failing every call.
-    pub(super) fn new(secret: Option<&SecretString>) -> Self {
+    pub fn new(secret: Option<&SecretString>) -> Self {
         let secret = secret.and_then(|s| MetadataValue::try_from(s.expose_secret()).ok());
         Self { secret }
     }
@@ -115,10 +115,8 @@ impl Interceptor for ClientInterceptor {
     }
 }
 
-// `ClientInterceptor::new` is `pub(super)`, so an external `tests/` crate
-// cannot build one - these live here instead, alongside the other
-// crate-private constructs this crate unit-tests inline (see `migrate.rs` in
-// `toolbox-db` for the same pattern).
+// These tests stay inline because they exercise task-local deadline, trace,
+// and asserted-principal state alongside the interceptor.
 #[cfg(test)]
 mod tests {
     use std::time::Instant;

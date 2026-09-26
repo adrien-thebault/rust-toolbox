@@ -168,7 +168,7 @@ pub fn realtime_router() -> Router<AppState> {
 /// # Arguments
 ///
 /// * `state` - The gateway's state, for the hub every change is fanned out on.
-pub(super) async fn events(
+pub async fn events(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>> + Send> {
     sse_from_events(state.hub.stream(TODOS_TOPIC), SseConfig::default())
@@ -212,12 +212,16 @@ async fn assert_caller<F: Future>(principal: &MaybeAuthenticated, f: F) -> F::Ou
 /// * `state` - The gateway's state, for the backend channel.
 /// * `principal` - The caller, attached to the backend call if there is one.
 /// * `page` - The window and sort, already validated against the maximum limit.
+///
+/// # Errors
+///
+/// Returns an [`ApiError`] when the backend request fails.
 #[utoipa::path(
     get, path = "/api/todos",
     params(("offset" = Option<i64>, Query,), ("limit" = Option<i64>, Query,), ("sort" = Option<String>, Query,)),
     responses((status = 200, body = TodoPageResponse))
 )]
-pub(super) async fn list(
+pub async fn list(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     PageQuery(page): PageQuery,
@@ -252,12 +256,16 @@ pub(super) async fn list(
 /// * `principal` - The caller, attached to the backend call if there is one.
 /// * `id` - Which todo. A miss is the backend's `TODO_NOT_FOUND`, relayed with
 ///   its code intact.
+///
+/// # Errors
+///
+/// Returns an [`ApiError`] when the backend request fails.
 #[utoipa::path(
     get, path = "/api/todos/{id}",
     params(("id" = i32, Path,)),
     responses((status = 200, body = TodoDto))
 )]
-pub(super) async fn fetch(
+pub async fn fetch(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     Path(id): Path<i32>,
@@ -286,9 +294,13 @@ pub(super) async fn fetch(
 /// * `principal` - The caller, attached to the backend call if there is one.
 /// * `key` - The idempotency key, if the caller sent one.
 /// * `body` - The new todo, rejected here if invalid so no hop is made.
+///
+/// # Errors
+///
+/// Returns an [`ApiError`] when idempotency handling or creation fails.
 #[utoipa::path(post, path = "/api/todos", request_body = NewTodoRequest,
     responses((status = 200, body = TodoDto)))]
-pub(super) async fn create(
+pub async fn create(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     idempotent: Idempotent,
@@ -326,7 +338,11 @@ async fn do_create(
 /// * `principal` - The caller, attached to the backend call if there is one.
 /// * `id` - Which todo.
 /// * `body` - The version the caller read.
-pub(super) async fn complete(
+///
+/// # Errors
+///
+/// Returns an [`ApiError`] when the todo cannot be completed.
+pub async fn complete(
     State(state): State<AppState>,
     principal: MaybeAuthenticated,
     Path(id): Path<i32>,
@@ -359,9 +375,13 @@ pub(super) async fn complete(
 ///   401 and never reaches the backend.
 /// * `state` - The gateway's state, for the backend channel.
 /// * `id` - Which todo.
+///
+/// # Errors
+///
+/// Returns an [`ApiError`] when the todo cannot be deleted.
 #[utoipa::path(delete, path = "/api/todos/{id}", params(("id" = i32, Path,)),
     responses((status = 200)), security(("bearer" = [])))]
-pub(super) async fn remove(
+pub async fn remove(
     caller: Authenticated<Admin>,
     State(state): State<AppState>,
     Path(id): Path<i32>,

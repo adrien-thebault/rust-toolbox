@@ -44,7 +44,11 @@ impl fmt::Debug for SchedulerBuilder {
 
 impl SchedulerBuilder {
     /// Start with the system clock and no jobs.
-    pub(super) fn new(locks: Arc<dyn LockManager>) -> Self {
+    ///
+    /// # Arguments
+    ///
+    /// * `locks` - The manager used to coordinate each job run.
+    pub fn new(locks: Arc<dyn LockManager>) -> Self {
         Self {
             jobs: Vec::new(),
             locks,
