@@ -18,40 +18,41 @@ skip = [
   # oidc features.
   { crate = "tower-http@0.6.11" },
 
-  # rand 0.8 via rsa/argon2; 0.9 via jsonwebtoken; 0.10 via getrandom's newest
-  # consumers. Three majors are live across the ecosystem right now.
+  # rand 0.8 comes from jsonwebtoken/rsa, 0.9 from governor, and 0.10 from
+  # axum-test multipart support.
   { crate = "rand@0.8.8" }, { crate = "rand@0.9.5" },
   { crate = "rand_core@0.6.4" }, { crate = "rand_core@0.9.5" },
-  { crate = "rand_chacha@0.3.1" }, { crate = "rand_chacha@0.9.0" },
+  { crate = "rand_chacha@0.3.1" },
   { crate = "getrandom@0.2.17" }, { crate = "getrandom@0.3.4" },
   { crate = "r-efi@5.3.0" },
 
-  # hashbrown ships inside std as well as standalone, and diesel, indexmap,
-  # moka and lru each pin a different major.
+  # hashbrown 0.14 comes from dashmap/governor, 0.15 from petgraph/prost-build,
+  # 0.16 from governor, and 0.17 from indexmap.
   { crate = "hashbrown@0.14.5" }, { crate = "hashbrown@0.15.5" },
   { crate = "hashbrown@0.16.1" },
+  # hashbrown 0.15 and 0.16 use different foldhash majors.
   { crate = "foldhash@0.1.5" },
 
   # thiserror 1 via older transitive crates; the workspace itself is on 2.
   { crate = "thiserror@1.0.69" }, { crate = "thiserror-impl@1.0.69" },
 
-  # darling 0.20 via diesel_derives, 0.21 via utoipa, 0.23 via garde.
-  { crate = "darling@0.20.11" }, { crate = "darling@0.21.3" },
-  { crate = "darling_core@0.20.11" }, { crate = "darling_core@0.21.3" },
-  { crate = "darling_macro@0.20.11" }, { crate = "darling_macro@0.21.3" },
+  # darling 0.20 comes from croner/derive_builder; 0.21 comes from Diesel.
+  { crate = "darling@0.20.11" },
+  { crate = "darling_core@0.20.11" },
+  { crate = "darling_macro@0.20.11" },
 
-  # Build-time only, and a proc-macro crate's syn version is invisible at
-  # runtime.
+  # A proc-macro crate's syn version is invisible at runtime; winnow is used by
+  # the build-time TOML parsers.
   { crate = "syn@2.0.119" },
   { crate = "winnow@0.7.15" },
+  # cpufeatures 0.2 is used by runtime cryptography; 0.3 comes from
+  # rand 0.10/chacha20 through axum-test.
   { crate = "cpufeatures@0.2.17" },
 
   # diesel_migrations uses toml 0.9 while the compile-test-only trybuild uses
   # toml 1.1. Neither version crosses into a shipped crate's public API.
   { crate = "toml_datetime@0.7.5" },
 
-  # Windows bindings, on a workspace that targets Linux.
-  { crate = "windows-sys@0.52.0" }, { crate = "windows-sys@0.61.2" },
 ]
 
 [licenses]
@@ -85,3 +86,7 @@ ignore = [
   # vulnerable, build-time only, nothing in the shipped binary.
   { id = "RUSTSEC-2024-0436", reason = "build-time proc-macro via utoipa-axum; unmaintained, not vulnerable" },
 ]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
