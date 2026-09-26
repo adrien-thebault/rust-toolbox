@@ -2,9 +2,9 @@
 resolver = "3"
 # `examples/*/grpc/*` because a domain is a crate and `grpc/` only groups them.
 members  = ["crates/*", "examples/*/grpc/*", "examples/*/web"]
-# `template/` holds `{{placeholder}}` manifests that are not valid TOML until
-# `cargo generate` fills them in; without this, `cargo` chokes on them during
-# package discovery whenever the repo is a path/git dependency of another.
+# Keep generated projects outside this workspace. Cargo-generate removes the
+# template manifests' `.liquid` suffix only after rendering, so Cargo package
+# discovery never parses unresolved placeholders.
 exclude  = ["template"]
 
 [workspace.package]
