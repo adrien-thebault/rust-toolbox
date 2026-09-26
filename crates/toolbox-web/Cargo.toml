@@ -65,7 +65,7 @@ futures-core   = { workspace = true, optional = true }
 futures-util   = { workspace = true, optional = true }
 secrecy        = { workspace = true, optional = true }
 async-trait    = { workspace = true, optional = true }
-reqwest        = { workspace = true, optional = true, features = ["json", "rustls-tls"] }
+reqwest        = { workspace = true, optional = true, features = ["form", "json", "rustls"] }
 getrandom      = { workspace = true, optional = true, features = ["std"] }
 
 [dev-dependencies]

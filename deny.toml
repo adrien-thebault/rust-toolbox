@@ -8,6 +8,10 @@ multiple-versions = "deny"
 # Duplicates we cannot fix from here, because they are two upstream crates
 # pinning different majors of a shared dependency. Each names who pulls what.
 skip = [
+  # reqwest 0.13 uses base64 0.23 while the existing HTTP and JWT ecosystem
+  # still pins 0.22. Both are memory-safe encoding libraries.
+  { crate = "base64@0.23.1" },
+
   # reqwest (captcha, oidc) pins tower-http 0.6; the toolbox uses 0.7. This is
   # NOT the bug the ban exists for - that was a consumer declaring tower-http
   # itself alongside the toolbox's - and it disappears without the captcha and
