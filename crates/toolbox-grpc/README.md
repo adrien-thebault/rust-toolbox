@@ -15,5 +15,5 @@ service, a server that serves one.
 | `server::identity`      | the end-user identity layer                                                    |
 | `status`                | conversion between the service-error trait and a tonic status                  |
 | `pagination`            | the shared pagination messages and helpers                                     |
-| `proto`                 | the generated shared protobuf types                                            |
+| `proto`                 | shared protobuf types and UTC timestamp conversions                            |
 | `limits`                | the message size limits both ends read                                         |

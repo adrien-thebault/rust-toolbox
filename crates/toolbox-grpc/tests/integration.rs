@@ -4,5 +4,6 @@
 mod client;
 mod limits;
 mod pagination;
+mod proto;
 mod server;
 mod status;

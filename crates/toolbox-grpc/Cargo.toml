@@ -29,7 +29,9 @@ tonic-types     = { workspace = true }
 tonic-health    = { workspace = true }
 tonic-reflection = { workspace = true }
 prost           = { workspace = true }
+prost-types     = { workspace = true }
 tonic-prost     = { workspace = true }
+chrono          = { workspace = true, features = ["std"] }
 tower           = { workspace = true }
 http            = { workspace = true }
 tokio           = { workspace = true, features = ["rt", "time"] }
