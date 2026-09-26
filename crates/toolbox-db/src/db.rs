@@ -22,6 +22,7 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
 
 use crate::{
     error::{DbError, DbResult},
+    mariadb::MariaDbUtc,
     migrate::{self, MigrationLockConnection},
     sqlite::SqlitePragmas,
 };
@@ -364,6 +365,16 @@ impl<C: R2D2Connection + 'static> DbBuilder<C> {
     #[must_use]
     pub fn sqlite_pragmas(mut self, pragmas: SqlitePragmas) -> Self {
         self.customizer = Some(Box::new(pragmas));
+        self
+    }
+
+    /// Force every `MariaDB` connection to interpret `TIMESTAMP` values as UTC.
+    ///
+    /// Only call this on a `MariaDB` pool: the initializer is `MariaDB` syntax, so
+    /// another backend would fail to hand out connections.
+    #[must_use]
+    pub fn mariadb_utc(mut self) -> Self {
+        self.customizer = Some(Box::new(MariaDbUtc));
         self
     }
 

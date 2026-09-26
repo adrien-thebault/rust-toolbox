@@ -50,6 +50,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .builder::<Connection>()
         .sqlite_pragmas(SqlitePragmas::default())
         .build()?;
+{% elsif database == "mariadb" %}    let db = args
+        .database
+        .builder::<Connection>()
+        .mariadb_utc()
+        .build()?;
 {% else %}    let db = args.database.builder::<Connection>().build()?;
 {% endif %}    // Locked, so three replicas starting together do not race.
     db.migrate(MIGRATIONS).await?;

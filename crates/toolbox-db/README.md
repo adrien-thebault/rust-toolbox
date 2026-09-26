@@ -10,5 +10,6 @@ generic over the backend.
 | `error`      | the database error and result types                                                           |
 | `pagination` | window-function pagination that composes onto any diesel query, and the sort-field check      |
 | `migrate`    | migrations, serialised across replicas by a session lock                                      |
+| `mariadb`    | UTC session initialization for MariaDB pooled connections                                    |
 | `sqlite`     | connection pragmas                                                                            |
 | `args`       | the clap arguments for the pool (`clap`)                                                      |

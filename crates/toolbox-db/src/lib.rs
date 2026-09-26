@@ -25,6 +25,7 @@ pub mod args;
 pub mod db;
 pub mod entity;
 pub mod error;
+pub mod mariadb;
 pub mod migrate;
 pub mod pagination;
 pub mod sqlite;
@@ -37,6 +38,7 @@ pub use db::{Db, DbBuilder, DbPool, DbPooledConn};
 pub use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 pub use entity::Entity;
 pub use error::{DbError, DbResult};
+pub use mariadb::MariaDbUtc;
 pub use pagination::{Paginate, Paginated};
 pub use sqlite::SqlitePragmas;
 /// The derive. Shares its name with the [`Entity`] trait it implements, the
